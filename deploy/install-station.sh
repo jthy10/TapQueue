@@ -57,6 +57,8 @@ fi
 systemctl stop tapqueue-station 2>/dev/null || true
 install -d -m 755 "$prefix"
 install -m 755 "$here/tapqueue-station" "$prefix/"
+# A build the station installed itself from the server would otherwise keep running instead of this one.
+rm -f /var/lib/tapqueue-station/tapqueue-station
 install -m 644 "$here/60-tapqueue-pcprox.rules" /etc/udev/rules.d/
 udevadm control --reload-rules && udevadm trigger --subsystem-match=hidraw || true
 

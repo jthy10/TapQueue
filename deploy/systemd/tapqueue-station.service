@@ -10,7 +10,10 @@ User=tapqueue-station
 Group=tapqueue-station
 # The badge reader: /dev/input for keyboard readers, /dev/hidraw for pcProx (see deploy/udev).
 SupplementaryGroups=input
-ExecStart=/opt/tapqueue/tapqueue-station --config /etc/tapqueue/station.toml
+# Builds published on the server are installed into the state directory (/opt is read-only here);
+# start from there when there is one. install-station.sh removes it, so a manual install wins.
+StateDirectory=tapqueue-station
+ExecStart=/bin/sh -c 'b=/var/lib/tapqueue-station/tapqueue-station; [ -x "$$b" ] || b=/opt/tapqueue/tapqueue-station; exec "$$b" --config /etc/tapqueue/station.toml'
 Restart=always
 RestartSec=5
 
