@@ -14,6 +14,12 @@ public sealed record ServerInfoDto(
 
 public sealed record UserDto(long Id, string Username, string DisplayName);
 
+/// <summary>What admins see of a user. A disabled user can't sign in, print or release.</summary>
+public sealed record UserAdminDto(long Id, string Username, string DisplayName, DateTimeOffset CreatedAt, DateTimeOffset? DisabledAt);
+
+/// <summary>Fields left null are unchanged.</summary>
+public sealed record UpdateUserRequest(string? DisplayName = null, bool? Disabled = null);
+
 public sealed record QueueDto(string Id, string Name, string Description, string IppPath);
 
 public sealed record PrinterDto(
@@ -63,6 +69,7 @@ public sealed record UpdateQueueRequest(
 
 /// <param name="Owner">The TapQueue user the job belongs to, or null if nobody has been matched to it yet.</param>
 /// <param name="ClaimedUser">The username the print client sent. Unverified; only shown to help an admin sort out unowned jobs.</param>
+/// <param name="FormerOwner">For jobs of a user who has since been deleted, their username.</param>
 public sealed record JobDto(
     long Id,
     string Name,
@@ -77,7 +84,8 @@ public sealed record JobDto(
     DateTimeOffset ExpiresAt,
     DateTimeOffset? ReleasedAt,
     string? ReleasedPrinterId,
-    string? Error);
+    string? Error,
+    string? FormerOwner = null);
 
 /// <summary>Sent by the user client when it starts, and again whenever its session expires.</summary>
 public sealed record ClientSessionRequest(
@@ -155,6 +163,8 @@ public static class TapOutcome
     public const string NoJobs = "no-jobs";
     /// <summary>Nobody has this badge.</summary>
     public const string UnknownBadge = "unknown-badge";
+    /// <summary>The badge's owner is disabled.</summary>
+    public const string Disabled = "disabled";
     /// <summary>Some or all jobs couldn't be sent. They stay held.</summary>
     public const string Failed = "failed";
 }

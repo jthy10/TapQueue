@@ -59,6 +59,7 @@ public static class IppStatus
     public const short Ok = 0x0000;
     public const short OkIgnoredOrSubstituted = 0x0001;
     public const short ClientErrorBadRequest = 0x0400;
+    public const short ClientErrorNotAuthorized = 0x0403;
     public const short ClientErrorNotPossible = 0x0404;
     public const short ClientErrorNotFound = 0x0406;
     public const short ClientErrorDocumentFormatNotSupported = 0x040A;

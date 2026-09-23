@@ -14,6 +14,8 @@ public sealed class ReleaseService(JobStore jobs, Spool spool, PrinterRegistry p
     public async Task<ReleaseResponse> ReleaseAsync(UserRecord user, PrinterRecord printer, IReadOnlyList<long>? jobIds, CancellationToken ct)
     {
         var held = jobs.ListForUser(user.Id, heldOnly: true);
+        if (user.Disabled)
+            return new ReleaseResponse(held.Select(j => new ReleaseResult(j.Id, j.Name, false, "This account is disabled.")).ToList());
         var toRelease = jobIds is null ? held : held.Where(j => jobIds.Contains(j.Id)).ToList();
 
         var results = new List<ReleaseResult>();

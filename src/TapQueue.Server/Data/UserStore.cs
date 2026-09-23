@@ -3,14 +3,18 @@ using TapQueue.Shared.Api;
 
 namespace TapQueue.Server.Data;
 
-public sealed record UserRecord(long Id, string Username, string DisplayName, string? TokenHash)
+public sealed record UserRecord(long Id, string Username, string DisplayName, string? TokenHash, DateTimeOffset CreatedAt, DateTimeOffset? DisabledAt)
 {
+    public bool Disabled => DisabledAt is not null;
+
     public UserDto ToDto() => new(Id, Username, DisplayName);
+
+    public UserAdminDto ToAdminDto() => new(Id, Username, DisplayName, CreatedAt, DisabledAt);
 }
 
 public sealed class UserStore(Database database)
 {
-    private const string Columns = "id, username, display_name, token_hash";
+    private const string Columns = "id, username, display_name, token_hash, created_at, disabled_at";
 
     public UserRecord? FindByUsername(string username) =>
         database.QueryOne($"SELECT {Columns} FROM users WHERE username = $u", Map, ("$u", username));
@@ -31,6 +35,32 @@ public sealed class UserStore(Database database)
     public void SetTokenHash(long userId, string tokenHash) =>
         database.Execute("UPDATE users SET token_hash = $t WHERE id = $id", ("$t", tokenHash), ("$id", userId));
 
+    public UserRecord? SetDisplayName(long userId, string displayName) =>
+        database.QueryOne($"UPDATE users SET display_name = $d WHERE id = $id RETURNING {Columns}", Map, ("$d", displayName), ("$id", userId));
+
+    /// <summary>Disabling also signs the user out everywhere, so their PCs stop matching new jobs to them.</summary>
+    public UserRecord? SetDisabled(long userId, bool disabled)
+    {
+        if (disabled)
+            database.Execute("DELETE FROM sessions WHERE user_id = $id", ("$id", userId));
+        return database.QueryOne($"""
+            UPDATE users SET disabled_at = CASE WHEN $disabled THEN COALESCE(disabled_at, $now) END WHERE id = $id
+            RETURNING {Columns}
+            """, Map, ("$disabled", disabled), ("$now", DateTimeOffset.UtcNow), ("$id", userId));
+    }
+
+    /// <summary>
+    /// Deletes the user with their cards and sessions. Their jobs stay for history, with the username kept
+    /// in former_owner; the caller cancels held ones first.
+    /// </summary>
+    public bool Delete(long userId)
+    {
+        database.Execute("""
+            UPDATE jobs SET former_owner = (SELECT username FROM users WHERE id = $id) WHERE user_id = $id
+            """, ("$id", userId));
+        return database.Execute("DELETE FROM users WHERE id = $id", ("$id", userId)) == 1;
+    }
+
     private static UserRecord Map(SqliteDataReader r) =>
-        new(r.GetInt64(0), r.GetString(1), r.GetString(2), r.GetStringOrNull(3));
+        new(r.GetInt64(0), r.GetString(1), r.GetString(2), r.GetStringOrNull(3), r.GetTime(4), r.GetTimeOrNull(5));
 }

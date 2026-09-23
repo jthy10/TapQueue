@@ -49,6 +49,12 @@ public static class ClientApi
             return Results.Json(new ErrorResponse("Unknown user or wrong token."), statusCode: StatusCodes.Status401Unauthorized);
         }
 
+        if (user.Disabled)
+        {
+            logger.LogWarning("Rejected sign-in for disabled user \"{User}\" from {Ip}", user.Username, http.ClientIp());
+            return Results.Json(new ErrorResponse("Your TapQueue account is disabled. Ask an admin."), statusCode: StatusCodes.Status403Forbidden);
+        }
+
         var token = Tokens.New();
         sessions.Create(Tokens.Hash(token), user.Id, request.WindowsUser, request.Hostname, http.ClientIp(), request.ClientVersion);
         logger.LogInformation("{User} signed in from {Host} ({Ip}) as Windows user {WindowsUser}, client {Version}",

@@ -177,6 +177,13 @@ public sealed class Database
 
             ALTER TABLE sessions ADD COLUMN client_version TEXT;
         """,
+
+        // 4: disabling users, keeping the owner's name on jobs after the user is deleted, and card labels.
+        """
+            ALTER TABLE users ADD COLUMN disabled_at TEXT;
+            ALTER TABLE jobs ADD COLUMN former_owner TEXT;
+            ALTER TABLE badges ADD COLUMN label TEXT NOT NULL DEFAULT '';
+        """,
     ];
 
     public void Migrate()

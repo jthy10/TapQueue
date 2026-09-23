@@ -31,11 +31,12 @@ public sealed record JobRecord(
     DateTimeOffset ExpiresAt,
     DateTimeOffset? ReleasedAt,
     string? ReleasedPrinterId,
-    string? Error)
+    string? Error,
+    string? FormerOwner)
 {
     public JobDto ToDto() => new(
         Id, Name, QueueId, Status, SizeBytes, DocumentFormat, Copies, Username, OwnerHint,
-        SubmittedAt, ExpiresAt, ReleasedAt, ReleasedPrinterId, Error);
+        SubmittedAt, ExpiresAt, ReleasedAt, ReleasedPrinterId, Error, FormerOwner);
 }
 
 /// <param name="JobAttributes">The encoded IPP job-attributes group from the client (copies, media, page-ranges…).</param>
@@ -55,7 +56,7 @@ public sealed class JobStore(Database database)
     private const string SelectColumns = """
         SELECT j.id, j.user_id, u.username, j.owner_hint, j.queue_id, j.name, j.document_format, j.copies,
                j.size_bytes, j.status, j.source_ip, j.submitted_at, j.expires_at, j.released_at,
-               j.released_printer_id, j.error
+               j.released_printer_id, j.error, j.former_owner
         FROM jobs j LEFT JOIN users u ON u.id = j.user_id
         """;
 
@@ -134,5 +135,6 @@ public sealed class JobStore(Database database)
         ExpiresAt: r.GetTime(12),
         ReleasedAt: r.GetTimeOrNull(13),
         ReleasedPrinterId: r.GetStringOrNull(14),
-        Error: r.GetStringOrNull(15));
+        Error: r.GetStringOrNull(15),
+        FormerOwner: r.GetStringOrNull(16));
 }

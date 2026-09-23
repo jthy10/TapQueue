@@ -44,6 +44,12 @@ public static class StationApi
             return Results.Ok(new StationTapResponse(TapOutcome.UnknownBadge, "Badge not recognized. Ask an admin to link it to your account.", null, []));
         }
 
+        if (user.Disabled)
+        {
+            logger.LogInformation("Disabled user {User} tapped at station {Station}", user.Username, station.Id);
+            return Results.Ok(new StationTapResponse(TapOutcome.Disabled, $"Sorry {user.DisplayName}, your account is disabled. Ask an admin.", user.ToDto(), []));
+        }
+
         // Not tied to the request: the station giving up on a slow printer shouldn't leave a job half-sent.
         var result = await release.ReleaseAsync(user, printer, jobIds: null, CancellationToken.None);
         var sent = result.Results.Count(r => r.Success);

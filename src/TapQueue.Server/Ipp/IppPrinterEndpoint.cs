@@ -14,6 +14,7 @@ public sealed class IppPrinterEndpoint(
     JobStore jobs,
     Spool spool,
     JobOwnerResolver owners,
+    UserStore users,
     ILogger<IppPrinterEndpoint> logger)
 {
     public async Task HandleAsync(HttpContext http, string queueId)
@@ -104,12 +105,12 @@ public sealed class IppPrinterEndpoint(
         return response;
     }
 
-    private static IppMessage ValidateJob(RequestContext c) =>
-        UnsupportedFormat(c) ?? IppMessage.CreateResponse(c.Request, IppStatus.Ok);
+    private IppMessage ValidateJob(RequestContext c) =>
+        UnsupportedFormat(c) ?? Refused(c) ?? IppMessage.CreateResponse(c.Request, IppStatus.Ok);
 
     private async Task<IppMessage> PrintJobAsync(RequestContext c)
     {
-        if (UnsupportedFormat(c) is { } error)
+        if ((UnsupportedFormat(c) ?? Refused(c)) is { } error)
             return error;
 
         var job = NewJob(c);
@@ -121,7 +122,7 @@ public sealed class IppPrinterEndpoint(
 
     private IppMessage CreateJob(RequestContext c)
     {
-        if (UnsupportedFormat(c) is { } error)
+        if ((UnsupportedFormat(c) ?? Refused(c)) is { } error)
             return error;
         return JobResponse(c, NewJob(c));
     }
@@ -286,6 +287,16 @@ public sealed class IppPrinterEndpoint(
         var uri = request.OperationString("job-uri");
         var slash = uri?.LastIndexOf('/') ?? -1;
         return slash >= 0 && long.TryParse(uri![(slash + 1)..], out var fromUri) ? fromUri : null;
+    }
+
+    /// <summary>Jobs from a disabled user are turned away up front, so Windows tells them instead of holding the job.</summary>
+    private IppMessage? Refused(RequestContext c)
+    {
+        var (userId, _) = owners.Resolve(c.ClientIp, c.Request.OperationString("requesting-user-name"));
+        if (userId is null || users.FindById(userId.Value) is not { Disabled: true } user)
+            return null;
+        logger.LogInformation("Refused a job from disabled user {User} at {Ip}", user.Username, c.ClientIp);
+        return IppMessage.CreateResponse(c.Request, IppStatus.ClientErrorNotAuthorized, "Your TapQueue account is disabled.");
     }
 
     private static IppMessage? UnsupportedFormat(RequestContext c)

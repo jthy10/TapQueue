@@ -20,8 +20,10 @@ public static class AdminApi
         var admin = app.MapGroup("/api/v1/admin").AddEndpointFilter(RequireAdmin);
 
         admin.MapGet("/server", ServerInfo);
-        admin.MapGet("/users", (UserStore users) => users.List().Select(u => u.ToDto()));
+        admin.MapGet("/users", (UserStore users) => users.List().Select(u => u.ToAdminDto()));
         admin.MapPost("/users", CreateUser);
+        admin.MapPatch("/users/{username}", UpdateUser);
+        admin.MapDelete("/users/{username}", DeleteUser);
         admin.MapPost("/users/{username}/token", ResetToken);
         admin.MapGet("/jobs", (JobStore jobs, string? status) => jobs.List(status).Select(j => j.ToDto()));
         admin.MapGet("/jobs/{id:long}", (long id, JobStore jobs) =>
@@ -253,6 +255,39 @@ public static class AdminApi
         var token = Tokens.New();
         var user = users.Create(username, string.IsNullOrWhiteSpace(request.DisplayName) ? username : request.DisplayName.Trim(), Tokens.Hash(token));
         return Results.Ok(new UserTokenResponse(user.ToDto(), token));
+    }
+
+    private static IResult UpdateUser(string username, UpdateUserRequest request, UserStore users, ILoggerFactory loggers)
+    {
+        if (users.FindByUsername(username) is not { } user)
+            return Results.NotFound(new ErrorResponse($"No user \"{username}\"."));
+        if (Clean(request.DisplayName) is { } displayName)
+            user = users.SetDisplayName(user.Id, displayName)!;
+        if (request.Disabled is { } disabled && disabled != user.Disabled)
+        {
+            user = users.SetDisabled(user.Id, disabled)!;
+            loggers.CreateLogger("TapQueue.Server.Api.AdminApi").LogInformation(
+                disabled ? "Admin disabled {User}; they're signed out and can't print or release" : "Admin re-enabled {User}", user.Username);
+        }
+        return Results.Ok(user.ToAdminDto());
+    }
+
+    /// <summary>Cancels the user's held jobs, then deletes them with their cards. Job history keeps their name.</summary>
+    private static IResult DeleteUser(string username, UserStore users, JobStore jobs, Spool spool, ILoggerFactory loggers)
+    {
+        if (users.FindByUsername(username) is not { } user)
+            return Results.NotFound(new ErrorResponse($"No user \"{username}\"."));
+        var canceled = 0;
+        foreach (var job in jobs.ListForUser(user.Id, heldOnly: true))
+        {
+            if (!jobs.TryTransition(job.Id, JobStatus.Held, JobStatus.Canceled)) continue;
+            spool.Delete(job.Id);
+            canceled++;
+        }
+        users.Delete(user.Id);
+        loggers.CreateLogger("TapQueue.Server.Api.AdminApi").LogInformation(
+            "Admin deleted user {User} ({Canceled} held jobs canceled)", user.Username, canceled);
+        return Results.NoContent();
     }
 
     private static IResult ResetToken(string username, UserStore users)
