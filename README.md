@@ -98,10 +98,15 @@ users are created the first time they sign in. **Don't use dev mode on a network
 
 ### 4. Release station (badge reader)
 
-Any small Linux box next to the printer with a USB badge reader plugged in. Most USB readers
-(RFIDeas pcProx, generic 125 kHz/13.56 MHz readers) act as a keyboard: they "type" the card number
-and press Enter. The station reads the reader directly from `/dev/input` and grabs it, so card
-numbers don't end up typed into a login prompt.
+Any small Linux box next to the printer with a USB badge reader plugged in. Two kinds of reader work:
+
+- **Keyboard-style readers** (`reader = "keyboard"`, most USB readers) "type" the card number and
+  press Enter. The station reads the reader directly from `/dev/input` and grabs it, so card
+  numbers don't end up typed into a login prompt.
+- **RFIDeas pcProx** (`reader = "pcprox"`) is polled over its HID feature-report channel instead,
+  which also works when the reader is set to "SDK mode" and types nothing. Install
+  `deploy/udev/60-tapqueue-pcprox.rules` so the service can open it. Based on
+  [ID-Card-Reader](https://github.com/jthy10/ID-Card-Reader), whose notes explain the reader's quirks.
 
 On the server, create the station and choose which `[[printers]]` entry it releases to:
 
@@ -121,8 +126,11 @@ sudo install -m 755 tapqueue-station /opt/tapqueue/
 /opt/tapqueue/tapqueue-station --list-devices                    # find the reader
 sudo /opt/tapqueue/tapqueue-station --test --device /dev/input/by-id/usb-…-event-kbd
                                                                  # tap a card; its number is printed
+sudo /opt/tapqueue/tapqueue-station --test --reader pcprox       # same, for a pcProx
+sudo install -m 644 deploy/udev/60-tapqueue-pcprox.rules /etc/udev/rules.d/   # pcProx only
+sudo udevadm control --reload-rules && sudo udevadm trigger
 sudo install -m 640 -g tapqueue-station config/station.example.toml /etc/tapqueue/station.toml
-sudoedit /etc/tapqueue/station.toml          # server_url, token, device
+sudoedit /etc/tapqueue/station.toml          # server_url, token, reader, device
 sudo install -m 644 deploy/systemd/tapqueue-station.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now tapqueue-station
 journalctl -u tapqueue-station -f            # "Station "lobby" releases to Office printer (online)."
@@ -199,7 +207,7 @@ src/TapQueue.Client.Windows/  WinForms tray client
 src/TapQueue.Shared/          API types and config loading shared by all of the above
 tests/                        unit tests
 config/                       example config files
-deploy/                       systemd units
+deploy/                       systemd units, udev rule
 ```
 
 ## Roadmap

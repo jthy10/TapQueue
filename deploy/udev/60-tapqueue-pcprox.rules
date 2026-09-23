@@ -1,0 +1,3 @@
+# Lets tapqueue-station (which runs with the `input` group) poll RFIDeas pcProx readers over hidraw.
+# Install: sudo cp 60-tapqueue-pcprox.rules /etc/udev/rules.d/ && sudo udevadm control --reload-rules && sudo udevadm trigger
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0c27", MODE="0660", GROUP="input"
