@@ -10,68 +10,27 @@ public sealed record UserRecord(long Id, string Username, string DisplayName, st
 
 public sealed class UserStore(Database database)
 {
-    public UserRecord? FindByUsername(string username)
-    {
-        using var db = database.Open();
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = "SELECT id, username, display_name, token_hash FROM users WHERE username = $u";
-        cmd.Parameters.AddWithValue("$u", username);
-        return ReadOne(cmd);
-    }
+    private const string Columns = "id, username, display_name, token_hash";
 
-    public UserRecord? FindById(long id)
-    {
-        using var db = database.Open();
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = "SELECT id, username, display_name, token_hash FROM users WHERE id = $id";
-        cmd.Parameters.AddWithValue("$id", id);
-        return ReadOne(cmd);
-    }
+    public UserRecord? FindByUsername(string username) =>
+        database.QueryOne($"SELECT {Columns} FROM users WHERE username = $u", Map, ("$u", username));
 
-    public List<UserRecord> List()
-    {
-        using var db = database.Open();
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = "SELECT id, username, display_name, token_hash FROM users ORDER BY username";
-        using var reader = cmd.ExecuteReader();
-        var users = new List<UserRecord>();
-        while (reader.Read())
-            users.Add(Map(reader));
-        return users;
-    }
+    public UserRecord? FindById(long id) =>
+        database.QueryOne($"SELECT {Columns} FROM users WHERE id = $id", Map, ("$id", id));
 
-    public UserRecord Create(string username, string displayName, string? tokenHash)
-    {
-        using var db = database.Open();
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = """
+    public List<UserRecord> List() =>
+        database.Query($"SELECT {Columns} FROM users ORDER BY username", Map);
+
+    public UserRecord Create(string username, string displayName, string? tokenHash) =>
+        database.QueryOne($"""
             INSERT INTO users (username, display_name, token_hash, created_at)
             VALUES ($u, $d, $t, $now)
-            RETURNING id, username, display_name, token_hash
-            """;
-        cmd.Parameters.AddWithValue("$u", username);
-        cmd.Parameters.AddWithValue("$d", displayName);
-        cmd.Parameters.AddWithValue("$t", (object?)tokenHash ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
-        return ReadOne(cmd)!;
-    }
+            RETURNING {Columns}
+            """, Map, ("$u", username), ("$d", displayName), ("$t", tokenHash), ("$now", DateTimeOffset.UtcNow))!;
 
-    public void SetTokenHash(long userId, string tokenHash)
-    {
-        using var db = database.Open();
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = "UPDATE users SET token_hash = $t WHERE id = $id";
-        cmd.Parameters.AddWithValue("$t", tokenHash);
-        cmd.Parameters.AddWithValue("$id", userId);
-        cmd.ExecuteNonQuery();
-    }
-
-    private static UserRecord? ReadOne(SqliteCommand cmd)
-    {
-        using var reader = cmd.ExecuteReader();
-        return reader.Read() ? Map(reader) : null;
-    }
+    public void SetTokenHash(long userId, string tokenHash) =>
+        database.Execute("UPDATE users SET token_hash = $t WHERE id = $id", ("$t", tokenHash), ("$id", userId));
 
     private static UserRecord Map(SqliteDataReader r) =>
-        new(r.GetInt64(0), r.GetString(1), r.GetString(2), r.IsDBNull(3) ? null : r.GetString(3));
+        new(r.GetInt64(0), r.GetString(1), r.GetString(2), r.GetStringOrNull(3));
 }

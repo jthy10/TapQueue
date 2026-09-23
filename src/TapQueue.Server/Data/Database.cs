@@ -25,6 +25,54 @@ public sealed class Database
         return connection;
     }
 
+    /// <summary>Runs a statement and returns the number of rows it changed.</summary>
+    public int Execute(string sql, params (string Name, object? Value)[] parameters)
+    {
+        using var db = Open();
+        using var cmd = Command(db, sql, parameters);
+        return cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>Runs a query and returns the first column of the first row, or null if there are no rows.</summary>
+    public object? Scalar(string sql, params (string Name, object? Value)[] parameters)
+    {
+        using var db = Open();
+        using var cmd = Command(db, sql, parameters);
+        var value = cmd.ExecuteScalar();
+        return value is DBNull ? null : value;
+    }
+
+    /// <summary>Runs a query (or an INSERT/UPDATE … RETURNING) and maps each row.</summary>
+    public List<T> Query<T>(string sql, Func<SqliteDataReader, T> map, params (string Name, object? Value)[] parameters)
+    {
+        using var db = Open();
+        using var cmd = Command(db, sql, parameters);
+        using var reader = cmd.ExecuteReader();
+        var rows = new List<T>();
+        while (reader.Read())
+            rows.Add(map(reader));
+        return rows;
+    }
+
+    public T? QueryOne<T>(string sql, Func<SqliteDataReader, T> map, params (string Name, object? Value)[] parameters) where T : class =>
+        Query(sql, map, parameters).FirstOrDefault();
+
+    private static SqliteCommand Command(SqliteConnection db, string sql, (string Name, object? Value)[] parameters)
+    {
+        var cmd = db.CreateCommand();
+        cmd.CommandText = sql;
+        foreach (var (name, value) in parameters)
+        {
+            cmd.Parameters.AddWithValue(name, value switch
+            {
+                null => DBNull.Value,
+                DateTimeOffset time => time.ToString("O"),
+                _ => value,
+            });
+        }
+        return cmd;
+    }
+
     public void Migrate()
     {
         using var db = Open();

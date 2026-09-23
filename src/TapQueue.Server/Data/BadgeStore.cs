@@ -31,78 +31,35 @@ public sealed class BadgeStore(Database database)
     {
         var normalized = Normalize(card);
         if (normalized.Length == 0) return null;
-        using var db = database.Open();
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = "UPDATE badges SET last_used_at = $now WHERE card_hash = $h RETURNING id";
-        cmd.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
-        cmd.Parameters.AddWithValue("$h", Tokens.Hash(normalized));
-        return cmd.ExecuteScalar() is long id ? Get(id) : null;
+        var id = database.Scalar("UPDATE badges SET last_used_at = $now WHERE card_hash = $h RETURNING id",
+            ("$now", DateTimeOffset.UtcNow), ("$h", Tokens.Hash(normalized)));
+        return id is long badgeId ? Get(badgeId) : null;
     }
 
-    public BadgeRecord? FindByCard(string card)
-    {
-        using var db = database.Open();
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = SelectColumns + " WHERE b.card_hash = $h";
-        cmd.Parameters.AddWithValue("$h", Tokens.Hash(Normalize(card)));
-        return ReadAll(cmd).FirstOrDefault();
-    }
+    public BadgeRecord? FindByCard(string card) =>
+        database.QueryOne(SelectColumns + " WHERE b.card_hash = $h", Map, ("$h", Tokens.Hash(Normalize(card))));
 
-    public BadgeRecord? Get(long id)
-    {
-        using var db = database.Open();
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = SelectColumns + " WHERE b.id = $id";
-        cmd.Parameters.AddWithValue("$id", id);
-        return ReadAll(cmd).FirstOrDefault();
-    }
+    public BadgeRecord? Get(long id) =>
+        database.QueryOne(SelectColumns + " WHERE b.id = $id", Map, ("$id", id));
 
-    public List<BadgeRecord> List(long? userId = null)
-    {
-        using var db = database.Open();
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = SelectColumns + (userId is null ? "" : " WHERE b.user_id = $u") + " ORDER BY u.username, b.id";
-        if (userId is not null)
-            cmd.Parameters.AddWithValue("$u", userId);
-        return ReadAll(cmd);
-    }
+    public List<BadgeRecord> List(long? userId = null) =>
+        database.Query(SelectColumns + (userId is null ? "" : " WHERE b.user_id = $u") + " ORDER BY u.username, b.id", Map, ("$u", userId));
 
     /// <summary>Links a card to a user. The caller checks that the card isn't already someone's.</summary>
     public BadgeRecord Add(long userId, string card)
     {
         var normalized = Normalize(card);
-        using var db = database.Open();
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = """
+        var id = (long)database.Scalar("""
             INSERT INTO badges (card_hash, card_hint, user_id, created_at)
             VALUES ($h, $hint, $u, $now)
             RETURNING id
-            """;
-        cmd.Parameters.AddWithValue("$h", Tokens.Hash(normalized));
-        cmd.Parameters.AddWithValue("$hint", Hint(normalized));
-        cmd.Parameters.AddWithValue("$u", userId);
-        cmd.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
-        return Get((long)cmd.ExecuteScalar()!)!;
+            """, ("$h", Tokens.Hash(normalized)), ("$hint", Hint(normalized)), ("$u", userId), ("$now", DateTimeOffset.UtcNow))!;
+        return Get(id)!;
     }
 
-    public bool Delete(long id)
-    {
-        using var db = database.Open();
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = "DELETE FROM badges WHERE id = $id";
-        cmd.Parameters.AddWithValue("$id", id);
-        return cmd.ExecuteNonQuery() == 1;
-    }
+    public bool Delete(long id) =>
+        database.Execute("DELETE FROM badges WHERE id = $id", ("$id", id)) == 1;
 
-    private static List<BadgeRecord> ReadAll(SqliteCommand cmd)
-    {
-        using var r = cmd.ExecuteReader();
-        var badges = new List<BadgeRecord>();
-        while (r.Read())
-        {
-            badges.Add(new BadgeRecord(r.GetInt64(0), r.GetInt64(1), r.GetString(2), r.GetString(3),
-                DateTimeOffset.Parse(r.GetString(4)), r.IsDBNull(5) ? null : DateTimeOffset.Parse(r.GetString(5))));
-        }
-        return badges;
-    }
+    private static BadgeRecord Map(SqliteDataReader r) =>
+        new(r.GetInt64(0), r.GetInt64(1), r.GetString(2), r.GetString(3), r.GetTime(4), r.GetTimeOrNull(5));
 }
