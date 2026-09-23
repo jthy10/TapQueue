@@ -19,10 +19,20 @@ public static class AdminApi
         admin.MapGet("/jobs", (JobStore jobs, string? status) => jobs.List(status).Select(j => j.ToDto()));
         admin.MapGet("/printers", async (PrinterRegistry printers, bool? refresh, CancellationToken ct) =>
         {
+            var all = printers.All;
             if (refresh == true)
-                await Task.WhenAll(printers.All.Select(p => printers.ProbeAsync(p, ct)));
-            return printers.All.Select(printers.ToDto);
+                await Task.WhenAll(all.Select(p => printers.ProbeAsync(p, ct)));
+            return all.Select(printers.ToAdminDto);
         });
+        admin.MapPost("/printers", CreatePrinter);
+        admin.MapPatch("/printers/{id}", UpdatePrinter);
+        admin.MapDelete("/printers/{id}", DeletePrinter);
+
+        admin.MapGet("/queues", (QueueStore queues) => queues.List().Select(ToAdminDto));
+        admin.MapPost("/queues", CreateQueue);
+        admin.MapPatch("/queues/{id}", UpdateQueue);
+        admin.MapDelete("/queues/{id}", (string id, QueueStore queues) =>
+            queues.Delete(id) ? Results.NoContent() : Results.NotFound(new ErrorResponse($"No queue \"{id}\".")));
         admin.MapPost("/release", Release);
 
         admin.MapGet("/badges", (BadgeStore badges, UserStore users, string? username) =>
@@ -40,10 +50,94 @@ public static class AdminApi
 
         admin.MapGet("/stations", (StationStore stations) => stations.List().Select(s => s.ToDto()));
         admin.MapPost("/stations", CreateStation);
+        admin.MapPatch("/stations/{id}", UpdateStation);
         admin.MapPost("/stations/{id}/token", ResetStationToken);
         admin.MapDelete("/stations/{id}", (string id, StationStore stations) =>
             stations.Delete(id) ? Results.NoContent() : Results.NotFound(new ErrorResponse($"No station \"{id}\".")));
     }
+
+    private static async Task<IResult> CreatePrinter(CreatePrinterRequest request, PrinterStore store, PrinterRegistry printers, CancellationToken ct)
+    {
+        var id = request.Id?.Trim();
+        if (!Ids.IsValid(id))
+            return Results.BadRequest(new ErrorResponse($"Printer id must be {Ids.Rule}."));
+        if (!PrinterRecord.IsValidUri(request.Uri))
+            return Results.BadRequest(new ErrorResponse("Printer uri must be ipp://, ipps://, http:// or https://, e.g. ipp://192.0.2.10/ipp/print."));
+        if (store.Get(id!) is not null)
+            return Results.Conflict(new ErrorResponse($"Printer \"{id}\" already exists."));
+
+        var printer = store.Create(new PrinterRecord(id!, Clean(request.Name) ?? id!, Clean(request.Location) ?? "",
+            request.Uri.Trim(), request.TlsSkipVerify ?? false));
+        await printers.ProbeAsync(printer, ct);
+        return Results.Ok(printers.ToAdminDto(printer));
+    }
+
+    private static async Task<IResult> UpdatePrinter(string id, UpdatePrinterRequest request, PrinterStore store, PrinterRegistry printers, CancellationToken ct)
+    {
+        if (store.Get(id) is not { } printer)
+            return Results.NotFound(new ErrorResponse($"No printer \"{id}\"."));
+        if (request.Uri is not null && !PrinterRecord.IsValidUri(request.Uri))
+            return Results.BadRequest(new ErrorResponse("Printer uri must be ipp://, ipps://, http:// or https://, e.g. ipp://192.0.2.10/ipp/print."));
+
+        printer = store.Update(printer with
+        {
+            Uri = request.Uri?.Trim() ?? printer.Uri,
+            Name = Clean(request.Name) ?? printer.Name,
+            Location = request.Location?.Trim() ?? printer.Location,
+            TlsSkipVerify = request.TlsSkipVerify ?? printer.TlsSkipVerify,
+        })!;
+        printers.Forget(printer.Id);
+        await printers.ProbeAsync(printer, ct);
+        return Results.Ok(printers.ToAdminDto(printer));
+    }
+
+    private static IResult DeletePrinter(string id, PrinterStore store, PrinterRegistry printers)
+    {
+        var stations = store.StationsUsing(id);
+        if (stations.Count > 0)
+            return Results.Conflict(new ErrorResponse(
+                $"Stations {string.Join(", ", stations)} release to printer \"{id}\". Move them to another printer or remove them first."));
+        if (!store.Delete(id))
+            return Results.NotFound(new ErrorResponse($"No printer \"{id}\"."));
+        printers.Forget(id);
+        return Results.NoContent();
+    }
+
+    private static IResult CreateQueue(CreateQueueRequest request, QueueStore queues)
+    {
+        var id = request.Id?.Trim();
+        if (!Ids.IsValid(id))
+            return Results.BadRequest(new ErrorResponse($"Queue id must be {Ids.Rule}. It becomes part of the URL clients print to."));
+        if (Clean(request.Name) is not { } name)
+            return Results.BadRequest(new ErrorResponse("Queue name is required. It's the printer name users see in Windows."));
+        if (queues.Get(id!) is not null)
+            return Results.Conflict(new ErrorResponse($"Queue \"{id}\" already exists."));
+
+        var queue = queues.Create(new QueueRecord(id!, name, Clean(request.Description) ?? QueueRecord.DefaultDescription,
+            Clean(request.Location) ?? "", request.Color ?? false, request.Duplex ?? false, Clean(request.DefaultMedia) ?? QueueRecord.Letter));
+        return Results.Ok(ToAdminDto(queue));
+    }
+
+    private static IResult UpdateQueue(string id, UpdateQueueRequest request, QueueStore queues)
+    {
+        if (queues.Get(id) is not { } queue)
+            return Results.NotFound(new ErrorResponse($"No queue \"{id}\"."));
+        queue = queues.Update(queue with
+        {
+            Name = Clean(request.Name) ?? queue.Name,
+            Description = request.Description?.Trim() ?? queue.Description,
+            Location = request.Location?.Trim() ?? queue.Location,
+            Color = request.Color ?? queue.Color,
+            Duplex = request.Duplex ?? queue.Duplex,
+            DefaultMedia = Clean(request.DefaultMedia) ?? queue.DefaultMedia,
+        })!;
+        return Results.Ok(ToAdminDto(queue));
+    }
+
+    private static QueueAdminDto ToAdminDto(QueueRecord q) =>
+        new(q.Id, q.Name, q.Description, q.Location, q.Color, q.Duplex, q.DefaultMedia, $"/ipp/{q.Id}");
+
+    private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private static IResult CreateBadge(CreateBadgeRequest request, UserStore users, BadgeStore badges, UnknownTaps unknownTaps)
     {
@@ -64,17 +158,26 @@ public static class AdminApi
     private static IResult CreateStation(CreateStationRequest request, StationStore stations, PrinterRegistry printers)
     {
         var id = request.Id?.Trim();
-        if (string.IsNullOrEmpty(id) || !id.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_'))
-            return Results.BadRequest(new ErrorResponse("Station id must be letters, digits, '-' or '_'."));
+        if (!Ids.IsValid(id))
+            return Results.BadRequest(new ErrorResponse($"Station id must be {Ids.Rule}."));
         var printer = printers.Find(request.PrinterId ?? "");
         if (printer is null)
-            return Results.NotFound(new ErrorResponse($"Unknown printer \"{request.PrinterId}\". It must be a [[printers]] id from server.toml."));
-        if (stations.Get(id) is not null)
+            return Results.NotFound(new ErrorResponse($"Unknown printer \"{request.PrinterId}\". See `tapqueue-admin printers`."));
+        if (stations.Get(id!) is not null)
             return Results.Conflict(new ErrorResponse($"Station \"{id}\" already exists."));
 
         var token = Tokens.New();
-        var station = stations.Create(id, printer.Id, Tokens.Hash(token));
+        var station = stations.Create(id!, printer.Id, Tokens.Hash(token));
         return Results.Ok(new StationTokenResponse(station.ToDto(), token));
+    }
+
+    private static IResult UpdateStation(string id, UpdateStationRequest request, StationStore stations, PrinterRegistry printers)
+    {
+        if (stations.Get(id) is null)
+            return Results.NotFound(new ErrorResponse($"No station \"{id}\"."));
+        if (printers.Find(request.PrinterId ?? "") is not { } printer)
+            return Results.NotFound(new ErrorResponse($"Unknown printer \"{request.PrinterId}\". See `tapqueue-admin printers`."));
+        return Results.Ok(stations.SetPrinter(id, printer.Id)!.ToDto());
     }
 
     private static IResult ResetStationToken(string id, StationStore stations)

@@ -1,4 +1,3 @@
-using TapQueue.Server.Config;
 using TapQueue.Server.Data;
 using TapQueue.Server.Ipp;
 using TapQueue.Server.Printers;
@@ -12,7 +11,7 @@ public sealed class ReleaseService(JobStore jobs, Spool spool, PrinterRegistry p
     private static readonly TimeSpan BusyTimeout = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan BusyRetryDelay = TimeSpan.FromSeconds(3);
 
-    public async Task<ReleaseResponse> ReleaseAsync(UserRecord user, PrinterConfig printer, IReadOnlyList<long>? jobIds, CancellationToken ct)
+    public async Task<ReleaseResponse> ReleaseAsync(UserRecord user, PrinterRecord printer, IReadOnlyList<long>? jobIds, CancellationToken ct)
     {
         var held = jobs.ListForUser(user.Id, heldOnly: true);
         var toRelease = jobIds is null ? held : held.Where(j => jobIds.Contains(j.Id)).ToList();
@@ -30,7 +29,7 @@ public sealed class ReleaseService(JobStore jobs, Spool spool, PrinterRegistry p
         return new ReleaseResponse(results);
     }
 
-    private async Task<ReleaseResult> ReleaseOneAsync(UserRecord user, JobRecord job, PrinterConfig printer, CancellationToken ct)
+    private async Task<ReleaseResult> ReleaseOneAsync(UserRecord user, JobRecord job, PrinterRecord printer, CancellationToken ct)
     {
         if (!jobs.TryTransition(job.Id, JobStatus.Held, JobStatus.Releasing))
             return new ReleaseResult(job.Id, job.Name, false, "Job is no longer held.");
@@ -39,7 +38,7 @@ public sealed class ReleaseService(JobStore jobs, Spool spool, PrinterRegistry p
         {
             var formats = printers.StatusOf(printer.Id)?.DocumentFormats ?? [];
             if (formats.Count > 0 && !formats.Contains(job.DocumentFormat, StringComparer.OrdinalIgnoreCase))
-                throw new InvalidOperationException($"{PrinterRegistry.DisplayName(printer)} can't print {job.DocumentFormat} documents.");
+                throw new InvalidOperationException($"{printer.Name} can't print {job.DocumentFormat} documents.");
 
             var request = IppMessage.CreateRequest(IppOperation.PrintJob, IppClient.NextRequestId(), printer.Uri);
             request.Group(IppTag.OperationAttributes)

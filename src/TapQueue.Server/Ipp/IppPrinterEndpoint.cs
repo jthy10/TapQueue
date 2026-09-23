@@ -10,6 +10,7 @@ namespace TapQueue.Server.Ipp;
 /// </summary>
 public sealed class IppPrinterEndpoint(
     ServerConfig config,
+    QueueStore queues,
     JobStore jobs,
     Spool spool,
     JobOwnerResolver owners,
@@ -17,7 +18,7 @@ public sealed class IppPrinterEndpoint(
 {
     public async Task HandleAsync(HttpContext http, string queueId)
     {
-        var queue = config.Queues.FirstOrDefault(q => string.Equals(q.Id, queueId, StringComparison.OrdinalIgnoreCase));
+        var queue = queues.Get(queueId);
         if (queue is null)
         {
             http.Response.StatusCode = StatusCodes.Status404NotFound;
@@ -343,7 +344,7 @@ public sealed class IppPrinterEndpoint(
 
     private static bool IsTerminal(JobRecord job) => job.Status != JobStatus.Receiving;
 
-    private sealed record RequestContext(HttpContext Http, QueueConfig Queue, IppMessage Request, Stream Body, string PrinterUri)
+    private sealed record RequestContext(HttpContext Http, QueueRecord Queue, IppMessage Request, Stream Body, string PrinterUri)
     {
         public string ClientIp { get; } = Http.ClientIp();
     }

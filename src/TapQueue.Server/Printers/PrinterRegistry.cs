@@ -1,5 +1,5 @@
 using System.Collections.Concurrent;
-using TapQueue.Server.Config;
+using TapQueue.Server.Data;
 using TapQueue.Server.Ipp;
 using TapQueue.Shared.Api;
 
@@ -12,28 +12,31 @@ public sealed record PrinterStatus(
     IReadOnlyList<string> DocumentFormats,
     DateTimeOffset CheckedAt);
 
-/// <summary>The physical printers from config, plus the last status we got from each one.</summary>
-public sealed class PrinterRegistry(ServerConfig config, ILogger<PrinterRegistry> logger)
+/// <summary>The physical printers, plus the last status we got from each one.</summary>
+public sealed class PrinterRegistry(PrinterStore store, ILogger<PrinterRegistry> logger)
 {
-    private readonly ConcurrentDictionary<string, PrinterStatus> _status = new();
+    private readonly ConcurrentDictionary<string, PrinterStatus> _status = new(StringComparer.OrdinalIgnoreCase);
 
-    public IReadOnlyList<PrinterConfig> All => config.Printers;
+    public List<PrinterRecord> All => store.List();
 
-    public PrinterConfig? Find(string id) =>
-        config.Printers.FirstOrDefault(p => string.Equals(p.Id, id, StringComparison.OrdinalIgnoreCase));
+    public PrinterRecord? Find(string id) => store.Get(id);
 
     public PrinterStatus? StatusOf(string id) => _status.GetValueOrDefault(id);
 
-    public PrinterDto ToDto(PrinterConfig printer)
+    /// <summary>Drops what we knew about a printer that was removed or pointed somewhere else.</summary>
+    public void Forget(string id) => _status.TryRemove(id, out _);
+
+    public PrinterDto ToDto(PrinterRecord printer)
     {
         var status = StatusOf(printer.Id);
-        return new PrinterDto(printer.Id, DisplayName(printer), printer.Location, status?.Online ?? false,
+        return new PrinterDto(printer.Id, printer.Name, printer.Location, status?.Online ?? false,
             status?.MakeAndModel, status?.StateMessage);
     }
 
-    public static string DisplayName(PrinterConfig printer) => string.IsNullOrWhiteSpace(printer.Name) ? printer.Id : printer.Name;
+    public PrinterAdminDto ToAdminDto(PrinterRecord printer) =>
+        new(ToDto(printer), printer.Uri, printer.TlsSkipVerify, StatusOf(printer.Id)?.CheckedAt);
 
-    public async Task<PrinterStatus> ProbeAsync(PrinterConfig printer, CancellationToken ct)
+    public async Task<PrinterStatus> ProbeAsync(PrinterRecord printer, CancellationToken ct)
     {
         using var client = new IppClient(printer.TlsSkipVerify, TimeSpan.FromSeconds(15));
         var request = IppMessage.CreateRequest(IppOperation.GetPrinterAttributes, IppClient.NextRequestId(), printer.Uri);

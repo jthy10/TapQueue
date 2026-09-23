@@ -17,7 +17,7 @@ public static class StationApi
             var current = CurrentStation(http);
             return printers.Find(current.PrinterId) is { } printer
                 ? Results.Ok(new StationInfoResponse(current.Id, printers.ToDto(printer)))
-                : Results.Conflict(new ErrorResponse($"Station \"{current.Id}\" is assigned to printer \"{current.PrinterId}\", which isn't in server.toml."));
+                : Results.Conflict(new ErrorResponse($"Station \"{current.Id}\" is assigned to printer \"{current.PrinterId}\", which doesn't exist."));
         });
         station.MapPost("/tap", Tap);
     }
@@ -33,7 +33,7 @@ public static class StationApi
 
         var printer = printers.Find(station.PrinterId);
         if (printer is null)
-            return Results.Conflict(new ErrorResponse($"Station \"{station.Id}\" is assigned to printer \"{station.PrinterId}\", which isn't in server.toml."));
+            return Results.Conflict(new ErrorResponse($"Station \"{station.Id}\" is assigned to printer \"{station.PrinterId}\", which doesn't exist."));
 
         var badge = badges.Use(card);
         var user = badge is null ? null : users.FindById(badge.UserId);

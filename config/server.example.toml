@@ -23,20 +23,8 @@ token = "change-me"
 # Held jobs not released within this many hours are deleted.
 hold_hours = 24
 
-# A queue is a printer users see in Windows. Jobs sent to it are held until released.
-[[queues]]
-id = "secure"                          # part of the URL: ipp://<server>:8631/ipp/secure
-name = "TapQueue Secure Print"         # the name shown in the Windows print dialog
-description = "Tap your badge at any TapQueue printer to release your print."
-location = ""
-color = false
-duplex = false
-default_media = "na_letter_8.5x11in"   # or iso_a4_210x297mm
-
-# A physical printer that held jobs can be released to.
-[[printers]]
-id = "office"
-name = "Office printer"
-location = ""
-uri = "ipp://192.0.2.10/ipp/print"     # most network printers: ipp://<ip>/ipp/print
-tls_skip_verify = true                 # only matters for ipps:// (printers use self-signed certs)
+# Queues (the printer users see in Windows) and printers (where held jobs are released) are
+# stored in the database. Add them once the server is running:
+#
+#   tapqueue-admin queues add secure --name "TapQueue Secure Print"
+#   tapqueue-admin printers add office ipp://192.0.2.10/ipp/print --name "Office printer"

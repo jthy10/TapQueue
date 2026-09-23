@@ -29,6 +29,9 @@ public sealed class StationStore(Database database)
             RETURNING {Columns}
             """, Map, ("$id", id), ("$p", printerId), ("$t", tokenHash), ("$now", DateTimeOffset.UtcNow))!;
 
+    public StationRecord? SetPrinter(string id, string printerId) =>
+        database.QueryOne($"UPDATE stations SET printer_id = $p WHERE id = $id RETURNING {Columns}", Map, ("$p", printerId), ("$id", id));
+
     public void SetTokenHash(string id, string tokenHash) =>
         database.Execute("UPDATE stations SET token_hash = $t WHERE id = $id", ("$t", tokenHash), ("$id", id));
 

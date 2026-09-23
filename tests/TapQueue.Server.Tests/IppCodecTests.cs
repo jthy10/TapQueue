@@ -1,4 +1,4 @@
-using TapQueue.Server.Config;
+using TapQueue.Server.Data;
 using TapQueue.Server.Ipp;
 
 namespace TapQueue.Server.Tests;
@@ -73,7 +73,7 @@ public class IppCodecTests
     [Fact]
     public void QueueAdvertisesItsNameAndIppEverywhereBasics()
     {
-        var queue = new QueueConfig { Id = "secure", Name = "TapQueue Secure Print" };
+        var queue = new QueueRecord("secure", "TapQueue Secure Print", QueueRecord.DefaultDescription, "", false, false, QueueRecord.Letter);
         var attrs = QueueAttributes.Build(queue, "ipp://server:8631/ipp/secure", "http://server:8631", 10, 0, requested: null);
 
         Assert.Equal("TapQueue Secure Print", attrs.Find("printer-name")!.First!.Value.AsString());
@@ -94,7 +94,7 @@ public class IppCodecTests
     [Fact]
     public void RequestedAttributesFilterTheResponse()
     {
-        var queue = new QueueConfig { Id = "secure", Name = "Q" };
+        var queue = new QueueRecord("secure", "Q", "", "", false, false, QueueRecord.Letter);
         var attrs = QueueAttributes.Build(queue, "ipp://s/ipp/secure", "http://s", 1, 0, ["printer-name", "printer-state"]);
         Assert.Equal(["printer-name", "printer-state"], attrs.Attributes.Select(a => a.Name).Order());
     }

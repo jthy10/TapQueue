@@ -1,5 +1,6 @@
 using TapQueue.Server;
 using TapQueue.Server.Config;
+using TapQueue.Server.Data;
 using TapQueue.Shared;
 
 var configPath = ConfigPath(args);
@@ -7,6 +8,7 @@ ServerConfig config;
 try
 {
     config = TomlConfig.Load<ServerConfig>(configPath);
+    ServerConfig.RejectRemovedSections(File.ReadAllText(configPath));
     config.Validate();
 }
 catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
@@ -18,8 +20,13 @@ catch (Exception ex) when (ex is IOException or InvalidDataException or Unauthor
 var app = ServerApp.Build(config, args);
 
 app.Logger.LogInformation("Config: {Path} | auth mode: {Mode} | data: {DataDir}", configPath, config.Auth.Mode, config.Server.DataDir);
-foreach (var queue in config.Queues)
+var queues = app.Services.GetRequiredService<QueueStore>().List();
+foreach (var queue in queues)
     app.Logger.LogInformation("Queue \"{Name}\" at ipp://<this-host>:{Port}/ipp/{Id}", queue.Name, ServerApp.ParseEndpoint(config.Server.Listen).Port, queue.Id);
+if (queues.Count == 0)
+    app.Logger.LogWarning("No queues yet, so there's nothing to print to. Add one with: tapqueue-admin queues add <id> --name \"TapQueue Secure Print\"");
+if (app.Services.GetRequiredService<PrinterStore>().List().Count == 0)
+    app.Logger.LogWarning("No printers yet, so held jobs can't be released. Add one with: tapqueue-admin printers add <id> ipp://<printer-ip>/ipp/print");
 if (config.Auth.Mode == "dev")
     app.Logger.LogWarning("auth.mode = \"dev\": anyone can sign in as any username. Use \"token\" outside of testing.");
 

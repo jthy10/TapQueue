@@ -25,7 +25,7 @@ public static class ClientApi
     }
 
     private static IResult CreateSession(ClientSessionRequest request, HttpContext http, ServerConfig config,
-        UserStore users, SessionStore sessions, PrinterRegistry printers, ILoggerFactory loggers)
+        UserStore users, SessionStore sessions, QueueStore queues, PrinterRegistry printers, ILoggerFactory loggers)
     {
         var logger = loggers.CreateLogger("TapQueue.Server.Api.ClientApi");
         var username = request.Username?.Trim();
@@ -52,7 +52,7 @@ public static class ClientApi
         return Results.Ok(new ClientSessionResponse(
             token,
             user.ToDto(),
-            config.Queues.Select(q => new QueueDto(q.Id, q.Name, q.Description, $"/ipp/{q.Id}")).ToList(),
+            queues.List().Select(q => new QueueDto(q.Id, q.Name, q.Description, $"/ipp/{q.Id}")).ToList(),
             printers.All.Select(printers.ToDto).ToList(),
             HeartbeatSeconds));
     }

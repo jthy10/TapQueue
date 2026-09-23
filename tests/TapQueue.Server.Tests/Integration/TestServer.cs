@@ -45,13 +45,15 @@ public sealed class TestServer : IAsyncDisposable
             Server = { Listen = "127.0.0.1:0", DataDir = dataDir },
             Auth = { Mode = authMode },
             Admin = { Token = AdminToken },
-            Queues = [new QueueConfig { Id = QueueId, Name = "Test Secure Print" }],
-            Printers = [new PrinterConfig { Id = PrinterId, Name = "Office printer", Uri = printer.Uri }],
         };
         var app = ServerApp.Build(config);
-        app.Logger.LogInformation("Test server data in {Dir}", dataDir);
         await app.StartAsync();
-        return new TestServer(app, dataDir, printer);
+        var server = new TestServer(app, dataDir, printer);
+        await ReadAsync<QueueAdminDto>(await server.Admin.PostAsJsonAsync("/api/v1/admin/queues",
+            new CreateQueueRequest(QueueId, "Test Secure Print"), TapQueueJson.Options));
+        await ReadAsync<PrinterAdminDto>(await server.Admin.PostAsJsonAsync("/api/v1/admin/printers",
+            new CreatePrinterRequest(PrinterId, printer.Uri, "Office printer"), TapQueueJson.Options));
+        return server;
     }
 
     public T Service<T>() where T : notnull => _app.Services.GetRequiredService<T>();

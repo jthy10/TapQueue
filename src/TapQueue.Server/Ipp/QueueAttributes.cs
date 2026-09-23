@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
-using TapQueue.Server.Config;
+using TapQueue.Server.Data;
 
 namespace TapQueue.Server.Ipp;
 
@@ -36,7 +36,7 @@ public static class QueueAttributes
     private static readonly HashSet<string> GroupKeywords = ["all", "printer-description", "job-template"];
 
     /// <param name="httpBaseUrl">The server's http:// address as the client sees it, e.g. http://192.0.2.1:8631</param>
-    public static IppGroup Build(QueueConfig queue, string printerUri, string httpBaseUrl, int upTimeSeconds, int queuedJobCount, IReadOnlyCollection<string>? requested)
+    public static IppGroup Build(QueueRecord queue, string printerUri, string httpBaseUrl, int upTimeSeconds, int queuedJobCount, IReadOnlyCollection<string>? requested)
     {
         var all = new IppGroup(IppTag.PrinterAttributes);
         var keywords = (IEnumerable<string> values) => values.Select(IppValue.Keyword);
