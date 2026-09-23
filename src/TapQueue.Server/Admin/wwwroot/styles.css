@@ -184,7 +184,7 @@ tbody tr.clickable { cursor: pointer; }
 tbody tr.clickable:hover td { background: var(--surface-2); }
 tbody tr.selected td { background: var(--accent-weak); }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-td .sub { display: block; color: var(--muted); font-size: 12.5px; }
+.sub { display: block; color: var(--muted); font-size: 12.5px; }
 .cell-strong { font-weight: 500; }
 
 .empty { padding: 40px 16px; text-align: center; color: var(--muted); }
