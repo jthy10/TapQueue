@@ -12,6 +12,14 @@ const string Usage = """
       tapqueue-admin users add <username> [--name "Display Name"]
                                                      Create a user and print their client token
       tapqueue-admin users reset-token <username>    Issue a new client token (the old one stops working)
+      tapqueue-admin users quota <username>          Their page limits and how much they've used
+      tapqueue-admin users quota <username> <pages> day|week|month
+                                                     Give a user their own page limit (overrides their groups')
+      tapqueue-admin users quota <username> none     Remove it, so their groups' limits apply
+      tapqueue-admin groups quota <group-id> <pages> day|week|month
+                                                     Limit a group's members (the most generous group counts)
+      tapqueue-admin groups quota <group-id> none    Remove a group's limit
+      tapqueue-admin quotas                          Everyone with a page limit and how much of it they've used
       tapqueue-admin jobs [--status held|released|expired|canceled]
                                                      List recent jobs
       tapqueue-admin printers [--refresh]            List printers and whether they're reachable
@@ -61,6 +69,9 @@ const string Usage = """
       tapqueue-admin server                          Settings (and whether each is set here or in server.toml)
       tapqueue-admin server set hold-hours|session-timeout <number|default>
                                                      Change a setting now, or go back to server.toml's
+      tapqueue-admin server set quota-overrun allow|deny|default
+                                                     allow (default): a job prints in full if they're under their
+                                                     page limit when it starts; deny: only jobs that fit
       tapqueue-admin server log [--follow]           The server's recent log lines, and new ones with --follow
       tapqueue-admin server restart                  Restart tapqueue-server (only when systemd runs it)
 
@@ -122,6 +133,10 @@ try
         ("users", null) => await ListUsers(),
         ("users", "add") when positional.Count == 3 => await AddUser(positional[2], options.GetValueOrDefault("--name")),
         ("users", "reset-token") when positional.Count == 3 => await ResetToken(positional[2]),
+        ("users", "quota") when positional.Count == 3 => await ShowUserQuota(positional[2]),
+        ("users", "quota") when positional.Count is 4 or 5 => await SetQuota("users", positional[2], positional.Skip(3).ToList()),
+        ("groups", "quota") when positional.Count is 4 or 5 => await SetQuota("groups", positional[2], positional.Skip(3).ToList()),
+        ("quotas", null) => await ListQuotas(),
         ("jobs", null) => await ListJobs(options.GetValueOrDefault("--status")),
         ("printers", null) => await ListPrinters(options.ContainsKey("--refresh")),
         ("printers", "add") when positional.Count == 4 => await AddPrinter(positional[2], positional[3]),
@@ -216,11 +231,64 @@ async Task<int> ListJobs(string? status)
 {
     var jobs = await Get<List<JobDto>>(status is null ? "jobs" : $"jobs?status={Uri.EscapeDataString(status)}");
     if (jobs is null) return 1;
-    Table(["ID", "OWNER", "STATUS", "NAME", "SIZE", "SUBMITTED", "PRINTER"], jobs.Select(j => new[]
+    Table(["ID", "OWNER", "STATUS", "NAME", "PAGES", "SIZE", "SUBMITTED", "PRINTER"], jobs.Select(j => new[]
     {
-        j.Id.ToString(), j.Owner ?? $"unowned ({j.ClaimedUser ?? "?"})", j.Status, Truncate(j.Name, 40), FormatSize(j.SizeBytes),
+        j.Id.ToString(), j.Owner ?? $"unowned ({j.ClaimedUser ?? "?"})", j.Status, Truncate(j.Name, 40),
+        (j.Pages?.ToString() ?? "?") + (j.Copies > 1 ? $" x{j.Copies}" : ""), FormatSize(j.SizeBytes),
         j.SubmittedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"), j.ReleasedPrinterId ?? "",
     }));
+    return 0;
+}
+
+async Task<int> ShowUserQuota(string username)
+{
+    var quota = await Get<UserQuotaDto>($"users/{Uri.EscapeDataString(username)}/quota");
+    if (quota is null) return 1;
+    if (quota.Applies.Count == 0)
+    {
+        Console.WriteLine($"{quota.Username} has no page limit.");
+        return 0;
+    }
+    PrintQuotaUsage([quota]);
+    if (quota.Applies.Count > 1)
+        Console.WriteLine("A job prints if any of these limits allows it.");
+    return 0;
+}
+
+async Task<int> ListQuotas()
+{
+    var quotas = await Get<List<UserQuotaDto>>("quotas");
+    if (quotas is null) return 1;
+    PrintQuotaUsage(quotas);
+    return 0;
+}
+
+static void PrintQuotaUsage(List<UserQuotaDto> quotas) =>
+    Table(["USER", "LIMIT", "FROM", "USED", "LEFT", "STARTS OVER"], quotas.SelectMany(q => q.Applies.Select(a => new[]
+    {
+        q.Username, $"{a.Pages} per {a.Period}", a.Source == "user" ? "user" : a.Source["group:".Length..],
+        a.Used.ToString(), a.Remaining.ToString(), a.ResetsAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"),
+    })));
+
+async Task<int> SetQuota(string kind, string id, List<string> args)
+{
+    var path = $"{kind}/{Uri.EscapeDataString(id)}/quota";
+    var who = kind == "users" ? id : $"group {id}";
+    if (args is ["none"])
+        return await Delete(path, $"Removed the page limit on {who}.");
+    if (args.Count != 2 || !int.TryParse(args[0], out var pages) || !QuotaPeriod.All.Contains(args[1]))
+    {
+        Console.Error.WriteLine($"Give a number of pages and day, week or month, e.g. `tapqueue-admin {kind} quota {id} 100 month`, or none.");
+        return 2;
+    }
+    var body = new QuotaDto(pages, args[1]);
+    if (kind == "users")
+    {
+        if (await Send<UserQuotaDto>(HttpMethod.Put, path, body) is null) return 1;
+        return await ShowUserQuota(id);
+    }
+    if (await Send<GroupDto>(HttpMethod.Put, path, body) is null) return 1;
+    Console.WriteLine($"Members of {who} may print {Plural(pages, "page")} a {args[1]} (a user's own limit overrides it).");
     return 0;
 }
 
@@ -467,17 +535,30 @@ async Task<int> ShowServer()
     Console.WriteLine($"tapqueue-server {server.Version}, up since {server.StartedAt.ToLocalTime():yyyy-MM-dd HH:mm}, schema {server.SchemaVersion}");
     Console.WriteLine($"hold-hours       {server.HoldHours,-6} ({Source("holdHours")})");
     Console.WriteLine($"session-timeout  {server.SessionTimeoutMinutes,-6} minutes ({Source("sessionTimeoutMinutes")})");
+    Console.WriteLine($"quota-overrun    {server.QuotaOverrun,-6} ({(server.ChangedSettings?.Contains("quotaOverrun") == true ? "set here" : "default")})");
     Console.WriteLine($"auth.mode        {server.AuthMode,-6} (server.toml; restart to change)");
     return 0;
 }
 
 async Task<int> SetServerSetting(string name, string value)
 {
-    var key = name switch { "hold-hours" => "holdHours", "session-timeout" => "sessionTimeoutMinutes", _ => null };
+    var key = name switch
+    {
+        "hold-hours" => "holdHours",
+        "session-timeout" => "sessionTimeoutMinutes",
+        "quota-overrun" => "quotaOverrun",
+        _ => null,
+    };
     if (key is null)
     {
-        Console.Error.WriteLine("Settings are hold-hours and session-timeout.");
+        Console.Error.WriteLine("Settings are hold-hours, session-timeout and quota-overrun.");
         return 2;
+    }
+    if (key == "quotaOverrun")
+    {
+        var overrun = value == "default" ? new UpdateServerSettingsRequest(Reset: [key]) : new UpdateServerSettingsRequest(QuotaOverrun: value);
+        if (await Send<ServerInfoDto>(HttpMethod.Patch, "server/settings", overrun) is null) return 1;
+        return await ShowServer();
     }
     int? number = value == "default" ? null : int.Parse(value);
     var request = number is null ? new UpdateServerSettingsRequest(Reset: [key])
