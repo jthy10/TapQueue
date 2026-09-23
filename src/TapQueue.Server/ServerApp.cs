@@ -1,4 +1,5 @@
 using System.Net;
+using TapQueue.Server.Admin;
 using TapQueue.Server.Api;
 using TapQueue.Server.Config;
 using TapQueue.Server.Data;
@@ -59,6 +60,7 @@ public static class ServerApp
         app.MapClientApi();
         app.MapAdminApi();
         app.MapStationApi();
+        app.MapAdminUi();
         return app;
     }
 

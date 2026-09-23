@@ -1,22 +1,32 @@
+using TapQueue.Server.Admin;
 using TapQueue.Server.Config;
 using TapQueue.Server.Data;
 using TapQueue.Server.Jobs;
+using TapQueue.Server.Ipp;
 using TapQueue.Server.Printers;
+using TapQueue.Shared;
 using TapQueue.Shared.Api;
 
 namespace TapQueue.Server.Api;
 
-/// <summary>Endpoints used by tapqueue-admin. Authenticated with admin.token from server.toml.</summary>
+/// <summary>
+/// Endpoints used by tapqueue-admin and the admin console. Authenticated with admin.token from server.toml,
+/// except in dev mode, where the console (which has no sign-in yet) calls them without it.
+/// </summary>
 public static class AdminApi
 {
     public static void MapAdminApi(this IEndpointRouteBuilder app)
     {
         var admin = app.MapGroup("/api/v1/admin").AddEndpointFilter(RequireAdmin);
 
+        admin.MapGet("/server", ServerInfo);
         admin.MapGet("/users", (UserStore users) => users.List().Select(u => u.ToDto()));
         admin.MapPost("/users", CreateUser);
         admin.MapPost("/users/{username}/token", ResetToken);
         admin.MapGet("/jobs", (JobStore jobs, string? status) => jobs.List(status).Select(j => j.ToDto()));
+        admin.MapGet("/jobs/{id:long}", (long id, JobStore jobs) =>
+            jobs.Get(id) is { } job ? Results.Ok(job.ToDto()) : Results.NotFound(new ErrorResponse($"No job {id}.")));
+        admin.MapDelete("/jobs/{id:long}", CancelJob);
         admin.MapGet("/printers", async (PrinterRegistry printers, bool? refresh, CancellationToken ct) =>
         {
             var all = printers.All;
@@ -61,6 +71,10 @@ public static class AdminApi
             sessions.ListActive(TimeSpan.FromMinutes(config.Auth.SessionTimeoutMinutes)));
     }
 
+    private static ServerInfoDto ServerInfo(ServerConfig config, Database database, JobStore jobs) => new(
+        TapQueueVersion.Current, ServerClock.StartedAt, config.Auth.Mode, config.Server.Listen, config.Server.DataDir,
+        database.SchemaVersion(), config.Jobs.HoldHours, config.Auth.SessionTimeoutMinutes, jobs.CountHeld());
+
     /// <summary>The request body is TapQueueClient.exe. Clients start installing it on their next heartbeat.</summary>
     private static async Task<IResult> PublishClientBuild(HttpContext http, string? version, ClientBuildStore builds, ILoggerFactory loggers)
     {
@@ -80,6 +94,17 @@ public static class AdminApi
             "Published Windows client {Version} ({Size} bytes, sha256 {Sha256}); clients will update on their next heartbeat",
             build.Version, build.SizeBytes, build.Sha256);
         return Results.Ok(build.ToDto());
+    }
+
+    private static IResult CancelJob(long id, JobStore jobs, Spool spool, ILoggerFactory loggers)
+    {
+        if (jobs.Get(id) is not { } job)
+            return Results.NotFound(new ErrorResponse($"No job {id}."));
+        if (!jobs.TryTransition(id, JobStatus.Held, JobStatus.Canceled))
+            return Results.Conflict(new ErrorResponse($"Job {id} is {job.Status}, not held, so it can't be canceled."));
+        spool.Delete(id);
+        loggers.CreateLogger("TapQueue.Server.Api.AdminApi").LogInformation("Admin canceled job {Id} ({Name}) of {User}", id, job.Name, job.Username ?? "nobody");
+        return Results.NoContent();
     }
 
     private static async Task<IResult> CreatePrinter(CreatePrinterRequest request, PrinterStore store, PrinterRegistry printers, CancellationToken ct)
@@ -255,9 +280,11 @@ public static class AdminApi
     private static async ValueTask<object?> RequireAdmin(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
         var http = context.HttpContext;
-        var expected = http.RequestServices.GetRequiredService<ServerConfig>().Admin.Token;
+        var config = http.RequestServices.GetRequiredService<ServerConfig>();
         var token = ClientApi.BearerToken(http);
-        if (token is null || !Tokens.FixedTimeEquals(token, expected))
+        if (AdminUi.IsEnabled(config) && token is null)
+            return await next(context);
+        if (token is null || !Tokens.FixedTimeEquals(token, config.Admin.Token))
             return Results.Json(new ErrorResponse("Admin token required."), statusCode: StatusCodes.Status401Unauthorized);
         return await next(context);
     }

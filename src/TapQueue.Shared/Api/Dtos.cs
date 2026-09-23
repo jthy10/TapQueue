@@ -1,5 +1,17 @@
 namespace TapQueue.Shared.Api;
 
+/// <summary>The server itself, for `tapqueue-admin status` and the admin console.</summary>
+public sealed record ServerInfoDto(
+    string Version,
+    DateTimeOffset StartedAt,
+    string AuthMode,
+    string Listen,
+    string DataDir,
+    int SchemaVersion,
+    int HoldHours,
+    int SessionTimeoutMinutes,
+    int HeldJobs);
+
 public sealed record UserDto(long Id, string Username, string DisplayName);
 
 public sealed record QueueDto(string Id, string Name, string Description, string IppPath);

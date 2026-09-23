@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TapQueue Admin</title>
+  <base href="/admin/">
+  <link rel="icon" href="/icons/48.png">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <div class="dev-banner">Development mode: this console has no sign-in, and anyone on the network can use it. Set <code>auth.mode = "token"</code> to turn it off.</div>
+  <div class="shell">
+    <nav class="sidebar" aria-label="Main">
+      <a class="brand" href="overview">
+        <img src="/icons/128.png" alt="">
+        <div><b>TapQueue</b><span>Admin console</span></div>
+      </a>
+      <div id="nav"></div>
+      <div class="sidebar-foot" id="server-version"></div>
+    </nav>
+    <main class="main"><div class="page" id="page"></div></main>
+  </div>
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+</body>
+</html>
