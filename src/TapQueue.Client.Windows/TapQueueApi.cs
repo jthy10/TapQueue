@@ -23,7 +23,7 @@ public sealed class TapQueueApi(ClientConfig config) : IDisposable
             string.IsNullOrWhiteSpace(config.Token) ? null : config.Token.Trim(),
             Environment.UserName,
             Environment.MachineName,
-            typeof(TapQueueApi).Assembly.GetName().Version?.ToString(3));
+            TapQueueVersion.Current);
 
         using var response = await _http.PostAsJsonAsync("api/v1/client/session", request, TapQueueJson.Options, ct);
         await EnsureSuccessAsync(response, ct);

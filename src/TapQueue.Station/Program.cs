@@ -19,6 +19,11 @@ if (args.Contains("-h") || args.Contains("--help"))
     Console.WriteLine(Usage);
     return 0;
 }
+if (args.Contains("--version"))
+{
+    Console.WriteLine($"tapqueue-station {TapQueueVersion.Current}");
+    return 0;
+}
 if (args.Contains("--list-devices"))
     return ListDevices();
 
@@ -61,6 +66,7 @@ try
     using var http = new HttpClient { BaseAddress = new Uri(config.ServerUrl.TrimEnd('/') + "/api/v1/station/"), Timeout = TimeSpan.FromMinutes(2) };
     http.DefaultRequestHeaders.Authorization = new("Bearer", config.Token);
 
+    Log($"tapqueue-station {TapQueueVersion.Current}, server {config.ServerUrl}");
     await CheckInAsync(http, cts.Token);
 
     string? lastCard = null;

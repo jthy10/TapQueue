@@ -3,6 +3,12 @@ using TapQueue.Server.Config;
 using TapQueue.Server.Data;
 using TapQueue.Shared;
 
+if (args.Contains("--version"))
+{
+    Console.WriteLine($"tapqueue-server {TapQueueVersion.Current}");
+    return 0;
+}
+
 var configPath = ConfigPath(args);
 ServerConfig config;
 try
@@ -19,7 +25,8 @@ catch (Exception ex) when (ex is IOException or InvalidDataException or Unauthor
 
 var app = ServerApp.Build(config, args);
 
-app.Logger.LogInformation("Config: {Path} | auth mode: {Mode} | data: {DataDir}", configPath, config.Auth.Mode, config.Server.DataDir);
+app.Logger.LogInformation("TapQueue server {Version} | config: {Path} | auth mode: {Mode} | data: {DataDir}",
+    TapQueueVersion.Current, configPath, config.Auth.Mode, config.Server.DataDir);
 var queues = app.Services.GetRequiredService<QueueStore>().List();
 foreach (var queue in queues)
     app.Logger.LogInformation("Queue \"{Name}\" at ipp://<this-host>:{Port}/ipp/{Id}", queue.Name, ServerApp.ParseEndpoint(config.Server.Listen).Port, queue.Id);

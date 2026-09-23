@@ -1,3 +1,4 @@
+using TapQueue.Shared;
 using TapQueue.Shared.Api;
 using Timer = System.Windows.Forms.Timer;
 
@@ -228,6 +229,8 @@ public sealed class TrayApp : ApplicationContext
         });
         if (!_connected)
             menu.Items.Add("Retry connection", null, async (_, _) => await ConnectAsync());
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(new ToolStripMenuItem($"TapQueue {TapQueueVersion.Current}") { Enabled = false });
         menu.Items.Add("Exit", null, (_, _) => ExitThread());
     }
 

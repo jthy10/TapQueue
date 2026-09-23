@@ -47,12 +47,12 @@ public static class ServerApp
         var app = builder.Build();
 
         app.MapPost("/ipp/{queueId}", (HttpContext http, string queueId, IppPrinterEndpoint ipp) => ipp.HandleAsync(http, queueId));
-        app.MapGet("/", () => "TapQueue server " + typeof(ServerApp).Assembly.GetName().Version?.ToString(3));
+        app.MapGet("/", () => "TapQueue server " + TapQueueVersion.Current);
         app.MapGet("/icons/{size:int}.png", (int size) =>
             typeof(ServerApp).Assembly.GetManifestResourceStream($"TapQueue.Server.Assets.icon-{size}.png") is { } png
                 ? Results.Stream(png, "image/png")
                 : Results.NotFound());
-        app.MapGet("/healthz", () => Results.Ok(new { status = "ok" }));
+        app.MapGet("/healthz", () => Results.Ok(new { status = "ok", version = TapQueueVersion.Current }));
         app.MapClientApi();
         app.MapAdminApi();
         app.MapStationApi();

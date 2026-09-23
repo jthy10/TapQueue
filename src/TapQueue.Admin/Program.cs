@@ -7,6 +7,7 @@ const string Usage = """
     tapqueue-admin — manage a TapQueue server
 
     Usage:
+      tapqueue-admin status                          Server version and a summary of what's set up
       tapqueue-admin users                           List users
       tapqueue-admin users add <username> [--name "Display Name"]
                                                      Create a user and print their client token
@@ -59,6 +60,11 @@ for (var i = 0; i < args.Length; i++)
         Console.WriteLine(Usage);
         return 0;
     }
+    if (args[i] is "--version")
+    {
+        Console.WriteLine($"tapqueue-admin {TapQueueVersion.Current}");
+        return 0;
+    }
     if (args[i].StartsWith("--"))
     {
         var takesValue = args[i] is "--server" or "--token" or "--name" or "--status" or "--uri" or "--location" or "--description" or "--media";
@@ -93,6 +99,7 @@ try
 {
     return (positional[0], positional.Count > 1 ? positional[1] : null) switch
     {
+        ("status", null) => await Status(),
         ("users", null) => await ListUsers(),
         ("users", "add") when positional.Count == 3 => await AddUser(positional[2], options.GetValueOrDefault("--name")),
         ("users", "reset-token") when positional.Count == 3 => await ResetToken(positional[2]),
@@ -130,6 +137,24 @@ catch (FormatException)
     Console.Error.WriteLine("Job and badge ids must be numbers.");
     return 2;
 }
+
+async Task<int> Status()
+{
+    using var root = new HttpClient { BaseAddress = new Uri(serverUrl.TrimEnd('/') + "/"), Timeout = TimeSpan.FromSeconds(15) };
+    var server = (await root.GetStringAsync("")).Trim();
+    var queues = await Get<List<QueueAdminDto>>("queues");
+    var printers = await Get<List<PrinterAdminDto>>("printers");
+    var stations = await Get<List<StationDto>>("stations");
+    var users = await Get<List<UserDto>>("users");
+    if (queues is null || printers is null || stations is null || users is null) return 1;
+    Console.WriteLine($"{server} at {serverUrl}");
+    Console.WriteLine($"tapqueue-admin {TapQueueVersion.Current}");
+    Console.WriteLine($"{Plural(queues.Count, "queue")}, {Plural(printers.Count, "printer")} ({printers.Count(p => p.Printer.Online)} online), " +
+        $"{Plural(stations.Count, "station")}, {Plural(users.Count, "user")}");
+    return 0;
+}
+
+static string Plural(int n, string noun) => n == 1 ? $"1 {noun}" : $"{n} {noun}s";
 
 async Task<int> ListUsers()
 {
