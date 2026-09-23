@@ -61,170 +61,78 @@ public sealed class JobStore(Database database)
 
     public JobRecord Create(NewJob job)
     {
-        using var db = database.Open();
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = """
+        var id = (long)database.Scalar("""
             INSERT INTO jobs (user_id, owner_hint, queue_id, name, document_format, copies, job_attributes, status, source_ip, submitted_at, expires_at)
             VALUES ($user, $hint, $queue, $name, $format, $copies, $attrs, $status, $ip, $now, $expires)
             RETURNING id
-            """;
-        cmd.Parameters.AddWithValue("$user", (object?)job.UserId ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("$hint", (object?)job.OwnerHint ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("$queue", job.QueueId);
-        cmd.Parameters.AddWithValue("$name", job.Name);
-        cmd.Parameters.AddWithValue("$format", job.DocumentFormat);
-        cmd.Parameters.AddWithValue("$copies", job.Copies);
-        cmd.Parameters.AddWithValue("$attrs", (object?)job.JobAttributes ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("$status", JobStatus.Receiving);
-        cmd.Parameters.AddWithValue("$ip", job.SourceIp);
-        cmd.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
-        cmd.Parameters.AddWithValue("$expires", job.ExpiresAt.ToString("O"));
-        var id = (long)cmd.ExecuteScalar()!;
+            """,
+            ("$user", job.UserId), ("$hint", job.OwnerHint), ("$queue", job.QueueId), ("$name", job.Name),
+            ("$format", job.DocumentFormat), ("$copies", job.Copies), ("$attrs", job.JobAttributes),
+            ("$status", JobStatus.Receiving), ("$ip", job.SourceIp), ("$now", DateTimeOffset.UtcNow), ("$expires", job.ExpiresAt))!;
         return Get(id)!;
     }
 
-    public JobRecord? Get(long id)
-    {
-        using var db = database.Open();
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = SelectColumns + " WHERE j.id = $id";
-        cmd.Parameters.AddWithValue("$id", id);
-        return ReadAll(cmd).FirstOrDefault();
-    }
+    public JobRecord? Get(long id) =>
+        database.QueryOne(SelectColumns + " WHERE j.id = $id", Map, ("$id", id));
 
-    public List<JobRecord> ListForUser(long userId, bool heldOnly)
-    {
-        using var db = database.Open();
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = SelectColumns + " WHERE j.user_id = $u" +
-            (heldOnly ? " AND j.status = 'held'" : "") + " ORDER BY j.id DESC LIMIT 200";
-        cmd.Parameters.AddWithValue("$u", userId);
-        return ReadAll(cmd);
-    }
+    public List<JobRecord> ListForUser(long userId, bool heldOnly) =>
+        database.Query(SelectColumns + " WHERE j.user_id = $u" + (heldOnly ? " AND j.status = $held" : "") + " ORDER BY j.id DESC LIMIT 200",
+            Map, ("$u", userId), ("$held", JobStatus.Held));
 
-    public List<JobRecord> List(string? status, int limit = 200)
-    {
-        using var db = database.Open();
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = SelectColumns + (status is null ? "" : " WHERE j.status = $s") + " ORDER BY j.id DESC LIMIT $limit";
-        if (status is not null)
-            cmd.Parameters.AddWithValue("$s", status);
-        cmd.Parameters.AddWithValue("$limit", limit);
-        return ReadAll(cmd);
-    }
+    public List<JobRecord> List(string? status, int limit = 200) =>
+        database.Query(SelectColumns + (status is null ? "" : " WHERE j.status = $s") + " ORDER BY j.id DESC LIMIT $limit",
+            Map, ("$s", status), ("$limit", limit));
 
-    public List<JobRecord> ListFromIp(string sourceIp, int limit)
-    {
-        using var db = database.Open();
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = SelectColumns + " WHERE j.source_ip = $ip ORDER BY j.id DESC LIMIT $limit";
-        cmd.Parameters.AddWithValue("$ip", sourceIp);
-        cmd.Parameters.AddWithValue("$limit", limit);
-        return ReadAll(cmd);
-    }
+    public List<JobRecord> ListFromIp(string sourceIp, int limit) =>
+        database.Query(SelectColumns + " WHERE j.source_ip = $ip ORDER BY j.id DESC LIMIT $limit", Map, ("$ip", sourceIp), ("$limit", limit));
 
-    public int CountHeld()
-    {
-        using var db = database.Open();
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = "SELECT COUNT(*) FROM jobs WHERE status = 'held'";
-        return Convert.ToInt32(cmd.ExecuteScalar());
-    }
+    public int CountHeld() =>
+        Convert.ToInt32(database.Scalar("SELECT COUNT(*) FROM jobs WHERE status = $held", ("$held", JobStatus.Held)));
 
     /// <summary>Moves a job between states only if it is currently in <paramref name="from"/>. Returns false if it wasn't.</summary>
-    public bool TryTransition(long id, string from, string to, string? error = null)
-    {
-        using var db = database.Open();
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = "UPDATE jobs SET status = $to, error = $err WHERE id = $id AND status = $from";
-        cmd.Parameters.AddWithValue("$to", to);
-        cmd.Parameters.AddWithValue("$err", (object?)error ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("$id", id);
-        cmd.Parameters.AddWithValue("$from", from);
-        return cmd.ExecuteNonQuery() == 1;
-    }
+    public bool TryTransition(long id, string from, string to, string? error = null) =>
+        database.Execute("UPDATE jobs SET status = $to, error = $err WHERE id = $id AND status = $from",
+            ("$to", to), ("$err", error), ("$id", id), ("$from", from)) == 1;
 
-    public void MarkReceived(long id, long sizeBytes)
-    {
-        using var db = database.Open();
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = "UPDATE jobs SET status = 'held', size_bytes = $size WHERE id = $id AND status = 'receiving'";
-        cmd.Parameters.AddWithValue("$size", sizeBytes);
-        cmd.Parameters.AddWithValue("$id", id);
-        cmd.ExecuteNonQuery();
-    }
+    public void MarkReceived(long id, long sizeBytes) =>
+        database.Execute("UPDATE jobs SET status = $held, size_bytes = $size WHERE id = $id AND status = $receiving",
+            ("$held", JobStatus.Held), ("$size", sizeBytes), ("$id", id), ("$receiving", JobStatus.Receiving));
 
-    public byte[]? GetJobAttributes(long id)
-    {
-        using var db = database.Open();
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = "SELECT job_attributes FROM jobs WHERE id = $id";
-        cmd.Parameters.AddWithValue("$id", id);
-        return cmd.ExecuteScalar() as byte[];
-    }
+    public byte[]? GetJobAttributes(long id) =>
+        database.Scalar("SELECT job_attributes FROM jobs WHERE id = $id", ("$id", id)) as byte[];
 
-    public void SetDocumentFormat(long id, string format)
-    {
-        using var db = database.Open();
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = "UPDATE jobs SET document_format = $f WHERE id = $id";
-        cmd.Parameters.AddWithValue("$f", format);
-        cmd.Parameters.AddWithValue("$id", id);
-        cmd.ExecuteNonQuery();
-    }
+    public void SetDocumentFormat(long id, string format) =>
+        database.Execute("UPDATE jobs SET document_format = $f WHERE id = $id", ("$f", format), ("$id", id));
 
-    public void MarkReleased(long id, string printerId)
-    {
-        using var db = database.Open();
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = """
-            UPDATE jobs SET status = 'released', released_at = $now, released_printer_id = $p, error = NULL
+    public void MarkReleased(long id, string printerId) =>
+        database.Execute("""
+            UPDATE jobs SET status = $released, released_at = $now, released_printer_id = $p, error = NULL
             WHERE id = $id
-            """;
-        cmd.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
-        cmd.Parameters.AddWithValue("$p", printerId);
-        cmd.Parameters.AddWithValue("$id", id);
-        cmd.ExecuteNonQuery();
-    }
+            """, ("$released", JobStatus.Released), ("$now", DateTimeOffset.UtcNow), ("$p", printerId), ("$id", id));
 
     /// <summary>Jobs whose spool files should be deleted: held past their expiry, or stuck receiving.</summary>
-    public List<JobRecord> ListStale(DateTimeOffset now, TimeSpan receivingTimeout)
-    {
-        using var db = database.Open();
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = SelectColumns + """
-             WHERE (j.status = 'held' AND j.expires_at < $now)
-                OR (j.status = 'receiving' AND j.submitted_at < $receivingCutoff)
-            """;
-        cmd.Parameters.AddWithValue("$now", now.ToString("O"));
-        cmd.Parameters.AddWithValue("$receivingCutoff", (now - receivingTimeout).ToString("O"));
-        return ReadAll(cmd);
-    }
+    public List<JobRecord> ListStale(DateTimeOffset now, TimeSpan receivingTimeout) =>
+        database.Query(SelectColumns + """
+             WHERE (j.status = $held AND j.expires_at < $now)
+                OR (j.status = $receiving AND j.submitted_at < $receivingCutoff)
+            """, Map,
+            ("$held", JobStatus.Held), ("$receiving", JobStatus.Receiving), ("$now", now), ("$receivingCutoff", now - receivingTimeout));
 
-    private static List<JobRecord> ReadAll(SqliteCommand cmd)
-    {
-        using var r = cmd.ExecuteReader();
-        var jobs = new List<JobRecord>();
-        while (r.Read())
-        {
-            jobs.Add(new JobRecord(
-                Id: r.GetInt64(0),
-                UserId: r.IsDBNull(1) ? null : r.GetInt64(1),
-                Username: r.IsDBNull(2) ? null : r.GetString(2),
-                OwnerHint: r.IsDBNull(3) ? null : r.GetString(3),
-                QueueId: r.GetString(4),
-                Name: r.GetString(5),
-                DocumentFormat: r.GetString(6),
-                Copies: r.GetInt32(7),
-                SizeBytes: r.GetInt64(8),
-                Status: r.GetString(9),
-                SourceIp: r.GetString(10),
-                SubmittedAt: DateTimeOffset.Parse(r.GetString(11)),
-                ExpiresAt: DateTimeOffset.Parse(r.GetString(12)),
-                ReleasedAt: r.IsDBNull(13) ? null : DateTimeOffset.Parse(r.GetString(13)),
-                ReleasedPrinterId: r.IsDBNull(14) ? null : r.GetString(14),
-                Error: r.IsDBNull(15) ? null : r.GetString(15)));
-        }
-        return jobs;
-    }
+    private static JobRecord Map(SqliteDataReader r) => new(
+        Id: r.GetInt64(0),
+        UserId: r.GetInt64OrNull(1),
+        Username: r.GetStringOrNull(2),
+        OwnerHint: r.GetStringOrNull(3),
+        QueueId: r.GetString(4),
+        Name: r.GetString(5),
+        DocumentFormat: r.GetString(6),
+        Copies: r.GetInt32(7),
+        SizeBytes: r.GetInt64(8),
+        Status: r.GetString(9),
+        SourceIp: r.GetString(10),
+        SubmittedAt: r.GetTime(11),
+        ExpiresAt: r.GetTime(12),
+        ReleasedAt: r.GetTimeOrNull(13),
+        ReleasedPrinterId: r.GetStringOrNull(14),
+        Error: r.GetStringOrNull(15));
 }
