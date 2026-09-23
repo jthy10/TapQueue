@@ -17,10 +17,7 @@ public static class ClientApi
 
         var me = app.MapGroup("/api/v1").AddEndpointFilter(RequireSession);
         me.MapPost("/client/heartbeat", (ClientBuildStore builds) => new ClientHeartbeatResponse(builds.Latest()?.ToDto()));
-        me.MapGet("/client/builds/{sha256}", (string sha256, ClientBuildStore builds) =>
-            builds.FileFor(sha256) is { } path
-                ? Results.File(path, "application/vnd.microsoft.portable-executable", "TapQueueClient.exe")
-                : Results.NotFound(new ErrorResponse("No such client build.")));
+        me.MapGet("/client/builds/{sha256}", DownloadBuild);
         me.MapGet("/printers", (PrinterRegistry printers) => printers.All.Select(printers.ToDto));
         me.MapGet("/me/jobs", (HttpContext http, JobStore jobs, bool? all) =>
             jobs.ListForUser(CurrentUser(http).Id, heldOnly: all != true).Select(j => j.ToDto()));
@@ -62,6 +59,17 @@ public static class ClientApi
             builds.Latest()?.ToDto()));
     }
 
+    private static IResult DownloadBuild(string sha256, HttpContext http, ClientBuildStore builds, ILoggerFactory loggers)
+    {
+        if (builds.Find(sha256) is not { } build || builds.FileFor(build.Sha256) is not { } path)
+            return Results.NotFound(new ErrorResponse("No such client build."));
+        var session = (SessionRecord)http.Items[nameof(SessionRecord)]!;
+        loggers.CreateLogger("TapQueue.Server.Api.ClientApi").LogInformation(
+            "{User} on {Host} ({Ip}) is downloading client {Version} to update itself",
+            CurrentUser(http).Username, session.Hostname, http.ClientIp(), build.Version);
+        return Results.File(path, "application/vnd.microsoft.portable-executable", "TapQueueClient.exe");
+    }
+
     private static IResult CancelJob(long id, HttpContext http, JobStore jobs, Spool spool)
     {
         var job = jobs.Get(id);
@@ -98,6 +106,7 @@ public static class ClientApi
             return Results.Json(new ErrorResponse("Session expired. Sign in again."), statusCode: StatusCodes.Status401Unauthorized);
 
         http.Items[nameof(UserRecord)] = user;
+        http.Items[nameof(SessionRecord)] = session;
         return await next(context);
     }
 

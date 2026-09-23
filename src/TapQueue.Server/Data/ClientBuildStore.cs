@@ -31,6 +31,11 @@ public sealed class ClientBuildStore
     public ClientBuildRecord? Latest() =>
         _database.QueryOne($"SELECT {Columns} FROM client_builds ORDER BY id DESC LIMIT 1", Map);
 
+    /// <summary>The most recent publish of the build with this hash.</summary>
+    public ClientBuildRecord? Find(string sha256) =>
+        _database.QueryOne($"SELECT {Columns} FROM client_builds WHERE sha256 = $sha ORDER BY id DESC LIMIT 1", Map,
+            ("$sha", sha256.ToLowerInvariant()));
+
     public List<ClientBuildRecord> List() =>
         _database.Query($"SELECT {Columns} FROM client_builds ORDER BY id DESC", Map);
 
