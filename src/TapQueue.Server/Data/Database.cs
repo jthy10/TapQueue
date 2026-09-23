@@ -73,13 +73,15 @@ public sealed class Database
         return cmd;
     }
 
-    public void Migrate()
-    {
-        using var db = Open();
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = """
-            PRAGMA journal_mode = WAL;
-
+    /// <summary>
+    /// Schema changes, applied in order. The database's user_version records how many have run.
+    /// Never edit one that has shipped; add a new one instead.
+    /// </summary>
+    private static readonly string[] Migrations =
+    [
+        // 1: users, sessions, jobs, badges, stations (v0.1). IF NOT EXISTS because databases from
+        // before migrations were numbered already have these tables.
+        """
             CREATE TABLE IF NOT EXISTS users (
                 id            INTEGER PRIMARY KEY,
                 username      TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -137,7 +139,46 @@ public sealed class Database
                 last_seen_at  TEXT,
                 last_ip       TEXT
             );
-            """;
-        cmd.ExecuteNonQuery();
+        """,
+    ];
+
+    public void Migrate()
+    {
+        using var db = Open();
+        using (var wal = db.CreateCommand())
+        {
+            wal.CommandText = "PRAGMA journal_mode = WAL";
+            wal.ExecuteNonQuery();
+        }
+
+        var version = SchemaVersion(db);
+        if (version > Migrations.Length)
+            throw new InvalidOperationException(
+                $"The database is at schema version {version}, but this tapqueue-server only knows {Migrations.Length}. Is it older than the one that last ran?");
+
+        for (var i = version; i < Migrations.Length; i++)
+        {
+            using var transaction = db.BeginTransaction();
+            using var cmd = db.CreateCommand();
+            cmd.Transaction = transaction;
+            cmd.CommandText = Migrations[i] + $"\nPRAGMA user_version = {i + 1};";
+            cmd.ExecuteNonQuery();
+            transaction.Commit();
+        }
     }
+
+    public int SchemaVersion()
+    {
+        using var db = Open();
+        return SchemaVersion(db);
+    }
+
+    private static int SchemaVersion(SqliteConnection db)
+    {
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = "PRAGMA user_version";
+        return Convert.ToInt32(cmd.ExecuteScalar());
+    }
+
+    public static int LatestSchemaVersion => Migrations.Length;
 }
