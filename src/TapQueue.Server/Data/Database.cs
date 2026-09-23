@@ -246,6 +246,35 @@ public sealed class Database
             ALTER TABLE users ADD COLUMN source TEXT NOT NULL DEFAULT 'local';
             ALTER TABLE users ADD COLUMN external_id TEXT;
         """,
+
+        // 7: stations report in and take settings and commands from the server; station builds.
+        // Setting columns left NULL mean "use station.toml".
+        """
+            ALTER TABLE stations ADD COLUMN name TEXT NOT NULL DEFAULT '';
+            ALTER TABLE stations ADD COLUMN location TEXT NOT NULL DEFAULT '';
+            ALTER TABLE stations ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1;
+            ALTER TABLE stations ADD COLUMN maintenance_message TEXT NOT NULL DEFAULT '';
+            ALTER TABLE stations ADD COLUMN reader TEXT;
+            ALTER TABLE stations ADD COLUMN device TEXT;
+            ALTER TABLE stations ADD COLUMN repeat_seconds INTEGER;
+            ALTER TABLE stations ADD COLUMN min_card_length INTEGER;
+            ALTER TABLE stations ADD COLUMN feedback TEXT;
+            ALTER TABLE stations ADD COLUMN settings_version INTEGER NOT NULL DEFAULT 1;
+            ALTER TABLE stations ADD COLUMN pending_command TEXT;
+            ALTER TABLE stations ADD COLUMN version TEXT;
+            ALTER TABLE stations ADD COLUMN binary_sha256 TEXT;
+            ALTER TABLE stations ADD COLUMN started_at TEXT;
+            ALTER TABLE stations ADD COLUMN reader_status TEXT;
+            ALTER TABLE stations ADD COLUMN last_heartbeat_at TEXT;
+
+            CREATE TABLE station_builds (
+                id            INTEGER PRIMARY KEY,
+                version       TEXT NOT NULL,
+                sha256        TEXT NOT NULL,
+                size_bytes    INTEGER NOT NULL,
+                published_at  TEXT NOT NULL
+            );
+        """,
     ];
 
     public void Migrate()

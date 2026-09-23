@@ -109,7 +109,7 @@ public static class AdminApi
         version = Clean(version);
         if (version is null)
             return Results.BadRequest(new ErrorResponse("version is required, e.g. ?version=0.2.0+1a2b3c4."));
-        ClientBuildRecord build;
+        BuildRecord build;
         try
         {
             build = await builds.PublishAsync(version, http.Request.Body, http.RequestAborted);

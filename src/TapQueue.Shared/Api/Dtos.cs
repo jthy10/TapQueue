@@ -190,6 +190,9 @@ public sealed record ClientSessionResponse(
 /// </summary>
 public sealed record ClientBuildDto(string Version, string Sha256, long SizeBytes, DateTimeOffset PublishedAt, string DownloadPath);
 
+/// <summary>The release station build every station should be running. Downloaded with the station token.</summary>
+public sealed record StationBuildDto(string Version, string Sha256, long SizeBytes, DateTimeOffset PublishedAt, string DownloadPath);
+
 public sealed record ClientHeartbeatResponse(ClientBuildDto? ClientBuild);
 
 /// <summary>What the TapQueue service on each PC needs: the printers to add and the client build to run.</summary>
