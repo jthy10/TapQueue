@@ -106,11 +106,11 @@ public static class AdminStationsApi
             station = stations.SetSettings(station.Id, s)!;
             if (changes.Count == 0) changes.Add("settings changed");
         }
-        var (name, location) = (request.Name?.Trim() ?? station.Name, request.Location?.Trim() ?? station.Location);
-        if (name != station.Name || location != station.Location)
+        var (newName, newLocation) = (request.Name?.Trim() ?? station.Name, request.Location?.Trim() ?? station.Location);
+        if (newName != station.Name || newLocation != station.Location)
         {
-            station = stations.SetDetails(station.Id, name, location)!;
-            changes.Add($"now called \"{station.DisplayName}\"{(location.Length > 0 ? $", at {location}" : "")}");
+            station = stations.SetDetails(station.Id, newName, newLocation)!;
+            changes.Add($"now called \"{station.DisplayName}\"{(newLocation.Length > 0 ? $", at {newLocation}" : "")}");
         }
         if (changes.Count > 0)
             events.Admin(EventLog.Station(station.Id), $"Station {station.Id}: {string.Join("; ", changes)}.");
