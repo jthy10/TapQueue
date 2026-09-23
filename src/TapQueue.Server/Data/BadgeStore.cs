@@ -3,9 +3,9 @@ using TapQueue.Shared.Api;
 
 namespace TapQueue.Server.Data;
 
-public sealed record BadgeRecord(long Id, long UserId, string Username, string CardHint, DateTimeOffset CreatedAt, DateTimeOffset? LastUsedAt)
+public sealed record BadgeRecord(long Id, long UserId, string Username, string CardHint, DateTimeOffset CreatedAt, DateTimeOffset? LastUsedAt, string Label)
 {
-    public BadgeDto ToDto() => new(Id, Username, CardHint, CreatedAt, LastUsedAt);
+    public BadgeDto ToDto() => new(Id, Username, CardHint, CreatedAt, LastUsedAt, Label);
 }
 
 /// <summary>
@@ -15,7 +15,7 @@ public sealed record BadgeRecord(long Id, long UserId, string Username, string C
 public sealed class BadgeStore(Database database)
 {
     private const string SelectColumns = """
-        SELECT b.id, b.user_id, u.username, b.card_hint, b.created_at, b.last_used_at
+        SELECT b.id, b.user_id, u.username, b.card_hint, b.created_at, b.last_used_at, b.label
         FROM badges b JOIN users u ON u.id = b.user_id
         """;
 
@@ -46,20 +46,26 @@ public sealed class BadgeStore(Database database)
         database.Query(SelectColumns + (userId is null ? "" : " WHERE b.user_id = $u") + " ORDER BY u.username, b.id", Map, ("$u", userId));
 
     /// <summary>Links a card to a user. The caller checks that the card isn't already someone's.</summary>
-    public BadgeRecord Add(long userId, string card)
+    public BadgeRecord Add(long userId, string card, string label = "")
     {
         var normalized = Normalize(card);
         var id = (long)database.Scalar("""
-            INSERT INTO badges (card_hash, card_hint, user_id, created_at)
-            VALUES ($h, $hint, $u, $now)
+            INSERT INTO badges (card_hash, card_hint, user_id, created_at, label)
+            VALUES ($h, $hint, $u, $now, $label)
             RETURNING id
-            """, ("$h", Tokens.Hash(normalized)), ("$hint", Hint(normalized)), ("$u", userId), ("$now", DateTimeOffset.UtcNow))!;
+            """, ("$h", Tokens.Hash(normalized)), ("$hint", Hint(normalized)), ("$u", userId), ("$now", DateTimeOffset.UtcNow), ("$label", label))!;
         return Get(id)!;
+    }
+
+    public BadgeRecord? Update(long id, long userId, string label)
+    {
+        database.Execute("UPDATE badges SET user_id = $u, label = $label WHERE id = $id", ("$u", userId), ("$label", label), ("$id", id));
+        return Get(id);
     }
 
     public bool Delete(long id) =>
         database.Execute("DELETE FROM badges WHERE id = $id", ("$id", id)) == 1;
 
     private static BadgeRecord Map(SqliteDataReader r) =>
-        new(r.GetInt64(0), r.GetInt64(1), r.GetString(2), r.GetString(3), r.GetTime(4), r.GetTimeOrNull(5));
+        new(r.GetInt64(0), r.GetInt64(1), r.GetString(2), r.GetString(3), r.GetTime(4), r.GetTimeOrNull(5), r.GetString(6));
 }

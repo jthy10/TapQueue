@@ -56,6 +56,7 @@ public static class AdminApi
                 : Results.NotFound(new ErrorResponse($"No user \"{username}\"."));
         });
         admin.MapPost("/badges", CreateBadge);
+        admin.MapPatch("/badges/{id:long}", UpdateBadge);
         admin.MapDelete("/badges/{id:long}", (long id, BadgeStore badges) =>
             badges.Delete(id) ? Results.NoContent() : Results.NotFound(new ErrorResponse($"No badge {id}.")));
         admin.MapGet("/badges/unknown", (UnknownTaps taps) => taps.Recent());
@@ -204,9 +205,23 @@ public static class AdminApi
         if (badges.FindByCard(card) is { } existing)
             return Results.Conflict(new ErrorResponse($"That card is already linked to {existing.Username} (badge {existing.Id})."));
 
-        var badge = badges.Add(user.Id, card);
+        var badge = badges.Add(user.Id, card, request.Label?.Trim() ?? "");
         unknownTaps.Remove(card);
         return Results.Ok(badge.ToDto());
+    }
+
+    private static IResult UpdateBadge(long id, UpdateBadgeRequest request, BadgeStore badges, UserStore users)
+    {
+        if (badges.Get(id) is not { } badge)
+            return Results.NotFound(new ErrorResponse($"No badge {id}."));
+        var userId = badge.UserId;
+        if (request.Username is not null)
+        {
+            if (users.FindByUsername(request.Username) is not { } user)
+                return Results.NotFound(new ErrorResponse($"No user \"{request.Username}\"."));
+            userId = user.Id;
+        }
+        return Results.Ok(badges.Update(id, userId, request.Label?.Trim() ?? badge.Label)!.ToDto());
     }
 
     private static IResult CreateStation(CreateStationRequest request, StationStore stations, PrinterRegistry printers)

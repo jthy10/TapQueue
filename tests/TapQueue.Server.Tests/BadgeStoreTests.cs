@@ -47,5 +47,19 @@ public sealed class BadgeStoreTests : IDisposable
         Assert.Empty(_badges.List());
     }
 
+    [Fact]
+    public void MovesACardToSomeoneElse()
+    {
+        var alice = _users.Create("alice", "Alice", null);
+        var bob = _users.Create("bob", "Bob", null);
+        var badge = _badges.Add(alice.Id, "04a1b2c3", "blue fob");
+
+        var moved = _badges.Update(badge.Id, bob.Id, "spare");
+
+        Assert.Equal("bob", moved?.Username);
+        Assert.Equal("spare", moved?.Label);
+        Assert.Equal(bob.Id, _badges.Use("04a1b2c3")?.UserId);
+    }
+
     public void Dispose() => Directory.Delete(_dir, recursive: true);
 }

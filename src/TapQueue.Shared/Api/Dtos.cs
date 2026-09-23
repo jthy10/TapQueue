@@ -134,9 +134,13 @@ public sealed record UserTokenResponse(UserDto User, string Token);
 public sealed record ErrorResponse(string Error);
 
 /// <param name="CardHint">The last few characters of the card number. The full number isn't stored.</param>
-public sealed record BadgeDto(long Id, string Username, string CardHint, DateTimeOffset CreatedAt, DateTimeOffset? LastUsedAt);
+/// <param name="Label">The admin's note to tell cards apart, e.g. "spare" or "blue fob".</param>
+public sealed record BadgeDto(long Id, string Username, string CardHint, DateTimeOffset CreatedAt, DateTimeOffset? LastUsedAt, string Label = "");
 
-public sealed record CreateBadgeRequest(string Username, string Card);
+public sealed record CreateBadgeRequest(string Username, string Card, string? Label = null);
+
+/// <summary>Moves a card to another user and/or changes its label. Fields left null are unchanged.</summary>
+public sealed record UpdateBadgeRequest(string? Username = null, string? Label = null);
 
 /// <summary>A card that was tapped at a station but isn't linked to anyone yet.</summary>
 public sealed record UnknownTapDto(string Card, string StationId, DateTimeOffset At);
