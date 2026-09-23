@@ -38,6 +38,15 @@ breaking changes; they're listed under **Changed** with what to do.
   message. See [docs/release-station.md](docs/release-station.md#managing-stations-from-the-server).
 - Station updates: publish a `tapqueue-station` build on the server and every station installs
   it and restarts.
+- Workstations: PCs whose TapQueue service checks in (client 0.3 and later) are listed with the
+  client they run, whether their last update failed and who's signed in. An admin can tell a PC
+  to update now, forget a PC, and sign a person out of a PC, after which jobs from it no longer
+  go to them (`tapqueue-admin workstations`, `tapqueue-admin clients sign-out`).
+- Hold hours and session timeout can be changed while the server runs, from the console's Server
+  page or `tapqueue-admin server set`. server.toml still gives the defaults.
+- The server's live log on the console's Server page (and `tapqueue-admin server log --follow`),
+  and restarting the server from there when systemd runs it. The systemd unit treats exit code
+  75 as a planned restart; reinstall it to pick that up.
 
 ### Changed
 - With `auth.mode = "dev"`, the admin API accepts requests without the admin token.

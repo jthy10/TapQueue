@@ -36,6 +36,17 @@ tapqueue-admin clients                         Signed-in Windows clients and the
 tapqueue-admin clients publish <zip|exe> [--version-name]
                                                Push a Windows client build to every client
 tapqueue-admin clients builds                  Published client builds
+tapqueue-admin clients sign-out <session>      Sign a client out; jobs from that PC stop going to them
+
+tapqueue-admin workstations                    PCs with the TapQueue service: client, update errors, who's signed in
+tapqueue-admin workstations update <computer>  Install the published client now (retries a failed update)
+tapqueue-admin workstations forget <computer>  Drop a PC that's gone
+
+tapqueue-admin server                          Settings, and whether each is set here or in server.toml
+tapqueue-admin server set hold-hours|session-timeout <number|default>
+                                               Change a setting now, or go back to server.toml's
+tapqueue-admin server log [--follow]           Recent server log lines; --follow keeps printing new ones
+tapqueue-admin server restart                  Restart tapqueue-server (only when systemd runs it)
 ```
 
 `tapqueue-admin --help` shows every option.

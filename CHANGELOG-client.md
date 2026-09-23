@@ -9,6 +9,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Added
+- The TapQueue service tells the server which PC it's on, which client it runs and why its last
+  update failed, so the PC shows on the console's Workstations page. It installs the published
+  client straight away when an admin asks for an update, even one that failed before.
+- When an admin signs someone out, the tray app says so and stays signed out (instead of signing
+  straight back in) until they choose "Sign in again" or sign in to Windows again.
+
 ## [0.2.0] - 2026-09-23
 
 ### Added

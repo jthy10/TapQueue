@@ -73,7 +73,11 @@ Then set up the [Windows client](windows-client.md) and a [release station](rele
 
 Queues, printers, users, badges and stations live in the database and are managed with
 `tapqueue-admin`. Changes to them take effect immediately. Changes to `server.toml` need
-`sudo systemctl restart tapqueue-server`.
+`sudo systemctl restart tapqueue-server` (or Restart on the console's Server page).
+
+`auth.session_timeout_minutes` and `jobs.hold_hours` are only defaults: they can be changed while
+the server runs from the console's Server page or with `tapqueue-admin server set`, and those
+values are kept in the database until they're set back to `default`.
 
 ## Upgrading
 

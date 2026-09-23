@@ -81,8 +81,13 @@ Each phase ships on its own and leaves the console usable.
    configuration commands that stop it reading cards, sound would need ALSA installed on every
    station, and the HP M404n ignores PJL panel messages. A screen or USB status light at the
    station is the likely way; `feedback` in station settings is reserved for it.
-5. **Workstation and server control.** Sign out a session, tell a client to update now, live
-   server log (streamed), server settings (hold hours, session timeout), restart.
+5. **Workstation and server control.** *(Done.)* The TapQueue service on each PC checks in once
+   a minute, so Workstations lists PCs with their client version, a failed update's error and
+   who's signed in. Sign a person out of a PC (the tray app stays signed out and their jobs stop
+   going to them), tell a PC to update now, forget a PC. The Server page edits hold hours and
+   session timeout (saved in the database; server.toml gives the defaults), streams the live log
+   (server-sent events, the last 2000 lines kept in memory) and restarts the server when systemd
+   runs it (exit code 75, which the unit restarts).
 6. **Quotas.** Page counting for PDF and PWG raster jobs, page limits per user and group, per
    period, enforced at release.
 7. **Admin sign-in and roles.** Admin accounts with roles (Admin, Operator, Viewer), sign-in,
