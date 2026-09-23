@@ -1,4 +1,5 @@
 import { api, enc } from "../api.js";
+import { activityList } from "./activity.js";
 import { h, pageHead, panel, button, pill, time, table, empty, drawer, props, sectionTitle, field, input, checkbox, checkField,
   formDialog, confirm, attempt, loading } from "../ui.js";
 
@@ -38,10 +39,11 @@ export async function render(root, ctx) {
 
   const usedBy = (p) => stations.filter((s) => s.printerId.toLowerCase() === p.printer.id.toLowerCase());
 
-  function open(id) {
+  async function open(id) {
     ctx.setId(id);
     const p = printers.find((x) => x.printer.id.toLowerCase() === String(id).toLowerCase());
     if (!p) return ctx.setId(null);
+    const events = await api.get(`events?subject=${enc(`printer:${p.printer.id}`)}&limit=10`);
     const stationsHere = usedBy(p);
     drawer({
       title: p.printer.name,
@@ -61,6 +63,8 @@ export async function render(root, ctx) {
         stationsHere.length
           ? props(stationsHere.map((s) => [h("a", { href: `stations/${enc(s.id)}` }, s.id), `Last seen ${time(s.lastSeenAt).textContent}`]))
           : h("p", { class: "muted", style: "margin:0" }, "No station releases to this printer. Jobs can still be released to it from the client or this console."),
+        sectionTitle("Changes"),
+        activityList(events, { emptyText: "No changes recorded." }),
       ],
       footer: [
         button("Remove", { kind: "danger", onclick: () => remove(p), title: stationsHere.length ? "Move its stations to another printer first" : null }),

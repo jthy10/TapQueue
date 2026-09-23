@@ -110,6 +110,7 @@ export async function render(root, ctx) {
 }
 
 function owner(job) {
+  if (job.formerOwner) return h("span", { class: "muted" }, `${job.formerOwner} (deleted)`);
   if (job.owner) return h("a", { href: `users/${enc(job.owner)}`, onclick: (e) => e.stopPropagation() }, job.owner);
   return h("span", { class: "muted" }, "Unmatched", job.claimedUser && ` (sent as ${job.claimedUser})`);
 }

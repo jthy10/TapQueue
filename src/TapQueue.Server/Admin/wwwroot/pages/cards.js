@@ -36,9 +36,13 @@ export async function render(root, ctx) {
       columns: [
         { label: "Card", value: (b) => h("span", { class: "cell-strong" }, h("code", null, b.cardHint), h("span", { class: "sub" }, `Badge #${b.id}`)) },
         { label: "Person", value: (b) => h("a", { href: `users/${enc(b.username)}` }, b.username) },
+        { label: "Label", value: (b) => b.label || h("span", { class: "muted" }, "—") },
         { label: "Enrolled", value: (b) => time(b.createdAt) },
         { label: "Last used", value: (b) => b.lastUsedAt ? time(b.lastUsedAt) : h("span", { class: "muted" }, "Never") },
-        { label: "", class: "num", value: (b) => button("Remove", { small: true, kind: "ghost danger", onclick: () => removeCard(b, load) }) },
+        { label: "", class: "num nowrap", value: (b) => [
+          button("Edit", { small: true, kind: "ghost", onclick: () => editCard(b, load) }),
+          button("Remove", { small: true, kind: "ghost danger", onclick: () => removeCard(b, load) }),
+        ] },
       ],
     }));
   }
@@ -49,6 +53,23 @@ export async function render(root, ctx) {
 
 /** Only the end of a card number is shown, the same way the server stores it. */
 export const hint = (card) => (card.length <= 4 ? card : `…${card.slice(-4)}`);
+
+/** Relabel a card, or give it to someone else (a lost card found, a shared spare…). */
+export async function editCard(badge, onDone) {
+  const users = await api.get("users");
+  formDialog({
+    title: `Card ${badge.cardHint}`,
+    description: "Moving a card takes effect on its next tap.",
+    body: [
+      field("Belongs to", select("username", users.map((u) => [u.username, `${u.displayName} (${u.username})`]), badge.username)),
+      field("Label", input("label", { value: badge.label, placeholder: "e.g. blue fob, spare" }), "A note to tell someone's cards apart."),
+    ],
+    onSubmit: async (values) => {
+      await api.patch(`badges/${badge.id}`, values);
+      await onDone?.();
+    },
+  });
+}
 
 export async function removeCard(badge, onDone) {
   if (!await confirm({
@@ -108,10 +129,11 @@ export async function enrollCard({ username, card, onDone }) {
       field("Person", select("username", users.map((u) => [u.username, `${u.displayName} (${u.username})`]), username)),
       card ? h("div", { class: "callout info" }, `Card ${hint(card)}`) : [toggle, waiting, tapped],
       h("div", { class: "field" }, cardInput),
+      field("Label", input("label", { placeholder: "Optional, e.g. blue fob" })),
     ],
     onSubmit: async (values) => {
       if (!values.card) throw new Error(mode === "tap" ? "Tap a card at a station first." : "Enter the card number.");
-      const badge = await api.post("badges", { username: values.username, card: values.card });
+      const badge = await api.post("badges", { username: values.username, card: values.card, label: values.label });
       await onDone?.();
       return h("div", null, h("p", { style: "margin:0" }, "Card ", h("code", null, badge.cardHint), ` now releases ${badge.username}'s jobs.`), pill("Enrolled", "ok"));
     },

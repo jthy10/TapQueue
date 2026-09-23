@@ -1,8 +1,9 @@
 import { api, enc } from "../api.js";
-import { h, pageHead, panel, button, pill, time, table, empty, drawer, props, sectionTitle, field, input,
-  formDialog, secret, attempt, loading, plural } from "../ui.js";
-import { enrollCard, removeCard } from "./cards.js";
+import { h, pageHead, panel, button, pill, time, dateTime, table, empty, drawer, props, sectionTitle, field, input,
+  formDialog, confirm, secret, attempt, loading, plural } from "../ui.js";
+import { enrollCard, editCard, removeCard } from "./cards.js";
 import { jobStatus } from "./jobs.js";
+import { activityList } from "./activity.js";
 
 export async function render(root, ctx) {
   let data;
@@ -27,7 +28,7 @@ export async function render(root, ctx) {
         ? "In dev mode, anyone who signs in with the client is added automatically."
         : "Add people here, then give them their client token.", button("Add user", { kind: "primary", onclick: addUser })),
       columns: [
-        { label: "Name", value: (u) => [h("span", { class: "cell-strong" }, u.displayName), h("span", { class: "sub" }, u.username)] },
+        { label: "Name", value: (u) => [h("span", { class: "cell-strong" }, u.displayName, " ", u.disabledAt && pill("Disabled", "bad")), h("span", { class: "sub" }, u.username)] },
         { label: "Cards", value: (u) => count(data.badges.get(u.username), "card", "No card") },
         { label: "Held jobs", class: "num", value: (u) => data.held.get(u.username)?.length ?? 0 },
         { label: "Signed in", value: (u) => {
@@ -46,7 +47,9 @@ export async function render(root, ctx) {
     ctx.setId(username);
     const user = data.users.find((u) => u.username.toLowerCase() === username.toLowerCase());
     if (!user) return ctx.setId(null);
-    const [badges, jobs] = await Promise.all([api.get(`badges?username=${enc(user.username)}`), api.get("jobs")]);
+    const [badges, jobs, events] = await Promise.all([
+      api.get(`badges?username=${enc(user.username)}`), api.get("jobs"), api.get(`events?subject=${enc(`user:${user.username}`)}&limit=15`),
+    ]);
     const theirJobs = jobs.filter((j) => j.owner === user.username).slice(0, 10);
     const sessions = data.clients.get(user.username) ?? [];
     const refresh = async () => { await load(); open(user.username); };
@@ -56,12 +59,20 @@ export async function render(root, ctx) {
       subtitle: `${user.username} · user #${user.id}`,
       onClose: () => ctx.setId(null),
       body: [
+        user.disabledAt && h("div", { class: "callout" }, `Disabled since ${dateTime(user.disabledAt)}. They can't sign in, print or release; their held jobs are kept until they expire.`),
+        props([
+          ["Status", user.disabledAt ? pill("Disabled", "bad") : pill("Active", "ok")],
+          ["Added", dateTime(user.createdAt)],
+        ]),
         sectionTitle("Cards"),
         badges.length
           ? h("div", { class: "panel" }, table({ rows: badges, columns: [
-            { label: "Card", value: (b) => h("code", null, b.cardHint) },
+            { label: "Card", value: (b) => [h("code", null, b.cardHint), b.label && h("span", { class: "sub" }, b.label)] },
             { label: "Last used", value: (b) => time(b.lastUsedAt) },
-            { label: "", class: "num", value: (b) => button("Remove", { small: true, kind: "ghost danger", onclick: () => removeCard(b, refresh) }) },
+            { label: "", class: "num nowrap", value: (b) => [
+              button("Edit", { small: true, kind: "ghost", onclick: () => editCard(b, refresh) }),
+              button("Remove", { small: true, kind: "ghost danger", onclick: () => removeCard(b, refresh) }),
+            ] },
           ] }))
           : h("p", { class: "muted", style: "margin:0" }, "No card yet, so they can't release jobs at a station."),
         h("div", { style: "margin-top:10px" }, button("Enroll card", { small: true, iconName: "plus", onclick: () => enrollCard({ username: user.username, onDone: refresh }) })),
@@ -79,11 +90,55 @@ export async function render(root, ctx) {
             { label: "When", value: (j) => time(j.submittedAt) },
           ] }))
           : h("p", { class: "muted", style: "margin:0" }, "Nothing printed yet."),
+
+        sectionTitle("History"),
+        activityList(events, { emptyText: "No activity yet." }),
       ],
       footer: [
-        button("Reset client token", { iconName: "key", onclick: () => resetToken(user) }),
+        h("div", { class: "left" }, button("Delete", { kind: "ghost danger", onclick: () => remove(user) })),
+        user.disabledAt
+          ? button("Enable", { onclick: () => setDisabled(user, false) })
+          : button("Disable", { kind: "danger", onclick: () => setDisabled(user, true) }),
+        button("Reset token", { iconName: "key", onclick: () => resetToken(user) }),
+        button("Rename", { kind: "primary", onclick: () => rename(user) }),
       ],
     });
+  }
+
+  function rename(user) {
+    formDialog({
+      title: `Rename ${user.username}`,
+      description: "The display name shows at stations and in the client. The username can't change.",
+      body: field("Display name", input("displayName", { required: true, value: user.displayName })),
+      onSubmit: async (values) => {
+        await api.patch(`users/${enc(user.username)}`, values);
+        await load();
+        open(user.username);
+      },
+    });
+  }
+
+  async function setDisabled(user, disabled) {
+    if (disabled && !await confirm({
+      title: `Disable ${user.displayName}?`,
+      message: "They're signed out everywhere and can't sign in, print or release until re-enabled. Held jobs are kept until they expire.",
+      confirmLabel: "Disable",
+    })) return;
+    if (await attempt(() => api.patch(`users/${enc(user.username)}`, { disabled }), disabled ? "User disabled" : "User enabled") === undefined) return;
+    await load();
+    open(user.username);
+  }
+
+  async function remove(user) {
+    const held = data.held.get(user.username)?.length ?? 0;
+    if (!await confirm({
+      title: `Delete ${user.displayName}?`,
+      message: `Their cards are unlinked${held ? ` and their ${plural(held, "held job")} canceled` : ""}. Past jobs stay in the history under their name. To keep the account for later, disable it instead.`,
+      confirmLabel: "Delete user",
+    })) return;
+    if (await attempt(() => api.del(`users/${enc(user.username)}`), "User deleted") === undefined) return;
+    ctx.setId(null);
+    await load();
   }
 
   function addUser() {

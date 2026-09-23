@@ -1,5 +1,6 @@
 import { api, enc } from "../api.js";
-import { h, pageHead, panel, button, time, dateTime, table, empty, drawer, props, field, input, select,
+import { activityList } from "./activity.js";
+import { h, pageHead, panel, button, time, dateTime, table, empty, drawer, props, sectionTitle, field, input, select,
   formDialog, confirm, attempt, loading, secret } from "../ui.js";
 
 export async function render(root, ctx) {
@@ -31,20 +32,23 @@ export async function render(root, ctx) {
     }));
   }
 
-  function open(id) {
+  async function open(id) {
     ctx.setId(id);
     const s = stations.find((x) => x.id.toLowerCase() === String(id).toLowerCase());
     if (!s) return ctx.setId(null);
+    const events = await api.get(`events?subject=${enc(`station:${s.id}`)}&limit=10`);
     drawer({
       title: s.id,
       subtitle: "Release station",
       onClose: () => ctx.setId(null),
-      body: props([
+      body: [props([
         ["Releases to", printerName(s.printerId) ? h("a", { href: `printers/${enc(s.printerId)}` }, printerName(s.printerId)) : `${s.printerId} (missing)`],
         ["Last seen", s.lastSeenAt ? [time(s.lastSeenAt), h("span", { class: "sub" }, dateTime(s.lastSeenAt))] : "Never. Check its token and server_url."],
         ["Address", s.lastIp ? h("code", null, s.lastIp) : "—"],
         ["Added", dateTime(s.createdAt)],
       ]),
+      sectionTitle("History"),
+      activityList(events, { emptyText: "Nothing recorded yet." })],
       footer: [
         button("Remove", { kind: "danger", onclick: () => remove(s) }),
         button("New token", { iconName: "key", onclick: () => resetToken(s) }),
