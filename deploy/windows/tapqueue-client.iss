@@ -171,6 +171,11 @@ begin
   Result := '';
 end;
 
+function Line(S: String): String;
+begin
+  Result := S + #13#10;
+end;
+
 { Write client.toml, or change server_url in an existing one and keep everything else. }
 procedure WriteConfig(Url: String);
 var
@@ -199,20 +204,20 @@ begin
   else
   begin
     SaveStringToFile(ConfigPath,
-      '# TapQueue client settings for this PC, written by setup.' + #13#10 +
-      '# See https://github.com/jthy10/TapQueue/blob/main/docs/windows-client.md' + #13#10 +
-      #13#10 +
-      '# The TapQueue server.' + #13#10 +
-      'server_url = "' + Url + '"' + #13#10 +
-      #13#10 +
-      '# TapQueue username. Empty = the Windows username of whoever is signed in.' + #13#10 +
-      'username = ""' + #13#10 +
-      #13#10 +
-      '# Client token from `tapqueue-admin users add`. Not needed when the server runs with auth.mode = "dev".' + #13#10 +
-      'token = ""' + #13#10 +
-      #13#10 +
-      '# Add the server''s print queues to this PC as printers.' + #13#10 +
-      'install_printers = true' + #13#10, False);
+      Line('# TapQueue client settings for this PC, written by setup.') +
+      Line('# See https://github.com/jthy10/TapQueue/blob/main/docs/windows-client.md') +
+      Line('') +
+      Line('# The TapQueue server.') +
+      Line('server_url = "' + Url + '"') +
+      Line('') +
+      Line('# TapQueue username. Empty = the Windows username of whoever is signed in.') +
+      Line('username = ""') +
+      Line('') +
+      Line('# Client token from `tapqueue-admin users add`. Not needed when the server runs with auth.mode = "dev".') +
+      Line('token = ""') +
+      Line('') +
+      Line('# Add the server''s print queues to this PC as printers.') +
+      Line('install_printers = true'), False);
   end;
 end;
 
