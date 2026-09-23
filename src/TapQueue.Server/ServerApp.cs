@@ -6,6 +6,7 @@ using TapQueue.Server.Data;
 using TapQueue.Server.Ipp;
 using TapQueue.Server.Jobs;
 using TapQueue.Server.Printers;
+using TapQueue.Server.Users;
 using TapQueue.Shared;
 
 namespace TapQueue.Server;
@@ -37,6 +38,7 @@ public static class ServerApp
         builder.Services.AddSingleton<UserStore>();
         builder.Services.AddSingleton<GroupStore>();
         builder.Services.AddSingleton<AccessPolicy>();
+        builder.Services.AddSingleton<UserLifecycle>();
         builder.Services.AddSingleton<SessionStore>();
         builder.Services.AddSingleton<BadgeStore>();
         builder.Services.AddSingleton<StationStore>();

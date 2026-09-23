@@ -4,6 +4,7 @@ using TapQueue.Server.Data;
 using TapQueue.Server.Jobs;
 using TapQueue.Server.Ipp;
 using TapQueue.Server.Printers;
+using TapQueue.Server.Users;
 using TapQueue.Shared;
 using TapQueue.Shared.Api;
 
@@ -298,7 +299,7 @@ public static class AdminApi
         return Results.Ok(new StationTokenResponse(station.ToDto(), token));
     }
 
-    private static IResult CreateUser(CreateUserRequest request, UserStore users, EventLog events)
+    private static IResult CreateUser(CreateUserRequest request, UserStore users, UserLifecycle lifecycle)
     {
         var username = request.Username?.Trim();
         if (string.IsNullOrEmpty(username))
@@ -306,49 +307,26 @@ public static class AdminApi
         if (users.FindByUsername(username) is not null)
             return Results.Conflict(new ErrorResponse($"User \"{username}\" already exists."));
 
-        var token = Tokens.New();
-        var user = users.Create(username, string.IsNullOrWhiteSpace(request.DisplayName) ? username : request.DisplayName.Trim(), Tokens.Hash(token));
-        events.Admin(EventLog.User(user.Username), $"Added user {user.Username} ({user.DisplayName}).");
+        var (user, token) = lifecycle.Create(username, request.DisplayName);
         return Results.Ok(new UserTokenResponse(user.ToDto(), token));
     }
 
-    private static IResult UpdateUser(string username, UpdateUserRequest request, UserStore users, GroupStore groups, EventLog events, ILoggerFactory loggers)
+    private static IResult UpdateUser(string username, UpdateUserRequest request, UserStore users, GroupStore groups, UserLifecycle lifecycle)
     {
         if (users.FindByUsername(username) is not { } user)
             return Results.NotFound(new ErrorResponse($"No user \"{username}\"."));
-        if (Clean(request.DisplayName) is { } displayName && displayName != user.DisplayName)
-        {
-            user = users.SetDisplayName(user.Id, displayName)!;
-            events.Admin(EventLog.User(user.Username), $"Renamed {user.Username} to {displayName}.");
-        }
-        if (request.Disabled is { } disabled && disabled != user.Disabled)
-        {
-            user = users.SetDisabled(user.Id, disabled)!;
-            loggers.CreateLogger("TapQueue.Server.Api.AdminApi").LogInformation(
-                disabled ? "Admin disabled {User}; they're signed out and can't print or release" : "Admin re-enabled {User}", user.Username);
-            events.Admin(EventLog.User(user.Username), disabled
-                ? $"Disabled {user.Username}. They're signed out and can't print or release."
-                : $"Re-enabled {user.Username}.");
-        }
+        if (Clean(request.DisplayName) is { } displayName)
+            user = lifecycle.Rename(user, displayName);
+        if (request.Disabled is { } disabled)
+            user = lifecycle.SetDisabled(user, disabled);
         return Results.Ok(user.ToAdminDto(groups.Memberships().GetValueOrDefault(user.Id) ?? []));
     }
 
-    /// <summary>Cancels the user's held jobs, then deletes them with their cards. Job history keeps their name.</summary>
-    private static IResult DeleteUser(string username, UserStore users, JobStore jobs, Spool spool, EventLog events, ILoggerFactory loggers)
+    private static IResult DeleteUser(string username, UserStore users, UserLifecycle lifecycle)
     {
         if (users.FindByUsername(username) is not { } user)
             return Results.NotFound(new ErrorResponse($"No user \"{username}\"."));
-        var canceled = 0;
-        foreach (var job in jobs.ListForUser(user.Id, heldOnly: true))
-        {
-            if (!jobs.TryTransition(job.Id, JobStatus.Held, JobStatus.Canceled)) continue;
-            spool.Delete(job.Id);
-            canceled++;
-        }
-        users.Delete(user.Id);
-        loggers.CreateLogger("TapQueue.Server.Api.AdminApi").LogInformation(
-            "Admin deleted user {User} ({Canceled} held jobs canceled)", user.Username, canceled);
-        events.Admin(EventLog.User(user.Username), $"Deleted user {user.Username}" + (canceled > 0 ? $" and canceled their {canceled} held jobs." : "."));
+        lifecycle.Delete(user);
         return Results.NoContent();
     }
 

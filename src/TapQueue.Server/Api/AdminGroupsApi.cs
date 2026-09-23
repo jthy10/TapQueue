@@ -1,4 +1,5 @@
 using TapQueue.Server.Data;
+using TapQueue.Server.Users;
 using TapQueue.Shared.Api;
 
 namespace TapQueue.Server.Api;
@@ -67,25 +68,23 @@ public static class AdminGroupsApi
         return Results.NoContent();
     }
 
-    private static IResult AddMember(string id, string username, GroupStore groups, UserStore users, EventLog events)
+    private static IResult AddMember(string id, string username, GroupStore groups, UserStore users, UserLifecycle lifecycle)
     {
         if (groups.Get(id) is not { } group)
             return NotFound(id);
         if (users.FindByUsername(username) is not { } user)
             return Results.NotFound(new ErrorResponse($"No user \"{username}\"."));
-        if (groups.AddMember(group.Id, user.Id))
-            events.Admin(EventLog.User(user.Username), $"Added {user.Username} to group \"{group.Name}\".");
+        lifecycle.AddToGroup(user, group);
         return Results.NoContent();
     }
 
-    private static IResult RemoveMember(string id, string username, GroupStore groups, UserStore users, EventLog events)
+    private static IResult RemoveMember(string id, string username, GroupStore groups, UserStore users, UserLifecycle lifecycle)
     {
         if (groups.Get(id) is not { } group)
             return NotFound(id);
         if (users.FindByUsername(username) is not { } user)
             return Results.NotFound(new ErrorResponse($"No user \"{username}\"."));
-        if (groups.RemoveMember(group.Id, user.Id))
-            events.Admin(EventLog.User(user.Username), $"Removed {user.Username} from group \"{group.Name}\".");
+        lifecycle.RemoveFromGroup(user, group);
         return Results.NoContent();
     }
 
