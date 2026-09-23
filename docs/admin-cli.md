@@ -31,6 +31,11 @@ tapqueue-admin stations add <id> <printer>     Create a station and print its to
 tapqueue-admin stations move <id> <printer>    Make a station release to another printer
 tapqueue-admin stations reset-token <id>       Issue a new station token
 tapqueue-admin stations remove <id>            Delete a station
+
+tapqueue-admin clients                         Signed-in Windows clients and their versions
+tapqueue-admin clients publish <zip|exe> [--version-name]
+                                               Push a Windows client build to every client
+tapqueue-admin clients builds                  Published client builds
 ```
 
 `tapqueue-admin --help` shows every option.

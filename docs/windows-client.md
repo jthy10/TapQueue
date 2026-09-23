@@ -21,3 +21,24 @@ Windows prints with its built-in IPP driver, so there's no printer driver to ins
 
 The client has to be running for jobs to be matched to the user. See
 [how jobs are matched to people](how-it-works.md#how-a-job-is-matched-to-a-person).
+
+## Updates
+
+Clients update themselves. To push a new build to every PC, publish the release zip on the server:
+
+```
+sudo tapqueue-admin clients publish tapqueue-client-X.Y.Z-win-x64.zip
+sudo tapqueue-admin clients        # each client's version; "(updating)" until it has installed it
+```
+
+Each client checks with the server when it signs in and on every heartbeat (once a minute). If its
+own `TapQueueClient.exe` differs from the newest published build, it downloads the build, checks
+its SHA-256, replaces its exe, restarts, and shows a "TapQueue updated" notification. Publishing an
+older build rolls clients back the same way.
+
+- The exe replaces itself in place, so the user running it must be able to write to its folder.
+  Keep it somewhere like `%LocalAppData%\TapQueue`, not `Program Files`. If it can't write there,
+  it shows "Couldn't update TapQueue" and keeps running the old version.
+- The download is checked against the hash the server sends, which catches damaged downloads but
+  not a tampered server or network. Signed builds and HTTPS are planned before production use.
+- Only clients from 0.2.0 on update themselves; install that version by hand once.

@@ -15,6 +15,9 @@ breaking changes; they're listed under **Changed** with what to do.
 - The database schema is versioned, and upgrades are applied automatically at startup.
 
 ### Added
+- Windows client updates: `tapqueue-admin clients publish <zip>` pushes a client build out, and
+  every client installs it within about a minute. `tapqueue-admin clients` shows which version
+  each client runs. See [docs/windows-client.md](docs/windows-client.md#updates).
 - `tapqueue-admin printers add|edit|remove`, `queues`, `queues add|edit|remove`, `stations move`
   and `status`.
 - Printers used by a release station can't be removed until the station is moved.
