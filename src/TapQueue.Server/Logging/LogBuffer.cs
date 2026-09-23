@@ -22,7 +22,7 @@ public sealed class LogBuffer : ILoggerProvider
     public List<LogLineDto> Since(long afterId, int limit)
     {
         lock (_lock)
-            return _lines.Where(l => l.Id > afterId).TakeLast(limit).ToList();
+            return _lines.Where(l => l.Id > Resume(afterId)).TakeLast(limit).ToList();
     }
 
     /// <summary>Lines after <paramref name="afterId"/>, then every new line until <paramref name="ct"/> is canceled.</summary>
@@ -33,7 +33,7 @@ public sealed class LogBuffer : ILoggerProvider
         List<LogLineDto> backlog;
         lock (_lock)
         {
-            backlog = _lines.Where(l => l.Id > afterId).ToList();
+            backlog = _lines.Where(l => l.Id > Resume(afterId)).ToList();
             _watchers.Add(channel);
         }
         try
@@ -49,6 +49,9 @@ public sealed class LogBuffer : ILoggerProvider
                 _watchers.Remove(channel);
         }
     }
+
+    /// <summary>An id from before the server restarted (ids start again at 1) means "from the start".</summary>
+    private long Resume(long afterId) => afterId >= _nextId ? 0 : afterId;
 
     private void Add(LogLevel level, string category, string message)
     {
