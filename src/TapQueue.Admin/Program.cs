@@ -51,6 +51,18 @@ const string Usage = """
                                                      Push a client build out; every client installs it
                                                      on its next heartbeat (about a minute)
       tapqueue-admin clients builds                  Published client builds, newest (the one clients run) first
+      tapqueue-admin clients sign-out <session>      Sign a client out (session number from `clients`); jobs
+                                                     from that PC stop going to that user
+
+      tapqueue-admin workstations                    PCs running the TapQueue service, their client and who's signed in
+      tapqueue-admin workstations update <computer>  Install the published client now, even if it failed before
+      tapqueue-admin workstations forget <computer>  Drop a PC that's gone from the list
+
+      tapqueue-admin server                          Settings (and whether each is set here or in server.toml)
+      tapqueue-admin server set hold-hours|session-timeout <number|default>
+                                                     Change a setting now, or go back to server.toml's
+      tapqueue-admin server log [--follow]           The server's recent log lines, and new ones with --follow
+      tapqueue-admin server restart                  Restart tapqueue-server (only when systemd runs it)
 
     Connection (flag > environment > ~/.config/tapqueue/admin.toml > /etc/tapqueue/server.toml):
       --server <url>    TAPQUEUE_SERVER       default http://localhost:8631
@@ -134,6 +146,14 @@ try
         ("clients", null) => await ListClients(),
         ("clients", "publish") when positional.Count == 3 => await PublishClient(positional[2], options.GetValueOrDefault("--version-name")),
         ("clients", "builds") when positional.Count == 2 => await ListClientBuilds(),
+        ("clients", "sign-out") when positional.Count == 3 => await Delete($"clients/{long.Parse(positional[2])}", $"Signed out session {positional[2]}."),
+        ("workstations", null) => await ListWorkstations(),
+        ("workstations", "update") when positional.Count == 3 => await UpdateWorkstation(positional[2]),
+        ("workstations", "forget") when positional.Count == 3 => await Delete($"workstations/{Uri.EscapeDataString(positional[2])}", $"Forgot {positional[2]}."),
+        ("server", null) => await ShowServer(),
+        ("server", "set") when positional.Count == 4 => await SetServerSetting(positional[2], positional[3]),
+        ("server", "log") when positional.Count == 2 => await ServerLog(options.ContainsKey("--follow")),
+        ("server", "restart") when positional.Count == 2 => await RestartServer(),
         _ => BadUsage(),
     };
 }
@@ -144,7 +164,7 @@ catch (HttpRequestException ex)
 }
 catch (FormatException)
 {
-    Console.Error.WriteLine("Job and badge ids must be numbers.");
+    Console.Error.WriteLine("Job, badge and session ids, and setting values, must be numbers.");
     return 2;
 }
 
@@ -401,12 +421,113 @@ async Task<int> ListClients()
     Console.WriteLine(latest is null
         ? "No client build published; clients keep whatever they run."
         : $"Published client: {latest.Version} ({Ago(latest.PublishedAt)})");
-    Table(["USER", "COMPUTER", "WINDOWS USER", "VERSION", "ADDRESS", "LAST SEEN"], clients.Select(c => new[]
+    Table(["SESSION", "USER", "COMPUTER", "WINDOWS USER", "VERSION", "ADDRESS", "LAST SEEN"], clients.Select(c => new[]
     {
-        c.Username, c.Hostname ?? "", c.WindowsUser ?? "",
+        c.Id.ToString(), c.Username, c.Hostname ?? "", c.WindowsUser ?? "",
         (c.ClientVersion ?? "unknown") + (latest is not null && c.ClientVersion != latest.Version ? " (updating)" : ""),
         c.RemoteIp, Ago(c.LastSeenAt),
     }));
+    return 0;
+}
+
+async Task<int> ListWorkstations()
+{
+    var workstations = await Get<List<WorkstationDto>>("workstations");
+    if (workstations is null) return 1;
+    Table(["COMPUTER", "STATUS", "CLIENT", "SIGNED IN", "ADDRESS", "LAST SEEN"], workstations.Select(w => new[]
+    {
+        w.Hostname,
+        !w.Online ? "offline" : w.UpdateError is not null ? "update failed" : "online",
+        (w.Version ?? "unknown") + (w.UpToDate ? "" : " (behind)"),
+        string.Join(", ", w.Sessions.Select(s => s.Username)),
+        w.LastIp, Ago(w.LastSeenAt),
+    }));
+    foreach (var w in workstations.Where(w => w.UpdateError is not null))
+        Console.WriteLine($"{w.Hostname}: last update failed: {w.UpdateError}");
+    return 0;
+}
+
+async Task<int> UpdateWorkstation(string computer)
+{
+    using var response = await http.PostAsync($"workstations/{Uri.EscapeDataString(computer)}/update", null);
+    if (!response.IsSuccessStatusCode)
+    {
+        await PrintError(response);
+        return 1;
+    }
+    Console.WriteLine($"{computer} will install the published client when it next checks in, within about a minute.");
+    return 0;
+}
+
+async Task<int> ShowServer()
+{
+    var server = await Get<ServerInfoDto>("server");
+    if (server is null) return 1;
+    string Source(string key) => server.ChangedSettings?.Contains(key) == true ? "set here" : "server.toml";
+    Console.WriteLine($"tapqueue-server {server.Version}, up since {server.StartedAt.ToLocalTime():yyyy-MM-dd HH:mm}, schema {server.SchemaVersion}");
+    Console.WriteLine($"hold-hours       {server.HoldHours,-6} ({Source("holdHours")})");
+    Console.WriteLine($"session-timeout  {server.SessionTimeoutMinutes,-6} minutes ({Source("sessionTimeoutMinutes")})");
+    Console.WriteLine($"auth.mode        {server.AuthMode,-6} (server.toml; restart to change)");
+    return 0;
+}
+
+async Task<int> SetServerSetting(string name, string value)
+{
+    var key = name switch { "hold-hours" => "holdHours", "session-timeout" => "sessionTimeoutMinutes", _ => null };
+    if (key is null)
+    {
+        Console.Error.WriteLine("Settings are hold-hours and session-timeout.");
+        return 2;
+    }
+    int? number = value == "default" ? null : int.Parse(value);
+    var request = number is null ? new UpdateServerSettingsRequest(Reset: [key])
+        : key == "holdHours" ? new UpdateServerSettingsRequest(HoldHours: number)
+        : new UpdateServerSettingsRequest(SessionTimeoutMinutes: number);
+    if (await Send<ServerInfoDto>(HttpMethod.Patch, "server/settings", request) is null) return 1;
+    return await ShowServer();
+}
+
+async Task<int> ServerLog(bool follow)
+{
+    var lines = await Get<List<LogLineDto>>("server/log?limit=200");
+    if (lines is null) return 1;
+    foreach (var line in lines)
+        PrintLogLine(line);
+    if (!follow) return 0;
+
+    // Poll rather than hold a stream open, so a restarting server is simply picked up again.
+    var last = lines.LastOrDefault()?.Id ?? 0;
+    while (true)
+    {
+        await Task.Delay(TimeSpan.FromSeconds(1));
+        List<LogLineDto>? more;
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            more = await http.GetFromJsonAsync<List<LogLineDto>>($"server/log?after={last}", TapQueueJson.Options, timeout.Token);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            continue; // restarting, or the network blinked
+        }
+        foreach (var line in more ?? [])
+            PrintLogLine(line);
+        if (more is { Count: > 0 }) last = more[^1].Id;
+    }
+}
+
+static void PrintLogLine(LogLineDto line) =>
+    Console.WriteLine($"{line.At.ToLocalTime():HH:mm:ss} {line.Level,-7} {line.Category}: {line.Message}");
+
+async Task<int> RestartServer()
+{
+    using var response = await http.PostAsync("server/restart", null);
+    if (!response.IsSuccessStatusCode)
+    {
+        await PrintError(response);
+        return 1;
+    }
+    Console.WriteLine("Restarting; the server is back in a few seconds.");
     return 0;
 }
 
