@@ -47,6 +47,14 @@ breaking changes; they're listed under **Changed** with what to do.
 - The server's live log on the console's Server page (and `tapqueue-admin server log --follow`),
   and restarting the server from there when systemd runs it. The systemd unit treats exit code
   75 as a planned restart; reinstall it to pick that up.
+- Page counts: each held job's pages are counted from its document (PDF, PWG raster, Apple
+  raster, JPEG), taking page ranges into account, and shown in the console and `tapqueue-admin jobs`.
+- Page limits (quotas) per day, week or month on users and groups, checked at release. A user's
+  own limit overrides their groups'; otherwise the most generous group limit counts. The
+  `quotaOverrun` setting chooses whether a job may take someone over their limit (default) or
+  must fit in what's left. Console: Users, Groups and Server pages; CLI: `users quota`,
+  `groups quota`, `quotas`, `server set quota-overrun`. See
+  [docs/admin-cli.md](docs/admin-cli.md#page-limits). Database schema 9.
 
 ### Changed
 - With `auth.mode = "dev"`, the admin API accepts requests without the admin token.

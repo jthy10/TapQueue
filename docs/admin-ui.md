@@ -88,7 +88,11 @@ Each phase ships on its own and leaves the console usable.
    session timeout (saved in the database; server.toml gives the defaults), streams the live log
    (server-sent events, the last 2000 lines kept in memory) and restarts the server when systemd
    runs it (exit code 75, which the unit restarts).
-6. **Quotas.** Page counting for PDF and PWG raster jobs, page limits per user and group, per
-   period, enforced at release.
+6. **Quotas.** *(Done.)* Jobs' pages are counted when they arrive (PDF, PWG raster, Apple
+   raster and JPEG; anything else counts as 1 page and is flagged). Page limits per day, week or
+   month on users and groups, checked job by job at release. A user's own limit overrides their
+   groups'; otherwise the most generous group limit counts. The Server page chooses whether a job
+   may take someone over their limit (the default) or has to fit. Users shows each person's usage.
+   See [admin-cli.md](admin-cli.md#page-limits).
 7. **Admin sign-in and roles.** Admin accounts with roles (Admin, Operator, Viewer), sign-in,
    and the console available with `auth.mode = "token"`.
