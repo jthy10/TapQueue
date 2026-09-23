@@ -22,6 +22,10 @@ breaking changes; they're listed under **Changed** with what to do.
   in the server and station logs, `/healthz`, and the tray menu.
 - Release archives for the server, station and Windows client, built by CI and attached to GitHub
   releases.
+- `install-server.sh` in the server archive installs or upgrades the server in one step.
+- `tapqueue-admin` run with `sudo` on the server reads the admin token from `/etc/tapqueue/server.toml`.
+- Documentation split into `docs/`, including how jobs are matched to people and where that
+  falls short (NAT, terminal servers).
 - End-to-end tests for printing, holding, releasing and badge taps against a fake printer.
 
 ## [0.1.0] - 2026-09-23
