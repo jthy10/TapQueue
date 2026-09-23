@@ -23,28 +23,30 @@ On the server, create the station and choose the printer it releases to:
 sudo tapqueue-admin stations add lobby office     # prints the station token
 ```
 
-On the station, extract `tapqueue-station-X.Y.Z-linux-x64.tar.gz` from
-[Releases](https://github.com/jthy10/TapQueue/releases) and:
+On the station:
 
 ```sh
-cd tapqueue-station-X.Y.Z
-sudo useradd --system --no-create-home --shell /usr/sbin/nologin --groups input tapqueue-station
-sudo install -d /opt/tapqueue /etc/tapqueue
-sudo install -m 755 tapqueue-station /opt/tapqueue/
+curl -fsSL https://raw.githubusercontent.com/jthy10/TapQueue/main/install.sh | sudo bash -s station
+```
 
+It downloads the newest station release, asks for the server address and the station token,
+finds the badge reader (a pcProx is detected automatically; for other readers it lists the
+keyboard-style devices to pick from), and starts the `tapqueue-station` service. For unattended
+installs, set `TAPQUEUE_SERVER`, `TAPQUEUE_STATION_TOKEN` and `TAPQUEUE_READER_DEVICE`
+(`... | sudo TAPQUEUE_SERVER=... bash -s station`). Run it again to upgrade; the config is kept.
+
+Check the reader and logs:
+
+```sh
+sudo systemctl stop tapqueue-station
 /opt/tapqueue/tapqueue-station --list-devices                    # find the reader
-sudo /opt/tapqueue/tapqueue-station --test --device /dev/input/by-id/usb-…-event-kbd
-                                                                 # tap a card; its number is printed
-sudo /opt/tapqueue/tapqueue-station --test --reader pcprox       # same, for a pcProx
-sudo install -m 644 60-tapqueue-pcprox.rules /etc/udev/rules.d/  # pcProx only
-sudo udevadm control --reload-rules && sudo udevadm trigger
-
-sudo install -m 640 -g tapqueue-station station.example.toml /etc/tapqueue/station.toml
-sudoedit /etc/tapqueue/station.toml          # server_url, token, reader, device
-sudo install -m 644 tapqueue-station.service /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now tapqueue-station
+sudo /opt/tapqueue/tapqueue-station --test                       # tap a card; its number is printed
+sudo systemctl start tapqueue-station
 journalctl -u tapqueue-station -f            # "Station "lobby" releases to Office printer (online)."
 ```
+
+The settings are in `/etc/tapqueue/station.toml` (`sudoedit` it, then
+`sudo systemctl restart tapqueue-station`).
 
 To move a station to another printer, change it on the server. Nothing changes on the station:
 `sudo tapqueue-admin stations move lobby front-desk`.

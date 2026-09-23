@@ -25,14 +25,20 @@ Nothing sits in the output tray for someone else to pick up.
 | **tapqueue-server** | Linux | IPP hold queue, REST API, releases jobs to printers |
 | **tapqueue-admin** | Linux | Command-line admin tool |
 | **tapqueue-station** | Linux | Release station: a USB badge reader next to a printer; a tap releases your jobs |
-| **TapQueueClient.exe** | Windows 11 | Tray app: signs you in, adds the printer, shows held jobs |
+| **TapQueue client** | Windows 11 | Installer, tray app (signs you in, shows held jobs) and a service that adds the printer and installs updates pushed from the server |
 
-Download them from [Releases](https://github.com/jthy10/TapQueue/releases).
+Download them from [Releases](https://github.com/jthy10/TapQueue/releases): `TapQueue_client_X.Y.Z.exe`
+for PCs (`client-v` releases), and the server and station (`server-v` releases), which install
+with one command:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/jthy10/TapQueue/main/install.sh | sudo bash -s server    # or: station
+```
 
 ## How it works
 
 1. **The server looks like an ordinary network printer.** Windows 11 prints to it with its
-   built-in IPP driver, so there's nothing to install on the PC but the tray app.
+   built-in IPP driver, so there's nothing to install on the PC but the TapQueue client.
 2. **Jobs are held, not printed.** The server keeps the document and the print options chosen.
 3. **The job is matched to a person** through the tray app, which is signed in on the PC the
    job came from. The username inside a print job is easy to fake, so it isn't trusted on its own.
@@ -46,10 +52,11 @@ IP address can't handle.
 ## Getting started
 
 1. [Install the server](docs/install-server.md), then add a queue, your printers and users.
-2. [Set up the Windows client](docs/windows-client.md) on each PC.
+2. [Install the Windows client](docs/windows-client.md) on each PC.
 3. [Set up a release station](docs/release-station.md) next to each printer and enroll badges.
 
-Reference: [admin CLI](docs/admin-cli.md) · [changelog](CHANGELOG.md) ·
+Reference: [admin CLI](docs/admin-cli.md) · changelogs: [server and station](CHANGELOG.md),
+[Windows client](CHANGELOG-client.md) ·
 [development](docs/development.md) · [releasing](docs/releasing.md)
 
 ## Roadmap
@@ -62,13 +69,15 @@ Reference: [admin CLI](docs/admin-cli.md) · [changelog](CHANGELOG.md) ·
 - [x] Badge enrollment by an admin (tap, then `badges add --last-tap`)
 - [x] Queues and printers managed without restarting the server
 - [x] Versioned releases with prebuilt archives and an install script
+- [x] Windows installer; client updates pushed from the server
+- [x] One-command server and station installs from GitHub
 - [ ] Feedback at the printer (screen or beeper) for "nothing to print" and errors
 - [ ] Self-service badge enrollment from the tray app
 - [ ] TLS for client and IPP connections
 - [ ] Web admin console
 - [ ] Directory sync (Active Directory / LDAP / Entra ID)
 - [ ] Page counting, quotas and reports
-- [ ] Installers (.deb, MSI) and ARM builds for small release devices
+- [ ] Signed Windows builds; .deb packages; ARM builds for small release devices
 
 ## License
 

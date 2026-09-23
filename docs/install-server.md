@@ -7,15 +7,21 @@ when they're released or expire).
 Give it a fixed address (a static IP or DHCP reservation, ideally with a DNS name). Every Windows
 client and release station points at it.
 
-## From a release (recommended)
-
-Download `tapqueue-server-X.Y.Z-linux-x64.tar.gz` from
-[Releases](https://github.com/jthy10/TapQueue/releases) and check it against `SHA256SUMS`. Then:
+## One command (recommended)
 
 ```sh
-tar xzf tapqueue-server-X.Y.Z-linux-x64.tar.gz
-cd tapqueue-server-X.Y.Z
-sudo ./install-server.sh
+curl -fsSL https://raw.githubusercontent.com/jthy10/TapQueue/main/install.sh | sudo bash -s server
+```
+
+This downloads the newest server release from [Releases](https://github.com/jthy10/TapQueue/releases),
+checks it against `SHA256SUMS`, and runs the `install-server.sh` inside it. Add a version to get a
+specific one: `... | sudo bash -s server 0.3.0`.
+
+To do the same by hand, download `TapQueue_server_X.Y.Z_linux-x64.tar.gz`, then:
+
+```sh
+tar xzf TapQueue_server_X.Y.Z_linux-x64.tar.gz
+sudo ./TapQueue_server_X.Y.Z_linux-x64/install-server.sh
 ```
 
 The script:
@@ -71,8 +77,8 @@ Queues, printers, users, badges and stations live in the database and are manage
 
 ## Upgrading
 
-Extract the new release and run its `install-server.sh`. It replaces the programs, keeps your
-config and data, and restarts the service. Database changes are applied automatically at startup.
+Run the same one-line install again (or extract the new release and run its `install-server.sh`).
+It replaces the programs, keeps your config and data, and restarts the service. Database changes are applied automatically at startup.
 Read the [changelog](../CHANGELOG.md) first: before 1.0, minor versions can need manual steps.
 
 ## Backups

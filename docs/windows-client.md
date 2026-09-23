@@ -1,44 +1,68 @@
 # Windows client
 
-`TapQueueClient.exe` is a tray app for Windows 11. It signs the user in to the server, adds the
-TapQueue printer, tells them when jobs are held, and lets them release or delete jobs.
+The TapQueue client for Windows 11 has two parts, both in `TapQueueClient.exe`:
+
+- **The tray app**, started for each user when they sign in. It signs them in to the server
+  (which is how their print jobs are matched to them), tells them when jobs are held, and lets
+  them release or delete jobs.
+- **The TapQueue service**, one per PC, running in the background as the system. It adds the
+  TapQueue printers for every user and installs updates pushed from the server.
+
 Windows prints with its built-in IPP driver, so there's no printer driver to install.
 
 ## Install
 
-1. Copy `TapQueueClient.exe` from `tapqueue-client-X.Y.Z-win-x64.zip`
-   ([Releases](https://github.com/jthy10/TapQueue/releases)) to the PC.
-2. Create `C:\ProgramData\TapQueue\client.toml` (see [`config/client.example.toml`](../config/client.example.toml)):
-   ```toml
-   server_url = "http://tapqueue-server:8631"
-   username = "jsmith"     # empty = use the Windows username
-   token = "…"             # from `tapqueue-admin users add`; not needed in dev mode
-   ```
-3. Run `TapQueueClient.exe`. It signs in and adds the TapQueue printer, then sits in the tray.
-   The first run may need to be **as administrator**, so that Windows lets it add the printer.
-4. Print something to **TapQueue Secure Print** (or whatever the queue is called), then tap a badge
-   at a release station, or right-click the tray icon → **Release all to** → pick a printer.
+1. Download `TapQueue_client_X.Y.Z.exe` from [Releases](https://github.com/jthy10/TapQueue/releases)
+   (the newest `client-v` release).
+2. Run it (it asks for admin rights) and enter your server's address, e.g.
+   `http://tapqueue-server:8631`.
+3. TapQueue starts in the tray. Within a minute the **TapQueue Secure Print** printer (or whatever
+   the queue is called) appears for every user of the PC.
+4. Print something to it, then tap a badge at a release station, or right-click the tray icon →
+   **Release all to** → pick a printer.
 
-The client has to be running for jobs to be matched to the user. See
+What goes where:
+
+| | |
+|---|---|
+| `C:\Program Files\TapQueue\TapQueueClient.exe` | The program |
+| `C:\ProgramData\TapQueue\client.toml` | Settings for the PC (see [`config/client.example.toml`](../config/client.example.toml)). Only admins can change it. |
+| `C:\ProgramData\TapQueue\printers.txt` | The printers the service added, so they can be removed later |
+| Services → **TapQueue** | The service; its log is in Event Viewer → Windows Logs → Application, source "TapQueue" |
+
+To install on many PCs, run it silently, for example from a deployment tool or a login script:
+
+```
+TapQueue_client_X.Y.Z.exe /VERYSILENT /SERVER=http://tapqueue-server:8631
+```
+
+To remove TapQueue, uninstall it from Settings → Apps. That also removes the printers and the
+service. `client.toml` is kept, so reinstalling remembers the server.
+
+The tray app has to be running for jobs to be matched to the user. See
 [how jobs are matched to people](how-it-works.md#how-a-job-is-matched-to-a-person).
 
 ## Updates
 
-Clients update themselves. To push a new build to every PC, publish the release zip on the server:
+PCs update themselves. To push a new build to every PC, download
+`TapQueue_client_X.Y.Z_win-x64.zip` from the release and publish it on the server:
 
 ```
-sudo tapqueue-admin clients publish tapqueue-client-X.Y.Z-win-x64.zip
-sudo tapqueue-admin clients        # each client's version; "(updating)" until it has installed it
+sudo tapqueue-admin clients publish TapQueue_client_X.Y.Z_win-x64.zip
+sudo tapqueue-admin clients        # each PC's version; "(updating)" until it has installed it
 ```
 
-Each client checks with the server when it signs in and on every heartbeat (once a minute). If its
-own `TapQueueClient.exe` differs from the newest published build, it downloads the build, checks
-its SHA-256, replaces its exe, restarts, and shows a "TapQueue updated" notification. Publishing an
-older build rolls clients back the same way.
+The TapQueue service on each PC checks with the server once a minute. If its
+`TapQueueClient.exe` differs from the newest published build, it downloads the build (the server
+log shows each PC doing so), checks its SHA-256, replaces the exe and restarts. The tray apps
+notice within a minute, restart into the new version and say "TapQueue updated". Publishing an
+older build rolls PCs back the same way.
 
-- The exe replaces itself in place, so the user running it must be able to write to its folder.
-  Keep it somewhere like `%LocalAppData%\TapQueue`, not `Program Files`. If it can't write there,
-  it shows "Couldn't update TapQueue" and keeps running the old version.
-- The download is checked against the hash the server sends, which catches damaged downloads but
-  not a tampered server or network. Signed builds and HTTPS are planned before production use.
-- Only clients from 0.2.0 on update themselves; install that version by hand once.
+The download is checked against the hash the server sends, which catches damaged downloads but
+not a tampered server or network. Signed builds and HTTPS are planned before production use.
+
+## Known limits
+
+- `client.toml` is for the whole PC, so on a shared PC with the server in `token` mode every user
+  would sign in with the same token. Per-user sign-in for token mode is still to do; for now,
+  shared PCs need `auth.mode = "dev"`, or a `username`/`token` per PC.
