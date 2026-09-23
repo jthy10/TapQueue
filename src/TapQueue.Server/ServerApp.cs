@@ -25,6 +25,8 @@ public static class ServerApp
             kestrel.Limits.MaxRequestBodySize = 512L * 1024 * 1024; // big scanned PDFs
         });
         builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
+        // One line per event, so the log reads well in journalctl and on the server's screen.
+        builder.Logging.AddSimpleConsole(o => o.SingleLine = true);
         builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.PropertyNamingPolicy = TapQueueJson.Options.PropertyNamingPolicy);
         builder.Services.AddSingleton(config);
         builder.Services.AddSingleton(database);
