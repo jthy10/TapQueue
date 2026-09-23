@@ -13,7 +13,9 @@ public sealed class TrayApp : ApplicationContext
     private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(15);
 
     private readonly ClientConfig _config;
+    private readonly string[] _args;
     private readonly TapQueueApi _api;
+    private readonly ClientUpdater _updater;
     private readonly NotifyIcon _tray;
     private readonly Icon _connectedIcon = TrayIcon.Create(connected: true);
     private readonly Icon _disconnectedIcon = TrayIcon.Create(connected: false);
@@ -29,10 +31,14 @@ public sealed class TrayApp : ApplicationContext
     private string? _lastError;
     private JobsForm? _jobsForm;
 
-    public TrayApp(ClientConfig config)
+    /// <param name="args">Command line to start the next version with after an update.</param>
+    /// <param name="updatedFrom">The version this one replaced, when it was just started by an update.</param>
+    public TrayApp(ClientConfig config, string[] args, string? updatedFrom)
     {
         _config = config;
+        _args = args;
         _api = new TapQueueApi(config);
+        _updater = new ClientUpdater(_api, Notify, ExitThread);
         _tray = new NotifyIcon
         {
             Icon = _disconnectedIcon,
@@ -52,6 +58,11 @@ public sealed class TrayApp : ApplicationContext
         _retryTimer.Tick += async (_, _) => await ConnectAsync();
 
         BuildMenu();
+        if (updatedFrom is not null)
+        {
+            _updater.CleanUp();
+            Notify("TapQueue updated", $"Now running {TapQueueVersion.Current} (was {updatedFrom}).");
+        }
         _ = ConnectAsync();
     }
 
@@ -76,6 +87,7 @@ public sealed class TrayApp : ApplicationContext
                 await InstallPrintersAsync(reinstall: false);
             }
             await PollAsync();
+            await _updater.CheckAsync(session.ClientBuild, _args);
         }
         catch (Exception ex) when (ex is HttpRequestException or TapQueueApiException or TaskCanceledException)
         {
@@ -118,7 +130,8 @@ public sealed class TrayApp : ApplicationContext
     {
         try
         {
-            await _api.HeartbeatAsync();
+            var heartbeat = await _api.HeartbeatAsync();
+            await _updater.CheckAsync(heartbeat?.ClientBuild, _args);
         }
         catch (Exception ex) when (ex is HttpRequestException or TapQueueApiException or TaskCanceledException)
         {
