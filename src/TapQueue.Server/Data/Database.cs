@@ -140,6 +140,30 @@ public sealed class Database
                 last_ip       TEXT
             );
         """,
+
+        // 2: printers and queues move out of server.toml. stations.printer_id isn't a foreign key
+        // (SQLite can't add one to an existing table); PrinterStore.Delete checks it instead.
+        """
+            CREATE TABLE printers (
+                id               TEXT PRIMARY KEY COLLATE NOCASE,
+                name             TEXT NOT NULL,
+                location         TEXT NOT NULL DEFAULT '',
+                uri              TEXT NOT NULL,
+                tls_skip_verify  INTEGER NOT NULL DEFAULT 0,
+                created_at       TEXT NOT NULL
+            );
+
+            CREATE TABLE queues (
+                id             TEXT PRIMARY KEY COLLATE NOCASE,
+                name           TEXT NOT NULL,
+                description    TEXT NOT NULL,
+                location       TEXT NOT NULL DEFAULT '',
+                color          INTEGER NOT NULL DEFAULT 0,
+                duplex         INTEGER NOT NULL DEFAULT 0,
+                default_media  TEXT NOT NULL,
+                created_at     TEXT NOT NULL
+            );
+        """,
     ];
 
     public void Migrate()
