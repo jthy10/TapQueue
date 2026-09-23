@@ -404,3 +404,11 @@ a.feed-text:hover { color: var(--accent); }
 .check-list input { margin-top: 2px; }
 .check-list small { display: block; color: var(--muted); font-size: 12px; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+
+th.pick, td.pick { width: 36px; padding-right: 0; }
+.bulk-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 16px; background: var(--accent-weak); border-bottom: 1px solid var(--border); }
+.bulk-bar b { color: var(--accent); margin-right: 6px; }
+.import-summary { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.import-rows { max-height: 320px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.import-rows td { font-size: 13px; padding: 8px 12px; vertical-align: top; }
+dialog.wide { width: min(720px, calc(100vw - 32px)); }

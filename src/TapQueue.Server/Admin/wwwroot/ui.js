@@ -111,25 +111,42 @@ export const loading = () => h("div", { class: "loading" }, "Loading…");
 /**
  * columns: [{ label, value: row => node, class }]
  * Pass `search: row => "text to match"` to get a filter box, `onRowClick` to make rows open something.
+ * Pass `selectable: { key: row => id, onChange: Set => … }` for a checkbox column (for bulk actions).
  */
-export function table({ columns, rows, onRowClick, empty: emptyNode, search, toolbar, selected }) {
+export function table({ columns, rows, onRowClick, empty: emptyNode, search, toolbar, selected, selectable }) {
   const tbody = h("tbody");
   const filter = search && h("input", { class: "search", type: "search", placeholder: "Filter…", oninput: () => fill() });
+  const picked = new Set();
+  let shown = rows;
+  const all = selectable && h("input", { type: "checkbox", "aria-label": "Select all", onchange: () => {
+    shown.forEach((r) => (all.checked ? picked.add(selectable.key(r)) : picked.delete(selectable.key(r))));
+    fill();
+    selectable.onChange(new Set(picked));
+  } });
+
+  function pick(row, on) {
+    on ? picked.add(selectable.key(row)) : picked.delete(selectable.key(row));
+    all.checked = shown.length > 0 && shown.every((r) => picked.has(selectable.key(r)));
+    selectable.onChange(new Set(picked));
+  }
 
   function fill() {
     const q = filter?.value.trim().toLowerCase() ?? "";
-    const shown = q ? rows.filter((r) => search(r).toLowerCase().includes(q)) : rows;
+    shown = q ? rows.filter((r) => search(r).toLowerCase().includes(q)) : rows;
     tbody.replaceChildren(...shown.map((row) =>
       h("tr", {
-        class: [onRowClick && "clickable", selected?.(row) && "selected"].filter(Boolean).join(" "),
+        class: [onRowClick && "clickable", (selected?.(row) || picked.has(selectable?.key(row))) && "selected"].filter(Boolean).join(" "),
         onclick: onRowClick && (() => onRowClick(row)),
-      }, columns.map((c) => h("td", { class: c.class }, c.value(row))))));
+      },
+      selectable && h("td", { class: "pick", onclick: (e) => e.stopPropagation() },
+        h("input", { type: "checkbox", "aria-label": "Select", checked: picked.has(selectable.key(row)), onchange: (e) => { pick(row, e.target.checked); e.target.closest("tr").classList.toggle("selected", e.target.checked); } })),
+      columns.map((c) => h("td", { class: c.class }, c.value(row))))));
     body.hidden = shown.length === 0;
     none.hidden = shown.length > 0;
   }
 
   const body = h("div", { class: "table-wrap" },
-    h("table", null, h("thead", null, h("tr", null, columns.map((c) => h("th", { class: c.class }, c.label)))), tbody));
+    h("table", null, h("thead", null, h("tr", null, selectable && h("th", { class: "pick" }, all), columns.map((c) => h("th", { class: c.class }, c.label)))), tbody));
   const none = h("div", null, rows.length === 0 ? emptyNode ?? empty("Nothing here yet") : empty("No matches", "Try a different filter."));
   const bar = (filter || toolbar) && h("div", { class: "toolbar" }, filter, h("div", { class: "grow" }), toolbar);
   fill();
@@ -217,7 +234,7 @@ export function readForm(form) {
  * A modal form. onSubmit(values) runs the change; throw to show the error in the form. If it returns
  * an element, the dialog shows it with a Done button (for things like a token that's only shown once).
  */
-export function formDialog({ title, description, body, submitLabel = "Save", danger, onSubmit }) {
+export function formDialog({ title, description, body, submitLabel = "Save", danger, wide, onSubmit }) {
   const error = h("div", { class: "form-error", hidden: true });
   const submit = button(submitLabel, { type: "submit", kind: danger ? "danger solid" : "primary" });
   const cancel = button("Cancel", { onclick: () => dialog.close() });
@@ -244,7 +261,7 @@ export function formDialog({ title, description, body, submitLabel = "Save", dan
   } },
     h("div", { class: "dialog-head" }, h("h2", null, title), description && h("p", null, description)),
     content, foot);
-  const dialog = h("dialog", { onclose: () => dialog.remove() }, form);
+  const dialog = h("dialog", { class: wide ? "wide" : null, onclose: () => dialog.remove() }, form);
   document.body.append(dialog);
   dialog.showModal();
   form.querySelector("input:not([type=hidden]), select, textarea")?.focus();

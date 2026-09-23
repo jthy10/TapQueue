@@ -1,6 +1,6 @@
 import { api, enc } from "../api.js";
 import { h, pageHead, panel, button, pill, time, dateTime, table, empty, drawer, props, sectionTitle, field, input,
-  checkList, formDialog, confirm, secret, attempt, loading, plural } from "../ui.js";
+  select, checkList, formDialog, confirm, secret, attempt, toast, loading, plural } from "../ui.js";
 import { enrollCard, editCard, removeCard } from "./cards.js";
 import { jobStatus } from "./jobs.js";
 import { activityList } from "./activity.js";
@@ -8,9 +8,96 @@ import { activityList } from "./activity.js";
 export async function render(root, ctx) {
   let data;
   const list = h("div", null, loading());
+  let selection = new Set();
+  const bulkBar = h("div", { class: "bulk-bar", hidden: true });
   root.append(pageHead("Users", "People who print. Each one signs in on their PC with the TapQueue client and releases jobs with a card.",
+    button("Import CSV", { onclick: importCsv }),
+    h("a", { class: "btn", href: "/api/v1/admin/users/export", download: "" }, "Export CSV"),
     button("Add user", { kind: "primary", iconName: "plus", onclick: addUser })),
-  panel({ flush: true, body: list }));
+  panel({ flush: true, body: [bulkBar, list] }));
+
+  function drawBulkBar() {
+    bulkBar.hidden = selection.size === 0;
+    const run = (action, extra) => attempt(() => bulk(action, extra));
+    bulkBar.replaceChildren(
+      h("b", null, `${selection.size} selected`),
+      data.groups.length > 0 && button("Add to group…", { small: true, onclick: () => pickGroup("add-to-group") }),
+      data.groups.length > 0 && button("Remove from group…", { small: true, onclick: () => pickGroup("remove-from-group") }),
+      button("Disable", { small: true, onclick: () => run("disable") }),
+      button("Enable", { small: true, onclick: () => run("enable") }),
+      button("Delete", { small: true, kind: "danger", onclick: () => run("delete") }));
+  }
+
+  function pickGroup(action) {
+    formDialog({
+      title: action === "add-to-group" ? `Add ${plural(selection.size, "user")} to a group` : `Remove ${plural(selection.size, "user")} from a group`,
+      submitLabel: action === "add-to-group" ? "Add" : "Remove",
+      body: field("Group", select("groupId", data.groups.map((g) => [g.id, g.name]))),
+      onSubmit: ({ groupId }) => bulk(action, { groupId }, true),
+    });
+  }
+
+  async function bulk(action, extra = {}, confirmed = false) {
+    const who = plural(selection.size, "user");
+    if (!confirmed && action !== "enable" && !await confirm({
+      title: action === "delete" ? `Delete ${who}?` : `Disable ${who}?`,
+      message: action === "delete"
+        ? "Their held jobs are canceled and their cards unlinked. Job history keeps their names."
+        : "They're signed out and can't sign in, print or release until re-enabled.",
+      confirmLabel: action === "delete" ? "Delete" : "Disable",
+    })) return;
+    const result = await api.post("users/bulk", { usernames: [...selection], action, ...extra });
+    toast(result.errors.length ? `${plural(result.changed, "user")} changed. ${result.errors.join(" ")}` : `${plural(result.changed, "user")} changed`, result.errors.length ? "bad" : undefined);
+    selection = new Set();
+    await load();
+  }
+
+  function importCsv() {
+    formDialog({
+      title: "Import users from CSV",
+      description: "You'll see what would change before anything does.",
+      submitLabel: "Preview",
+      body: [
+        field("CSV file", input("file", { type: "file", accept: ".csv,text/csv", required: true })),
+        h("div", { class: "callout info" }, "Columns: username (required), display_name, groups (ids separated by ;), card, disabled. ",
+          "The groups column replaces each person's groups. Export first to get a file in the right shape."),
+      ],
+      onSubmit: async ({ file }) => {
+        if (!file) throw new Error("Choose a CSV file.");
+        const preview = await api.upload("users/import", file);
+        reviewImport(file, preview);
+      },
+    });
+  }
+
+  function reviewImport(file, preview) {
+    const changing = preview.creates + preview.updates;
+    formDialog({
+      title: "Review import",
+      wide: true,
+      submitLabel: changing ? `Apply ${plural(changing, "change")}` : "Nothing to apply",
+      body: importResult(preview),
+      onSubmit: async () => {
+        if (!changing) return;
+        const result = await api.upload("users/import?apply=true", file);
+        await load();
+        return importResult(result);
+      },
+    });
+  }
+
+  function importResult(r) {
+    const tone = { create: "ok", update: "accent", error: "bad" };
+    return h("div", null,
+      h("div", { class: "import-summary" },
+        pill(`${r.creates} to create`, "ok"), pill(`${r.updates} to update`, "accent"), r.errors > 0 && pill(`${r.errors} with problems`, "bad"),
+        r.applied && pill("Applied", "ok")),
+      h("div", { class: "import-rows" }, h("table", null, h("tbody", null, r.rows.map((row) => h("tr", null,
+        h("td", { class: "muted nowrap" }, `Row ${row.row}`),
+        h("td", { class: "cell-strong" }, row.username || "—"),
+        h("td", null, pill(row.action, tone[row.action])),
+        h("td", null, row.error ?? (row.changes.join(", ") || "no changes"))))))));
+  }
 
   async function load() {
     const [users, badges, held, clients, server, groups] = await Promise.all([
@@ -20,8 +107,10 @@ export async function render(root, ctx) {
     const by = (rows, key) => rows.reduce((m, r) => m.set(r[key], [...(m.get(r[key]) ?? []), r]), new Map());
     data = { users, server, groups, badges: by(badges, "username"), held: by(held, "owner"), clients: by(clients, "username") };
 
+    drawBulkBar();
     list.replaceChildren(table({
       rows: users,
+      selectable: { key: (u) => u.username, onChange: (picked) => { selection = picked; drawBulkBar(); } },
       search: (u) => `${u.username} ${u.displayName}`,
       onRowClick: (u) => open(u.username),
       empty: empty("No users yet", server.authMode === "dev"
