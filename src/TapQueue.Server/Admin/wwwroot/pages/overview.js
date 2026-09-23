@@ -1,6 +1,6 @@
 import { api } from "../api.js";
-import { h, icon, pageHead, panel, button, pill, time, plural, table, empty, duration } from "../ui.js";
-import { jobStatus } from "./jobs.js";
+import { h, icon, pageHead, panel, button, pill, time, plural, duration } from "../ui.js";
+import { activityList } from "./activity.js";
 
 export async function render(root, ctx) {
   const body = h("div", { class: "stack" });
@@ -8,9 +8,9 @@ export async function render(root, ctx) {
     button("Refresh", { iconName: "refresh", onclick: () => load(true) })), body);
 
   async function load(refresh) {
-    const [server, printers, stations, clients, held, recent, unknown, queues, builds] = await Promise.all([
+    const [server, printers, stations, clients, held, unknown, queues, builds, events] = await Promise.all([
       api.get("server"), api.get(`printers${refresh ? "?refresh=true" : ""}`), api.get("stations"), api.get("clients"),
-      api.get("jobs?status=held"), api.get("jobs"), api.get("badges/unknown"), api.get("queues"), api.get("client-builds"),
+      api.get("jobs?status=held"), api.get("badges/unknown"), api.get("queues"), api.get("client-builds"), api.get("events?limit=10"),
     ]);
     if (!ctx.current) return;
     const online = printers.filter((p) => p.printer.online).length;
@@ -19,7 +19,7 @@ export async function render(root, ctx) {
 
     body.replaceChildren(
       h("div", { class: "grid stats" },
-        stat("Held jobs", held.length, "jobs", `${plural(new Set(held.map((j) => j.owner ?? "?")).size, "person")} waiting`),
+        stat("Held jobs", held.length, "jobs", waiting(held)),
         stat("Printers online", [online, h("small", null, ` / ${printers.length}`)], "printers",
           online === printers.length ? "All reachable" : `${printers.length - online} unreachable`),
         stat("Stations", stations.length, "stations", stations.length ? `Last tap-in ${lastSeen(stations)}` : "None set up"),
@@ -34,24 +34,19 @@ export async function render(root, ctx) {
           h("dt", null, "Jobs held for"), h("dd", null, plural(server.holdHours, "hour")),
         )) }),
       ),
-      panel({ title: "Recent jobs", actions: h("a", { class: "btn small", href: "jobs" }, "All jobs"), flush: true,
-        body: table({
-          rows: recent.slice(0, 8),
-          empty: empty("No jobs yet", "Jobs show up here once someone prints to a TapQueue queue."),
-          onRowClick: (j) => ctx.navigate(`jobs/${j.id}`),
-          columns: [
-            { label: "Document", value: (j) => h("span", { class: "cell-strong" }, j.name) },
-            { label: "Owner", value: (j) => j.owner ?? h("span", { class: "muted" }, "unmatched") },
-            { label: "Status", value: jobStatus },
-            { label: "Submitted", value: (j) => time(j.submittedAt) },
-          ],
-        }) }),
+      panel({ title: "Recent activity", actions: h("a", { class: "btn small", href: "activity" }, "All activity"),
+        body: activityList(events, { emptyText: "Nothing yet. Prints, taps and changes show up here." }) }),
     );
   }
 
   body.append(h("div", { class: "loading" }, "Loading…"));
   await load(false);
   ctx.every(15000, () => load(false));
+}
+
+function waiting(held) {
+  const people = new Set(held.map((j) => j.owner ?? "?")).size;
+  return people === 0 ? "Nothing waiting" : `${people === 1 ? "1 person" : `${people} people`} waiting`;
 }
 
 function stat(label, value, href, note) {

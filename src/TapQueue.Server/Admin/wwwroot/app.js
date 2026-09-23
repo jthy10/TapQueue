@@ -8,7 +8,7 @@ const nav = [
   { group: "Operate", items: [
     { id: "overview", label: "Overview", icon: "overview" },
     { id: "jobs", label: "Jobs", icon: "jobs" },
-    { id: "activity", label: "Activity", icon: "activity", soon: true },
+    { id: "activity", label: "Activity", icon: "activity" },
   ] },
   { group: "People", items: [
     { id: "users", label: "Users", icon: "users" },

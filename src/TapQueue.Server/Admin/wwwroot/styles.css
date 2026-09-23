@@ -378,3 +378,22 @@ dialog form { margin: 0; }
   .props { grid-template-columns: 1fr; gap: 2px; }
   .props dd { margin-bottom: 10px; }
 }
+
+/* ---------- Activity feed ---------- */
+
+.feed { list-style: none; margin: 0; padding: 0; }
+.feed li { display: flex; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--border); }
+.feed li:first-child { padding-top: 0; }
+.feed li:last-child { border-bottom: none; padding-bottom: 0; }
+.feed-icon {
+  flex: none; width: 26px; height: 26px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--surface-2); color: var(--muted); border: 1px solid var(--border);
+}
+.feed-icon.job { background: var(--accent-weak); color: var(--accent); border-color: transparent; }
+.feed-icon.tap { background: var(--ok-weak); color: var(--ok); border-color: transparent; }
+.feed-icon.admin { background: var(--warn-weak); color: var(--warn); border-color: transparent; }
+.feed-body { min-width: 0; }
+.feed-text { display: block; color: var(--text); }
+a.feed-text:hover { color: var(--accent); }
+.feed-meta { display: block; color: var(--muted); font-size: 12px; margin-top: 1px; }
