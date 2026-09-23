@@ -14,7 +14,7 @@ namespace TapQueue.Client.Windows;
 /// build, keeps the PC's printers in step, and installs a newly published client.
 /// Logs go to the Windows Application event log (source "TapQueue").
 /// </summary>
-public sealed class MachineService(ClientConfig config, ILogger<MachineService> logger) : BackgroundService
+public sealed class MachineService(ClientConfig config, IHostApplicationLifetime lifetime, ILogger<MachineService> logger) : BackgroundService
 {
     private static readonly TimeSpan Interval = TimeSpan.FromMinutes(1);
 
@@ -30,7 +30,7 @@ public sealed class MachineService(ClientConfig config, ILogger<MachineService> 
         host.Services.GetRequiredService<ILogger<MachineService>>().LogInformation(
             "TapQueue service {Version} | config: {Path} | server: {Server}", TapQueueVersion.Current, path, config.ServerUrl);
         await host.RunAsync();
-        return 0;
+        return Environment.ExitCode;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -61,9 +61,11 @@ public sealed class MachineService(ClientConfig config, ILogger<MachineService> 
                 if (await updater.InstallIfDifferentAsync(setup.ClientBuild, stoppingToken))
                 {
                     logger.LogInformation("Installed TapQueue client {Version}; restarting the service", setup.ClientBuild!.Version);
-                    // Exiting with an error makes Windows restart the service (the installer sets
-                    // restart-on-failure), which then runs the new exe.
-                    Environment.Exit(1);
+                    // Stopping with a non-zero exit code makes Windows restart the service (the
+                    // installer sets restart-on-failure and failureflag), which runs the new exe.
+                    Environment.ExitCode = 1;
+                    lifetime.StopApplication();
+                    return;
                 }
             }
             catch (Exception ex) when ((ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException or InvalidDataException)
