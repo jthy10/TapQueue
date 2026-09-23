@@ -16,7 +16,11 @@ public static class ClientApi
         app.MapPost("/api/v1/client/session", CreateSession);
 
         var me = app.MapGroup("/api/v1").AddEndpointFilter(RequireSession);
-        me.MapPost("/client/heartbeat", () => Results.NoContent());
+        me.MapPost("/client/heartbeat", (ClientBuildStore builds) => new ClientHeartbeatResponse(builds.Latest()?.ToDto()));
+        me.MapGet("/client/builds/{sha256}", (string sha256, ClientBuildStore builds) =>
+            builds.FileFor(sha256) is { } path
+                ? Results.File(path, "application/vnd.microsoft.portable-executable", "TapQueueClient.exe")
+                : Results.NotFound(new ErrorResponse("No such client build.")));
         me.MapGet("/printers", (PrinterRegistry printers) => printers.All.Select(printers.ToDto));
         me.MapGet("/me/jobs", (HttpContext http, JobStore jobs, bool? all) =>
             jobs.ListForUser(CurrentUser(http).Id, heldOnly: all != true).Select(j => j.ToDto()));
@@ -25,7 +29,7 @@ public static class ClientApi
     }
 
     private static IResult CreateSession(ClientSessionRequest request, HttpContext http, ServerConfig config,
-        UserStore users, SessionStore sessions, QueueStore queues, PrinterRegistry printers, ILoggerFactory loggers)
+        UserStore users, SessionStore sessions, QueueStore queues, PrinterRegistry printers, ClientBuildStore builds, ILoggerFactory loggers)
     {
         var logger = loggers.CreateLogger("TapQueue.Server.Api.ClientApi");
         var username = request.Username?.Trim();
@@ -45,16 +49,17 @@ public static class ClientApi
         }
 
         var token = Tokens.New();
-        sessions.Create(Tokens.Hash(token), user.Id, request.WindowsUser, request.Hostname, http.ClientIp());
-        logger.LogInformation("{User} signed in from {Host} ({Ip}) as Windows user {WindowsUser}",
-            user.Username, request.Hostname, http.ClientIp(), request.WindowsUser);
+        sessions.Create(Tokens.Hash(token), user.Id, request.WindowsUser, request.Hostname, http.ClientIp(), request.ClientVersion);
+        logger.LogInformation("{User} signed in from {Host} ({Ip}) as Windows user {WindowsUser}, client {Version}",
+            user.Username, request.Hostname, http.ClientIp(), request.WindowsUser, request.ClientVersion ?? "unknown");
 
         return Results.Ok(new ClientSessionResponse(
             token,
             user.ToDto(),
             queues.List().Select(q => new QueueDto(q.Id, q.Name, q.Description, $"/ipp/{q.Id}")).ToList(),
             printers.All.Select(printers.ToDto).ToList(),
-            HeartbeatSeconds));
+            HeartbeatSeconds,
+            builds.Latest()?.ToDto()));
     }
 
     private static IResult CancelJob(long id, HttpContext http, JobStore jobs, Spool spool)

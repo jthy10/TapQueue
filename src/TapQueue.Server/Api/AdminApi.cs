@@ -54,6 +54,32 @@ public static class AdminApi
         admin.MapPost("/stations/{id}/token", ResetStationToken);
         admin.MapDelete("/stations/{id}", (string id, StationStore stations) =>
             stations.Delete(id) ? Results.NoContent() : Results.NotFound(new ErrorResponse($"No station \"{id}\".")));
+
+        admin.MapGet("/client-builds", (ClientBuildStore builds) => builds.List().Select(b => b.ToDto()));
+        admin.MapPost("/client-builds", PublishClientBuild);
+        admin.MapGet("/clients", (SessionStore sessions, ServerConfig config) =>
+            sessions.ListActive(TimeSpan.FromMinutes(config.Auth.SessionTimeoutMinutes)));
+    }
+
+    /// <summary>The request body is TapQueueClient.exe. Clients start installing it on their next heartbeat.</summary>
+    private static async Task<IResult> PublishClientBuild(HttpContext http, string? version, ClientBuildStore builds, ILoggerFactory loggers)
+    {
+        version = Clean(version);
+        if (version is null)
+            return Results.BadRequest(new ErrorResponse("version is required, e.g. ?version=0.2.0+1a2b3c4."));
+        ClientBuildRecord build;
+        try
+        {
+            build = await builds.PublishAsync(version, http.Request.Body, http.RequestAborted);
+        }
+        catch (InvalidDataException ex)
+        {
+            return Results.BadRequest(new ErrorResponse(ex.Message));
+        }
+        loggers.CreateLogger("TapQueue.Server.Api.AdminApi").LogInformation(
+            "Published Windows client {Version} ({Size} bytes, sha256 {Sha256}); clients will update on their next heartbeat",
+            build.Version, build.SizeBytes, build.Sha256);
+        return Results.Ok(build.ToDto());
     }
 
     private static async Task<IResult> CreatePrinter(CreatePrinterRequest request, PrinterStore store, PrinterRegistry printers, CancellationToken ct)

@@ -29,6 +29,7 @@ public static class ServerApp
         builder.Services.AddSingleton(config);
         builder.Services.AddSingleton(database);
         builder.Services.AddSingleton(new Spool(config.Server.DataDir));
+        builder.Services.AddSingleton(services => new ClientBuildStore(services.GetRequiredService<Database>(), config.Server.DataDir));
         builder.Services.AddSingleton<UserStore>();
         builder.Services.AddSingleton<SessionStore>();
         builder.Services.AddSingleton<BadgeStore>();

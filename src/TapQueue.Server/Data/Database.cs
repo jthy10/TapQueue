@@ -164,6 +164,19 @@ public sealed class Database
                 created_at     TEXT NOT NULL
             );
         """,
+
+        // 3: Windows client builds published by the admin, and which client version each session runs.
+        """
+            CREATE TABLE client_builds (
+                id            INTEGER PRIMARY KEY,
+                version       TEXT NOT NULL,
+                sha256        TEXT NOT NULL,
+                size_bytes    INTEGER NOT NULL,
+                published_at  TEXT NOT NULL
+            );
+
+            ALTER TABLE sessions ADD COLUMN client_version TEXT;
+        """,
     ];
 
     public void Migrate()

@@ -80,7 +80,19 @@ public sealed record ClientSessionResponse(
     UserDto User,
     IReadOnlyList<QueueDto> Queues,
     IReadOnlyList<PrinterDto> Printers,
-    int HeartbeatSeconds);
+    int HeartbeatSeconds,
+    ClientBuildDto? ClientBuild = null);
+
+/// <summary>
+/// The Windows client build every client should be running. A client whose own exe has a different
+/// SHA-256 downloads <see cref="DownloadPath"/> (with its session token) and installs it.
+/// </summary>
+public sealed record ClientBuildDto(string Version, string Sha256, long SizeBytes, DateTimeOffset PublishedAt, string DownloadPath);
+
+public sealed record ClientHeartbeatResponse(ClientBuildDto? ClientBuild);
+
+/// <summary>A signed-in client, for `tapqueue-admin clients`.</summary>
+public sealed record ClientSessionDto(string Username, string? Hostname, string? WindowsUser, string? ClientVersion, string RemoteIp, DateTimeOffset LastSeenAt);
 
 /// <summary>Release held jobs to a printer. A null <see cref="JobIds"/> releases every held job.</summary>
 public sealed record ReleaseRequest(string PrinterId, IReadOnlyList<long>? JobIds = null);
