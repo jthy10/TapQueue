@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds release archives into dist/:
-#   tapqueue-server-<version>-linux-x64.tar.gz    tapqueue-server, tapqueue-admin, libe_sqlite3.so, example config, systemd unit, install-server.sh
+#   tapqueue-server-<version>-linux-x64.tar.gz    tapqueue-server, tapqueue-admin, libe_sqlite3.so, example config, systemd units, install-server.sh
 #   tapqueue-station-<version>-linux-x64.tar.gz   tapqueue-station, example config, systemd unit, udev rule
 #   tapqueue-client-<version>-win-x64.zip         TapQueueClient.exe, example config, version.txt
 #   SHA256SUMS
@@ -24,7 +24,7 @@ publish() { # project runtime dir [extra msbuild args...]
 publish TapQueue.Server linux-x64 server
 publish TapQueue.Admin linux-x64 server
 rm -f "$out/server/"*.staticwebassets.*   # ASP.NET build leftover; the server serves no static files
-cp config/server.example.toml deploy/systemd/tapqueue-server.service deploy/install-server.sh "$out/server/"
+cp config/server.example.toml deploy/systemd/tapqueue-server.service deploy/systemd/tapqueue-console.service deploy/install-server.sh "$out/server/"
 
 publish TapQueue.Station linux-x64 station
 cp config/station.example.toml deploy/systemd/tapqueue-station.service deploy/udev/60-tapqueue-pcprox.rules "$out/station/"

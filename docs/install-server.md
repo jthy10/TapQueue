@@ -92,6 +92,11 @@ journalctl -u tapqueue-server -f
 
 At startup the server logs its version, each queue and whether each printer is reachable.
 
+To show the live log on the server's own screen instead of a login prompt (log in with Alt+F2),
+install the optional `tapqueue-console` service from
+[`deploy/systemd/tapqueue-console.service`](../deploy/systemd/tapqueue-console.service); the
+commands to enable and undo it are at the top of that file.
+
 ## Building from source
 
 Install the [.NET 10 SDK](https://dotnet.microsoft.com/download), then:
