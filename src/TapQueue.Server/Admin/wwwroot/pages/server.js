@@ -32,6 +32,10 @@ export async function render(root, ctx) {
     settings.replaceChildren(props([
       ["Jobs kept for", [plural(s.holdHours, "hour"), h("span", { class: "sub" }, "Held jobs nobody releases are deleted after this."), source("holdHours")]],
       ["Session timeout", [plural(s.sessionTimeoutMinutes, "minute"), h("span", { class: "sub" }, "A client that stops checking in is signed out after this."), source("sessionTimeoutMinutes")]],
+      ["Over a page limit", [s.quotaOverrun === "deny" ? "Only jobs that fit" : "Finish the job",
+        h("span", { class: "sub" }, s.quotaOverrun === "deny"
+          ? "A job prints only if it fits in the pages someone has left."
+          : "A job prints in full if someone is under their limit when it starts, even if it takes them over.")]],
       ["Client sign-in", s.authMode === "dev"
         ? [pill("Dev", "bad"), h("span", { class: "sub" }, "Anyone can sign in as any username, and this console is open. Set auth.mode in server.toml and restart to change it.")]
         : [pill("Tokens", "ok"), h("span", { class: "sub" }, "Clients need the token from Users.")]],
@@ -53,11 +57,16 @@ export async function render(root, ctx) {
           input("sessionTimeoutMinutes", { type: "number", min: 2, max: 1440, required: true, value: s.sessionTimeoutMinutes }),
           select("sessionTimeoutSource", [["here", "Set here"], ["file", fromFile]], changed("sessionTimeoutMinutes") ? "here" : "file")),
           "2 to 1440. Clients check in every minute."),
+        field("When a job would go over someone's page limit", select("quotaOverrun", [
+          ["allow", "Print it if they're under the limit when it starts"],
+          ["deny", "Only print jobs that fit in what's left"],
+        ], s.quotaOverrun)),
       ],
       onSubmit: async (v) => {
         const body = { reset: [] };
         if (v.holdHoursSource === "file") body.reset.push("holdHours"); else body.holdHours = Number(v.holdHours);
         if (v.sessionTimeoutSource === "file") body.reset.push("sessionTimeoutMinutes"); else body.sessionTimeoutMinutes = Number(v.sessionTimeoutMinutes);
+        if (v.quotaOverrun !== s.quotaOverrun) body.quotaOverrun = v.quotaOverrun;
         s = await api.patch("server/settings", body);
         draw();
         toast("Settings saved");

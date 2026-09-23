@@ -434,3 +434,12 @@ dialog.wide { width: min(720px, calc(100vw - 32px)); }
   .log-line { grid-template-columns: 6.5em 1fr; }
   .log-line .log-level, .log-line .log-cat { display: none; }
 }
+
+/* Page limits */
+.quota-field { display: grid; gap: 8px; }
+.quota + .quota { margin-top: 14px; }
+.quota-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13.5px; margin-bottom: 6px; }
+.meter { height: 8px; border-radius: 4px; background: var(--border); overflow: hidden; margin-bottom: 6px; }
+.meter span { display: block; height: 100%; border-radius: 4px; background: var(--ok); }
+.meter.warn span { background: var(--warn); }
+.meter.bad span { background: var(--bad); }

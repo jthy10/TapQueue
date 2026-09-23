@@ -2,17 +2,19 @@ import { api, enc } from "../api.js";
 import { h, pageHead, panel, button, pill, table, empty, drawer, props, sectionTitle, field, input, checkbox, checkField,
   checkList, formDialog, confirm, attempt, loading, plural } from "../ui.js";
 import { activityList } from "./activity.js";
+import { quotaText, quotaField, saveQuota } from "./quota.js";
 
 export async function render(root, ctx) {
   let groups = [], queues = [], printers = [], users = [];
   const list = h("div", null, loading());
-  root.append(pageHead("Groups", "Which queues people may print to and which printers they may release at. Someone in several groups gets everything any of them allows.",
+  root.append(pageHead("Groups", "Which queues people may print to, which printers they may release at, and how many pages they get. Someone in several groups gets everything any of them allows.",
     button("Add group", { kind: "primary", iconName: "plus", onclick: () => edit() })),
   h("div", { class: "callout info" }, "People who aren't in any group can print to every queue and release at every printer. Put someone in a group to limit them."),
   panel({ flush: true, body: list }));
 
   const queueName = (id) => queues.find((q) => q.id.toLowerCase() === id.toLowerCase())?.name ?? id;
   const printerName = (id) => printers.find((p) => p.printer.id.toLowerCase() === id.toLowerCase())?.printer.name ?? id;
+  const limit = (g) => quotaText(g.quota) ?? h("span", { class: "muted" }, "No limit");
   const allows = (all, ids, name, noun) => all ? pill(`Every ${noun}`, "ok") : ids.length ? ids.map(name).join(", ") : pill(`No ${noun}s`, "bad");
 
   async function load() {
@@ -28,6 +30,7 @@ export async function render(root, ctx) {
         { label: "Members", class: "num", value: (g) => g.memberCount },
         { label: "Prints to", value: (g) => allows(g.allQueues, g.queueIds, queueName, "queue") },
         { label: "Releases at", value: (g) => allows(g.allPrinters, g.printerIds, printerName, "printer") },
+        { label: "Page limit", value: limit },
       ],
     }));
   }
@@ -49,6 +52,7 @@ export async function render(root, ctx) {
           g.description && ["Description", g.description],
           ["Prints to", allows(g.allQueues, g.queueIds, queueName, "queue")],
           ["Releases at", allows(g.allPrinters, g.printerIds, printerName, "printer")],
+          ["Page limit", limit(g)],
         ]),
         sectionTitle(`Members (${members.length})`),
         members.length
@@ -106,10 +110,14 @@ export async function render(root, ctx) {
         sectionTitle("Releasing"),
         checkField("Every printer", allPrinters, "Including printers added later."),
         printerList,
+        sectionTitle("Pages"),
+        quotaField(g?.quota, "No limit", "Counted when jobs are released. If someone is in several groups with limits, the most generous one counts; a limit set on the person overrides them all."),
       ],
       onSubmit: async (values) => {
-        const body = { ...values, queueIds: values.queueIds ?? [], printerIds: values.printerIds ?? [] };
+        const { quotaMode, quotaPages, quotaPeriod, ...rest } = values;
+        const body = { ...rest, queueIds: values.queueIds ?? [], printerIds: values.printerIds ?? [] };
         const saved = adding ? await api.post("groups", body) : await api.patch(`groups/${enc(g.id)}`, body);
+        await saveQuota(`groups/${enc(saved.id)}/quota`, values, g?.quota);
         await load();
         open(saved.id);
       },

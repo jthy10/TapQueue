@@ -37,7 +37,8 @@ export async function render(root, ctx) {
         { label: "Document", value: (j) => [h("span", { class: "cell-strong" }, j.name), h("span", { class: "sub" }, `#${j.id} · ${j.queueId}`)] },
         { label: "Owner", value: owner },
         { label: "Status", value: jobStatus },
-        { label: "Size", class: "num", value: (j) => [bytes(j.sizeBytes), j.copies > 1 ? h("span", { class: "sub" }, `${j.copies} copies`) : null] },
+        { label: "Pages", class: "num", value: (j) => [pages(j), j.copies > 1 ? h("span", { class: "sub" }, `${j.copies} copies`) : null] },
+        { label: "Size", class: "num", value: (j) => bytes(j.sizeBytes) },
         { label: "Submitted", value: (j) => time(j.submittedAt) },
       ],
     }));
@@ -60,7 +61,9 @@ export async function render(root, ctx) {
           job.claimedUser && ["Sent as", h("span", null, job.claimedUser, h("span", { class: "sub" }, "The name the print client gave. Not verified."))],
           ["Queue", h("a", { href: `queues/${enc(job.queueId)}` }, job.queueId)],
           ["Format", h("code", null, job.documentFormat)],
-          ["Size", `${bytes(job.sizeBytes)}${job.copies > 1 ? `, ${job.copies} copies` : ""}`],
+          ["Pages", [pages(job), job.copies > 1 ? `, ${job.copies} copies` : null,
+            job.pages == null && h("span", { class: "sub" }, "Couldn't be counted, so it counts as 1 page (per copy) against page limits.")]],
+          ["Size", bytes(job.sizeBytes)],
         ]),
         sectionTitle("Timeline"),
         props([
@@ -114,3 +117,6 @@ function owner(job) {
   if (job.owner) return h("a", { href: `users/${enc(job.owner)}`, onclick: (e) => e.stopPropagation() }, job.owner);
   return h("span", { class: "muted" }, "Unmatched", job.claimedUser && ` (sent as ${job.claimedUser})`);
 }
+
+/** A job's page count, or a flag when it couldn't be counted. */
+export const pages = (j) => j.pages == null ? h("span", { class: "pill warn plain", title: "Couldn't count the pages; counts as 1 against page limits" }, "?") : String(j.pages);

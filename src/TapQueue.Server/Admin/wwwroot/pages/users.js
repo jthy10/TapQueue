@@ -4,6 +4,7 @@ import { h, pageHead, panel, button, pill, time, dateTime, table, empty, drawer,
 import { enrollCard, editCard, removeCard } from "./cards.js";
 import { jobStatus } from "./jobs.js";
 import { activityList } from "./activity.js";
+import { quotaText, quotaField, saveQuota, usageMeter } from "./quota.js";
 
 export async function render(root, ctx) {
   let data;
@@ -100,12 +101,13 @@ export async function render(root, ctx) {
   }
 
   async function load() {
-    const [users, badges, held, clients, server, groups] = await Promise.all([
-      api.get("users"), api.get("badges"), api.get("jobs?status=held"), api.get("clients"), api.get("server"), api.get("groups"),
+    const [users, badges, held, clients, server, groups, quotas] = await Promise.all([
+      api.get("users"), api.get("badges"), api.get("jobs?status=held"), api.get("clients"), api.get("server"), api.get("groups"), api.get("quotas"),
     ]);
     if (!ctx.current) return;
     const by = (rows, key) => rows.reduce((m, r) => m.set(r[key], [...(m.get(r[key]) ?? []), r]), new Map());
-    data = { users, server, groups, badges: by(badges, "username"), held: by(held, "owner"), clients: by(clients, "username") };
+    data = { users, server, groups, badges: by(badges, "username"), held: by(held, "owner"), clients: by(clients, "username"),
+      quotas: new Map(quotas.map((q) => [q.username, q.applies])) };
 
     drawBulkBar();
     list.replaceChildren(table({
@@ -120,6 +122,7 @@ export async function render(root, ctx) {
         { label: "Name", value: (u) => [h("span", { class: "cell-strong" }, u.displayName, " ", u.disabledAt && pill("Disabled", "bad")), h("span", { class: "sub" }, u.username)] },
         { label: "Groups", value: (u) => u.groups.length ? u.groups.map(groupName).join(", ") : h("span", { class: "muted" }, "None (can use everything)") },
         { label: "Cards", value: (u) => count(data.badges.get(u.username), "card", "No card") },
+        { label: "Pages", value: (u) => pagesLeft(data.quotas.get(u.username)) },
         { label: "Held jobs", class: "num", value: (u) => data.held.get(u.username)?.length ?? 0 },
         { label: "Signed in", value: (u) => {
           const sessions = data.clients.get(u.username);
@@ -131,6 +134,13 @@ export async function render(root, ctx) {
 
   const groupName = (id) => data.groups.find((g) => g.id.toLowerCase() === id.toLowerCase())?.name ?? id;
 
+  /** The most generous limit that applies, since that's the one that decides. */
+  function pagesLeft(applies) {
+    if (!applies?.length) return h("span", { class: "muted" }, "No limit");
+    const best = applies.reduce((a, b) => (b.remaining > a.remaining ? b : a));
+    return [h("span", { class: "nowrap" }, `${best.used} of ${best.pages}`), h("span", { class: "sub" }, best.remaining ? `${best.remaining} left` : "None left")];
+  }
+
   function count(rows, noun, none) {
     return rows?.length ? plural(rows.length, noun) : h("span", { class: "muted" }, none);
   }
@@ -139,8 +149,9 @@ export async function render(root, ctx) {
     ctx.setId(username);
     const user = data.users.find((u) => u.username.toLowerCase() === username.toLowerCase());
     if (!user) return ctx.setId(null);
-    const [badges, jobs, events] = await Promise.all([
+    const [badges, jobs, events, quota] = await Promise.all([
       api.get(`badges?username=${enc(user.username)}`), api.get("jobs"), api.get(`events?subject=${enc(`user:${user.username}`)}&limit=15`),
+      api.get(`users/${enc(user.username)}/quota`),
     ]);
     const theirJobs = jobs.filter((j) => j.owner === user.username).slice(0, 10);
     const sessions = data.clients.get(user.username) ?? [];
@@ -161,6 +172,13 @@ export async function render(root, ctx) {
               : h("span", { class: "muted" }, "None, so they can print everywhere."),
             h("div", { style: "margin-top:8px" }, button("Change groups", { small: true, onclick: () => changeGroups(user) })))],
         ]),
+        sectionTitle("Pages"),
+        quota.applies.length
+          ? [quota.applies.map((u) => usageMeter(u, groupName)),
+            quota.applies.length > 1 && h("p", { class: "muted", style: "margin:10px 0 0" }, "A job prints if any of these limits allows it.")]
+          : h("p", { class: "muted", style: "margin:0" }, "No page limit."),
+        h("div", { style: "margin-top:10px" }, button("Page limit", { small: true, onclick: () => changeQuota(user) })),
+
         sectionTitle("Cards"),
         badges.length
           ? h("div", { class: "panel" }, table({ rows: badges, columns: [
@@ -216,6 +234,22 @@ export async function render(root, ctx) {
         const before = new Set(user.groups.map((g) => g.toLowerCase()));
         for (const g of now) if (!before.has(g)) await api.put(`groups/${enc(g)}/members/${enc(user.username)}`);
         for (const g of before) if (!now.has(g)) await api.del(`groups/${enc(g)}/members/${enc(user.username)}`);
+        await load();
+        open(user.username);
+      },
+    });
+  }
+
+  function changeQuota(user) {
+    const fromGroups = user.groups.map((id) => data.groups.find((g) => g.id.toLowerCase() === id.toLowerCase())).filter((g) => g?.quota);
+    formDialog({
+      title: `${user.displayName}'s page limit`,
+      description: fromGroups.length
+        ? `Their groups allow ${fromGroups.map((g) => `${quotaText(g.quota)} (${g.name})`).join(", ")}. A limit set here replaces those.`
+        : "None of their groups has a limit. Set one here for just this person.",
+      body: quotaField(user.quota, fromGroups.length ? "Use their groups' limits" : "No limit", "Pages are counted when jobs are released: pages times copies."),
+      onSubmit: async (values) => {
+        await saveQuota(`users/${enc(user.username)}/quota`, values, user.quota);
         await load();
         open(user.username);
       },
