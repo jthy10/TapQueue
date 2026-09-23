@@ -9,6 +9,9 @@ namespace TapQueue.Server.Jobs;
 /// <summary>Sends a user's held jobs to a physical printer.</summary>
 public sealed class ReleaseService(JobStore jobs, Spool spool, PrinterRegistry printers, ILogger<ReleaseService> logger)
 {
+    private static readonly TimeSpan BusyTimeout = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan BusyRetryDelay = TimeSpan.FromSeconds(3);
+
     public async Task<ReleaseResponse> ReleaseAsync(UserRecord user, PrinterConfig printer, IReadOnlyList<long>? jobIds, CancellationToken ct)
     {
         var held = jobs.ListForUser(user.Id, heldOnly: true);
@@ -49,14 +52,23 @@ public sealed class ReleaseService(JobStore jobs, Spool spool, PrinterRegistry p
                 request.Groups.Add(await JobTemplate.DecodeAsync(template, ct));
 
             using var client = new IppClient(printer.TlsSkipVerify, TimeSpan.FromMinutes(5));
-            await using (var document = spool.OpenRead(job.Id))
+            var busyUntil = DateTimeOffset.UtcNow + BusyTimeout;
+            while (true)
             {
-                var response = await client.SendAsync(printer.Uri, request, document, ct);
-                if (!IppStatus.IsSuccess(response.Code))
+                IppMessage response;
+                await using (var document = spool.OpenRead(job.Id))
+                    response = await client.SendAsync(printer.Uri, request, document, ct);
+                if (IppStatus.IsSuccess(response.Code))
+                    break;
+
+                // Some printers take one job at a time and answer "busy" until the last one is done.
+                if (response.Code == IppStatus.ServerErrorBusy && DateTimeOffset.UtcNow < busyUntil)
                 {
-                    var message = response.OperationString("status-message");
-                    throw new InvalidOperationException($"Printer rejected the job (IPP status 0x{response.Code:X4}{(message is null ? "" : $": {message}")}).");
+                    await Task.Delay(BusyRetryDelay, ct);
+                    continue;
                 }
+                var message = response.OperationString("status-message");
+                throw new InvalidOperationException($"Printer rejected the job (IPP status 0x{response.Code:X4}{(message is null ? "" : $": {message}")}).");
             }
 
             jobs.MarkReleased(job.Id, printer.Id);

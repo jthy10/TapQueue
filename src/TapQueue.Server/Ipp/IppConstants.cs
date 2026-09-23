@@ -65,6 +65,7 @@ public static class IppStatus
     public const short ServerErrorInternal = 0x0500;
     public const short ServerErrorOperationNotSupported = 0x0501;
     public const short ServerErrorVersionNotSupported = 0x0503;
+    public const short ServerErrorBusy = 0x0507;
 
     public static bool IsSuccess(short status) => status < 0x0100;
 }
