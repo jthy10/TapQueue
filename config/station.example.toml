@@ -1,0 +1,20 @@
+# TapQueue release station configuration.
+# Default location: /etc/tapqueue/station.toml (override with --config or TAPQUEUE_STATION_CONFIG).
+
+# The TapQueue server.
+server_url = "http://tapqueue-server:8631"
+
+# From `tapqueue-admin stations add <station-id> <printer-id>`. The server decides which printer
+# this station releases to.
+token = ""
+
+# The USB badge reader. Find it with `tapqueue-station --list-devices`, then check it with
+# `tapqueue-station --test --device <path>`. Use the /dev/input/by-id/ path so it survives reboots.
+# Empty = read card numbers typed on standard input (testing only).
+device = "/dev/input/by-id/usb-XXXX-event-kbd"
+
+# The same card tapped again within this many seconds is ignored.
+repeat_seconds = 5
+
+# Reads shorter than this are treated as noise.
+min_card_length = 4

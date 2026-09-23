@@ -1,0 +1,28 @@
+[Unit]
+Description=TapQueue release station (badge reader)
+Documentation=https://github.com/jthy10/TapQueue
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=tapqueue-station
+Group=tapqueue-station
+# Read access to the badge reader under /dev/input.
+SupplementaryGroups=input
+ExecStart=/opt/tapqueue/tapqueue-station --config /etc/tapqueue/station.toml
+Restart=always
+RestartSec=5
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+DevicePolicy=closed
+DeviceAllow=char-input r
+
+[Install]
+WantedBy=multi-user.target
