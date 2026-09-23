@@ -84,6 +84,7 @@ public static class AdminApi
         admin.MapWorkstationsApi();
 
         admin.MapGroupsApi();
+        admin.MapQuotasApi();
         admin.MapUsersBulkApi();
 
         admin.MapGet("/client-builds", (ClientBuildStore builds) => builds.List().Select(b => b.ToDto()));
@@ -94,7 +95,7 @@ public static class AdminApi
     private static ServerInfoDto ServerInfo(ServerConfig config, ServerSettings settings, Database database, JobStore jobs) => new(
         TapQueueVersion.Current, ServerClock.StartedAt, config.Auth.Mode, config.Server.Listen, config.Server.DataDir,
         database.SchemaVersion(), settings.HoldHours, settings.SessionTimeoutMinutes, jobs.CountHeld(),
-        ServerSettings.Keys.Where(settings.IsSaved).ToList(), AdminServerApi.CanRestart);
+        ServerSettings.Keys.Where(settings.IsSaved).ToList(), AdminServerApi.CanRestart, settings.QuotaOverrun);
 
     private static IResult UpdateServerSettings(UpdateServerSettingsRequest request, ServerConfig config, ServerSettings settings,
         Database database, JobStore jobs, EventLog events)
@@ -104,30 +105,47 @@ public static class AdminApi
         // Clients check in every minute, so anything shorter would sign everyone out between heartbeats.
         if (request.SessionTimeoutMinutes is < 2 or > 1440)
             return Results.BadRequest(new ErrorResponse("sessionTimeoutMinutes must be 2 to 1440 (a day)."));
+        if (request.QuotaOverrun is { } overrun && !QuotaOverrun.All.Contains(overrun))
+            return Results.BadRequest(new ErrorResponse($"quotaOverrun must be {string.Join(" or ", QuotaOverrun.All)}."));
         foreach (var key in request.Reset ?? [])
             if (!ServerSettings.Keys.Contains(key))
                 return Results.BadRequest(new ErrorResponse($"Can't reset \"{key}\"; only {string.Join(", ", ServerSettings.Keys)}."));
 
         var changes = new List<string>();
-        void Apply(string key, int? value, int current, string name, string unit)
+        void Apply(string key, int? value, Func<int> current, string name, string unit)
         {
             if (request.Reset?.Contains(key) == true)
             {
-                settings.Set(key, null);
-                changes.Add($"{name} back to server.toml's ({Plural(key == ServerSettings.HoldHoursKey ? settings.HoldHours : settings.SessionTimeoutMinutes, unit)})");
+                settings.Reset(key);
+                changes.Add($"{name} back to server.toml's ({Plural(current(), unit)})");
             }
-            else if (value is { } v && (v != current || !settings.IsSaved(key)))
+            else if (value is { } v && (v != current() || !settings.IsSaved(key)))
             {
                 settings.Set(key, v);
                 changes.Add($"{name} {Plural(v, unit)}");
             }
         }
-        Apply(ServerSettings.HoldHoursKey, request.HoldHours, settings.HoldHours, "held jobs kept for", "hour");
-        Apply(ServerSettings.SessionTimeoutKey, request.SessionTimeoutMinutes, settings.SessionTimeoutMinutes, "session timeout", "minute");
+        Apply(ServerSettings.HoldHoursKey, request.HoldHours, () => settings.HoldHours, "held jobs kept for", "hour");
+        Apply(ServerSettings.SessionTimeoutKey, request.SessionTimeoutMinutes, () => settings.SessionTimeoutMinutes, "session timeout", "minute");
+
+        if (request.Reset?.Contains(ServerSettings.QuotaOverrunKey) == true)
+        {
+            settings.Reset(ServerSettings.QuotaOverrunKey);
+            changes.Add($"over page limits back to the default ({DescribeOverrun(settings.QuotaOverrun)})");
+        }
+        else if (request.QuotaOverrun is { } o && (o != settings.QuotaOverrun || !settings.IsSaved(ServerSettings.QuotaOverrunKey)))
+        {
+            settings.Set(ServerSettings.QuotaOverrunKey, o);
+            changes.Add($"over page limits: {DescribeOverrun(o)}");
+        }
+
         if (changes.Count > 0)
             events.Admin(null, $"Server settings: {string.Join("; ", changes)}.");
         return Results.Ok(ServerInfo(config, settings, database, jobs));
 
+        static string DescribeOverrun(string overrun) => overrun == QuotaOverrun.Deny
+            ? "only jobs that fit in what's left print"
+            : "a job prints in full if they're under the limit when it starts";
         static string Plural(int n, string unit) => n == 1 ? $"1 {unit}" : $"{n} {unit}s";
     }
 

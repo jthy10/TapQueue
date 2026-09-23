@@ -1,4 +1,5 @@
 using TapQueue.Server.Config;
+using TapQueue.Shared.Api;
 
 namespace TapQueue.Server.Data;
 
@@ -12,8 +13,9 @@ public sealed class ServerSettings(Database database, ServerConfig config)
 {
     public const string HoldHoursKey = "holdHours";
     public const string SessionTimeoutKey = "sessionTimeoutMinutes";
+    public const string QuotaOverrunKey = "quotaOverrun";
 
-    public static readonly string[] Keys = [HoldHoursKey, SessionTimeoutKey];
+    public static readonly string[] Keys = [HoldHoursKey, SessionTimeoutKey, QuotaOverrunKey];
 
     private readonly Lock _lock = new();
     private Dictionary<string, string>? _saved;
@@ -26,11 +28,23 @@ public sealed class ServerSettings(Database database, ServerConfig config)
 
     public TimeSpan SessionTimeout => TimeSpan.FromMinutes(SessionTimeoutMinutes);
 
+    /// <summary>
+    /// Whether a job may take someone over their page limit (<see cref="Shared.Api.QuotaOverrun"/>).
+    /// Not in server.toml; the default is to allow it.
+    /// </summary>
+    public string QuotaOverrun =>
+        Saved().TryGetValue(QuotaOverrunKey, out var value) && Shared.Api.QuotaOverrun.All.Contains(value) ? value : Shared.Api.QuotaOverrun.Allow;
+
     /// <summary>True if <paramref name="key"/> was set here rather than coming from server.toml.</summary>
     public bool IsSaved(string key) => Saved().ContainsKey(key);
 
-    /// <summary>Saves a value, or with null goes back to server.toml's.</summary>
-    public void Set(string key, int? value)
+    public void Set(string key, int value) => Set(key, value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+    /// <summary>Goes back to server.toml's value, or the default for settings that aren't in it.</summary>
+    public void Reset(string key) => Set(key, null);
+
+    /// <summary>Saves a value, or with null goes back to server.toml's or the default.</summary>
+    public void Set(string key, string? value)
     {
         if (!Keys.Contains(key))
             throw new ArgumentException($"Unknown setting \"{key}\".", nameof(key));
@@ -40,7 +54,7 @@ public sealed class ServerSettings(Database database, ServerConfig config)
                 database.Execute("DELETE FROM settings WHERE key = $k", ("$k", key));
             else
                 database.Execute("INSERT INTO settings (key, value) VALUES ($k, $v) ON CONFLICT (key) DO UPDATE SET value = $v",
-                    ("$k", key), ("$v", value.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+                    ("$k", key), ("$v", value));
             _saved = null;
         }
     }

@@ -6,7 +6,7 @@ using TapQueue.Shared.Api;
 namespace TapQueue.Server.Jobs;
 
 /// <summary>Sends a user's held jobs to a physical printer.</summary>
-public sealed class ReleaseService(JobStore jobs, Spool spool, PrinterRegistry printers, AccessPolicy access, EventLog events, ILogger<ReleaseService> logger)
+public sealed class ReleaseService(JobStore jobs, Spool spool, PrinterRegistry printers, AccessPolicy access, QuotaPolicy quotas, EventLog events, ILogger<ReleaseService> logger)
 {
     private static readonly TimeSpan BusyTimeout = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan BusyRetryDelay = TimeSpan.FromSeconds(3);
@@ -56,6 +56,9 @@ public sealed class ReleaseService(JobStore jobs, Spool spool, PrinterRegistry p
 
     private async Task<ReleaseResult> ReleaseOneAsync(UserRecord user, JobRecord job, PrinterRecord printer, CancellationToken ct)
     {
+        // Checked job by job, since each one released uses up some of the limit.
+        if (quotas.Refusal(user.Id, job.ChargedPages, DateTimeOffset.UtcNow) is { } overLimit)
+            return new ReleaseResult(job.Id, job.Name, false, overLimit);
         if (!jobs.TryTransition(job.Id, JobStatus.Held, JobStatus.Releasing))
             return new ReleaseResult(job.Id, job.Name, false, "Job is no longer held.");
 

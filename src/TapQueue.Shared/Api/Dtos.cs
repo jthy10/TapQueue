@@ -14,7 +14,8 @@ public sealed record ServerInfoDto(
     int SessionTimeoutMinutes,
     int HeldJobs,
     IReadOnlyList<string>? ChangedSettings = null,
-    bool CanRestart = false);
+    bool CanRestart = false,
+    string QuotaOverrun = Api.QuotaOverrun.Allow);
 
 /// <summary>One line of the server's log, for the live log in the console.</summary>
 /// <param name="Level">debug, info, warning or error.</param>
@@ -22,9 +23,35 @@ public sealed record LogLineDto(long Id, DateTimeOffset At, string Level, string
 
 /// <summary>
 /// Settings that apply while the server runs. Null leaves one as it is; <see cref="Reset"/> names
-/// ones (holdHours, sessionTimeoutMinutes) to take from server.toml again.
+/// ones (holdHours, sessionTimeoutMinutes, quotaOverrun) to take from server.toml, or the default, again.
 /// </summary>
-public sealed record UpdateServerSettingsRequest(int? HoldHours = null, int? SessionTimeoutMinutes = null, IReadOnlyList<string>? Reset = null);
+/// <param name="QuotaOverrun">One of <see cref="Api.QuotaOverrun"/>.</param>
+public sealed record UpdateServerSettingsRequest(
+    int? HoldHours = null,
+    int? SessionTimeoutMinutes = null,
+    IReadOnlyList<string>? Reset = null,
+    string? QuotaOverrun = null);
+
+/// <summary>What happens when a job would take someone past their page limit.</summary>
+public static class QuotaOverrun
+{
+    /// <summary>A job prints in full if they're under the limit when it starts. The default.</summary>
+    public const string Allow = "allow";
+    /// <summary>Only jobs that fit in the pages they have left print.</summary>
+    public const string Deny = "deny";
+
+    public static readonly string[] All = [Allow, Deny];
+}
+
+/// <summary>How often a page limit starts over: at midnight, on Monday, or on the 1st, in the server's time zone.</summary>
+public static class QuotaPeriod
+{
+    public const string Day = "day";
+    public const string Week = "week";
+    public const string Month = "month";
+
+    public static readonly string[] All = [Day, Week, Month];
+}
 
 /// <summary>One line of the activity log.</summary>
 /// <param name="Category">admin, job, tap or signin.</param>
@@ -37,6 +64,7 @@ public sealed record UserDto(long Id, string Username, string DisplayName);
 /// <summary>What admins see of a user. A disabled user can't sign in, print or release.</summary>
 /// <param name="Groups">Ids of the groups they're in.</param>
 /// <param name="Source">"local" for users managed in TapQueue; later, the directory that syncs them.</param>
+/// <param name="Quota">Their own page limit, which overrides their groups'.</param>
 public sealed record UserAdminDto(
     long Id,
     string Username,
@@ -44,7 +72,28 @@ public sealed record UserAdminDto(
     DateTimeOffset CreatedAt,
     DateTimeOffset? DisabledAt,
     IReadOnlyList<string> Groups,
-    string Source = "local");
+    string Source = "local",
+    QuotaDto? Quota = null);
+
+/// <summary>A page limit: at most <paramref name="Pages"/> pages per <paramref name="Period"/> (one of <see cref="QuotaPeriod"/>).</summary>
+public sealed record QuotaDto(int Pages, string Period);
+
+/// <summary>A limit that applies to a user, and how much of it they've used this period.</summary>
+/// <param name="Source">"user" for their own limit, or "group:&lt;id&gt;".</param>
+public sealed record QuotaUsageDto(
+    int Pages,
+    string Period,
+    string Source,
+    int Used,
+    int Remaining,
+    DateTimeOffset PeriodStart,
+    DateTimeOffset ResetsAt);
+
+/// <summary>
+/// A user's page limits. <paramref name="Applies"/> is their own limit if they have one, otherwise
+/// their groups' (a job prints if any of them allows it); empty means unlimited.
+/// </summary>
+public sealed record UserQuotaDto(string Username, QuotaDto? Own, IReadOnlyList<QuotaUsageDto> Applies);
 
 /// <summary>Do one thing to several users at once.</summary>
 /// <param name="Action">One of <see cref="BulkUserAction"/>.</param>
@@ -91,7 +140,8 @@ public sealed record GroupDto(
     bool AllPrinters,
     IReadOnlyList<string> PrinterIds,
     int MemberCount,
-    string Source = "local");
+    string Source = "local",
+    QuotaDto? Quota = null);
 
 /// <param name="AllQueues">Defaults to true, so a new group doesn't take anything away until it's restricted.</param>
 public sealed record CreateGroupRequest(

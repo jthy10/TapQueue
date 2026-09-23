@@ -15,9 +15,10 @@ public sealed record GroupRecord(
     bool AllPrinters,
     IReadOnlyList<string> PrinterIds,
     int MemberCount,
-    string Source)
+    string Source,
+    QuotaDto? Quota)
 {
-    public GroupDto ToDto() => new(Id, Name, Description, AllQueues, QueueIds, AllPrinters, PrinterIds, MemberCount, Source);
+    public GroupDto ToDto() => new(Id, Name, Description, AllQueues, QueueIds, AllPrinters, PrinterIds, MemberCount, Source, Quota);
 }
 
 /// <summary>Groups of users and what they may use. See <see cref="AccessPolicy"/> for how that's applied.</summary>
@@ -29,7 +30,7 @@ public sealed class GroupStore(Database database)
                g.all_printers,
                (SELECT json_group_array(printer_id) FROM group_printers WHERE group_id = g.id),
                (SELECT COUNT(*) FROM group_members WHERE group_id = g.id),
-               g.source
+               g.source, g.quota_pages, g.quota_period
         FROM groups g
         """;
 
@@ -43,6 +44,11 @@ public sealed class GroupStore(Database database)
             ("$id", id), ("$n", name), ("$d", description), ("$now", DateTimeOffset.UtcNow));
         return Get(id)!;
     }
+
+    /// <summary>Sets the page limit for members, or with null removes it.</summary>
+    public void SetQuota(string id, QuotaDto? quota) =>
+        database.Execute("UPDATE groups SET quota_pages = $p, quota_period = $period WHERE id = $id",
+            ("$p", quota?.Pages), ("$period", quota?.Period), ("$id", id));
 
     public void Update(string id, string name, string description) =>
         database.Execute("UPDATE groups SET name = $n, description = $d WHERE id = $id", ("$n", name), ("$d", description), ("$id", id));
@@ -88,7 +94,8 @@ public sealed class GroupStore(Database database)
         r.GetString(0), r.GetString(1), r.GetString(2),
         r.GetBoolean(3), Ids(r.GetString(4)),
         r.GetBoolean(5), Ids(r.GetString(6)),
-        r.GetInt32(7), r.GetString(8));
+        r.GetInt32(7), r.GetString(8),
+        r.IsDBNull(9) ? null : new QuotaDto(r.GetInt32(9), r.GetString(10)));
 
     private static List<string> Ids(string json) => JsonSerializer.Deserialize<List<string>>(json) ?? [];
 }

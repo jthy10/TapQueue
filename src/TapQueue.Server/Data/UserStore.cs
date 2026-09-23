@@ -3,18 +3,20 @@ using TapQueue.Shared.Api;
 
 namespace TapQueue.Server.Data;
 
-public sealed record UserRecord(long Id, string Username, string DisplayName, string? TokenHash, DateTimeOffset CreatedAt, DateTimeOffset? DisabledAt, string Source)
+/// <param name="Quota">Their own page limit, which overrides their groups'; null if they have none.</param>
+public sealed record UserRecord(long Id, string Username, string DisplayName, string? TokenHash, DateTimeOffset CreatedAt, DateTimeOffset? DisabledAt, string Source,
+    QuotaDto? Quota = null)
 {
     public bool Disabled => DisabledAt is not null;
 
     public UserDto ToDto() => new(Id, Username, DisplayName);
 
-    public UserAdminDto ToAdminDto(IReadOnlyList<string> groups) => new(Id, Username, DisplayName, CreatedAt, DisabledAt, groups, Source);
+    public UserAdminDto ToAdminDto(IReadOnlyList<string> groups) => new(Id, Username, DisplayName, CreatedAt, DisabledAt, groups, Source, Quota);
 }
 
 public sealed class UserStore(Database database)
 {
-    private const string Columns = "id, username, display_name, token_hash, created_at, disabled_at, source";
+    private const string Columns = "id, username, display_name, token_hash, created_at, disabled_at, source, quota_pages, quota_period";
 
     public UserRecord? FindByUsername(string username) =>
         database.QueryOne($"SELECT {Columns} FROM users WHERE username = $u", Map, ("$u", username));
@@ -31,6 +33,11 @@ public sealed class UserStore(Database database)
             VALUES ($u, $d, $t, $now)
             RETURNING {Columns}
             """, Map, ("$u", username), ("$d", displayName), ("$t", tokenHash), ("$now", DateTimeOffset.UtcNow))!;
+
+    /// <summary>Sets the user's own page limit, or with null removes it.</summary>
+    public void SetQuota(long userId, QuotaDto? quota) =>
+        database.Execute("UPDATE users SET quota_pages = $p, quota_period = $period WHERE id = $id",
+            ("$p", quota?.Pages), ("$period", quota?.Period), ("$id", userId));
 
     public void SetTokenHash(long userId, string tokenHash) =>
         database.Execute("UPDATE users SET token_hash = $t WHERE id = $id", ("$t", tokenHash), ("$id", userId));
@@ -62,5 +69,6 @@ public sealed class UserStore(Database database)
     }
 
     private static UserRecord Map(SqliteDataReader r) =>
-        new(r.GetInt64(0), r.GetString(1), r.GetString(2), r.GetStringOrNull(3), r.GetTime(4), r.GetTimeOrNull(5), r.GetString(6));
+        new(r.GetInt64(0), r.GetString(1), r.GetString(2), r.GetStringOrNull(3), r.GetTime(4), r.GetTimeOrNull(5), r.GetString(6),
+            r.IsDBNull(7) ? null : new QuotaDto(r.GetInt32(7), r.GetString(8)));
 }
