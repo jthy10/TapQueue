@@ -39,6 +39,7 @@ public static class ServerApp
         builder.Services.AddSingleton<GroupStore>();
         builder.Services.AddSingleton<AccessPolicy>();
         builder.Services.AddSingleton<UserLifecycle>();
+        builder.Services.AddSingleton<UserImport>();
         builder.Services.AddSingleton<SessionStore>();
         builder.Services.AddSingleton<BadgeStore>();
         builder.Services.AddSingleton<StationStore>();

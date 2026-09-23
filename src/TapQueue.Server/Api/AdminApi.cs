@@ -91,6 +91,7 @@ public static class AdminApi
         });
 
         admin.MapGroupsApi();
+        admin.MapUsersBulkApi();
 
         admin.MapGet("/client-builds", (ClientBuildStore builds) => builds.List().Select(b => b.ToDto()));
         admin.MapPost("/client-builds", PublishClientBuild);

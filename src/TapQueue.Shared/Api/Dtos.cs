@@ -32,6 +32,38 @@ public sealed record UserAdminDto(
     IReadOnlyList<string> Groups,
     string Source = "local");
 
+/// <summary>Do one thing to several users at once.</summary>
+/// <param name="Action">One of <see cref="BulkUserAction"/>.</param>
+/// <param name="GroupId">For add-to-group and remove-from-group.</param>
+public sealed record BulkUsersRequest(IReadOnlyList<string> Usernames, string Action, string? GroupId = null);
+
+public static class BulkUserAction
+{
+    public const string Disable = "disable";
+    public const string Enable = "enable";
+    public const string Delete = "delete";
+    public const string AddToGroup = "add-to-group";
+    public const string RemoveFromGroup = "remove-from-group";
+}
+
+/// <param name="Errors">Users that couldn't be changed, and why. The rest were.</param>
+public sealed record BulkUsersResponse(int Changed, IReadOnlyList<string> Errors);
+
+public static class ImportAction
+{
+    public const string Create = "create";
+    public const string Update = "update";
+    public const string Unchanged = "unchanged";
+    public const string Error = "error";
+}
+
+/// <summary>What one CSV row does (or would do, in a preview).</summary>
+/// <param name="Row">The row number in the file, counting the header as 1.</param>
+public sealed record ImportRowDto(int Row, string Username, string Action, IReadOnlyList<string> Changes, string? Error);
+
+/// <param name="Applied">False for a preview: nothing was changed.</param>
+public sealed record ImportResponse(bool Applied, int Creates, int Updates, int Errors, IReadOnlyList<ImportRowDto> Rows);
+
 /// <summary>
 /// A group of users and what they may use. Users in no group may use everything; users in groups may
 /// use whatever any of their groups allows.
