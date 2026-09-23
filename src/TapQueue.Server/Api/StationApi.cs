@@ -23,7 +23,7 @@ public static class StationApi
     }
 
     private static async Task<IResult> Tap(StationTapRequest request, HttpContext http, BadgeStore badges, UserStore users,
-        PrinterRegistry printers, ReleaseService release, UnknownTaps unknownTaps, EventLog events, ILoggerFactory loggers)
+        PrinterRegistry printers, ReleaseService release, UnknownTaps unknownTaps, AccessPolicy access, EventLog events, ILoggerFactory loggers)
     {
         var logger = loggers.CreateLogger("TapQueue.Server.Api.StationApi");
         var station = CurrentStation(http);
@@ -52,6 +52,13 @@ public static class StationApi
             events.Record(EventCategory.Tap, EventLog.Station(station.Id), EventLog.User(user.Username),
                 $"{user.Username} tapped at station {station.Id}, but their account is disabled.");
             return Results.Ok(new StationTapResponse(TapOutcome.Disabled, $"Sorry {user.DisplayName}, your account is disabled. Ask an admin.", user.ToDto(), []));
+        }
+
+        if (!access.CanReleaseAt(user.Id, printer.Id))
+        {
+            events.Record(EventCategory.Tap, EventLog.Station(station.Id), EventLog.User(user.Username),
+                $"{user.Username} tapped at station {station.Id}, but their groups don't allow printing at {printer.Name}.");
+            return Results.Ok(new StationTapResponse(TapOutcome.NotAllowed, $"Sorry {user.DisplayName}, you can't print at {printer.Name}.", user.ToDto(), []));
         }
 
         // Not tied to the request: the station giving up on a slow printer shouldn't leave a job half-sent.

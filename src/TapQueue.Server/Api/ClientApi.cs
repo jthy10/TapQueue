@@ -22,14 +22,15 @@ public static class ClientApi
 
         var me = app.MapGroup("/api/v1").AddEndpointFilter(RequireSession);
         me.MapPost("/client/heartbeat", (ClientBuildStore builds) => new ClientHeartbeatResponse(builds.Latest()?.ToDto()));
-        me.MapGet("/printers", (PrinterRegistry printers) => printers.All.Select(printers.ToDto));
+        me.MapGet("/printers", (HttpContext http, PrinterRegistry printers, AccessPolicy access) =>
+            printers.All.Where(p => access.CanReleaseAt(CurrentUser(http).Id, p.Id)).Select(printers.ToDto));
         me.MapGet("/me/jobs", (HttpContext http, JobStore jobs, bool? all) =>
             jobs.ListForUser(CurrentUser(http).Id, heldOnly: all != true).Select(j => j.ToDto()));
         me.MapDelete("/me/jobs/{id:long}", CancelJob);
         me.MapPost("/me/release", Release);
     }
 
-    private static IResult CreateSession(ClientSessionRequest request, HttpContext http, ServerConfig config, EventLog events,
+    private static IResult CreateSession(ClientSessionRequest request, HttpContext http, ServerConfig config, EventLog events, AccessPolicy access,
         UserStore users, SessionStore sessions, QueueStore queues, PrinterRegistry printers, ClientBuildStore builds, ILoggerFactory loggers)
     {
         var logger = loggers.CreateLogger("TapQueue.Server.Api.ClientApi");
@@ -67,8 +68,9 @@ public static class ClientApi
         return Results.Ok(new ClientSessionResponse(
             token,
             user.ToDto(),
-            queues.List().Select(ToDto).ToList(),
-            printers.All.Select(printers.ToDto).ToList(),
+            // Only what their groups allow, so the client doesn't install queues they can't print to.
+            queues.List().Where(q => access.CanPrintTo(user.Id, q.Id)).Select(ToDto).ToList(),
+            printers.All.Where(p => access.CanReleaseAt(user.Id, p.Id)).Select(printers.ToDto).ToList(),
             HeartbeatSeconds,
             builds.Latest()?.ToDto()));
     }

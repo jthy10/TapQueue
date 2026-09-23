@@ -15,6 +15,7 @@ public sealed class IppPrinterEndpoint(
     Spool spool,
     JobOwnerResolver owners,
     UserStore users,
+    AccessPolicy access,
     EventLog events,
     ILogger<IppPrinterEndpoint> logger)
 {
@@ -295,15 +296,24 @@ public sealed class IppPrinterEndpoint(
         return slash >= 0 && long.TryParse(uri![(slash + 1)..], out var fromUri) ? fromUri : null;
     }
 
-    /// <summary>Jobs from a disabled user are turned away up front, so Windows tells them instead of holding the job.</summary>
+    /// <summary>
+    /// Jobs from disabled users, or from users whose groups don't allow this queue, are turned away up
+    /// front, so Windows tells them instead of holding a job that can never be released.
+    /// </summary>
     private IppMessage? Refused(RequestContext c)
     {
         var (userId, _) = owners.Resolve(c.ClientIp, c.Request.OperationString("requesting-user-name"));
-        if (userId is null || users.FindById(userId.Value) is not { Disabled: true } user)
+        if (userId is null || users.FindById(userId.Value) is not { } user)
             return null;
-        logger.LogInformation("Refused a job from disabled user {User} at {Ip}", user.Username, c.ClientIp);
-        events.Record(EventCategory.Job, user.Username, EventLog.User(user.Username), $"Refused a job from {user.Username}: their account is disabled.");
-        return IppMessage.CreateResponse(c.Request, IppStatus.ClientErrorNotAuthorized, "Your TapQueue account is disabled.");
+        var reason = user.Disabled ? "their account is disabled"
+            : !access.CanPrintTo(user.Id, c.Queue.Id) ? $"their groups don't allow printing to {c.Queue.Name}"
+            : null;
+        if (reason is null)
+            return null;
+        logger.LogInformation("Refused a job from {User} at {Ip}: {Reason}", user.Username, c.ClientIp, reason);
+        events.Record(EventCategory.Job, user.Username, EventLog.User(user.Username), $"Refused a job from {user.Username}: {reason}.");
+        return IppMessage.CreateResponse(c.Request, IppStatus.ClientErrorNotAuthorized,
+            user.Disabled ? "Your TapQueue account is disabled." : $"You aren't allowed to print to {c.Queue.Name}.");
     }
 
     private static IppMessage? UnsupportedFormat(RequestContext c)

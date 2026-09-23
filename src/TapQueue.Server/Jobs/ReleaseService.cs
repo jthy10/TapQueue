@@ -6,7 +6,7 @@ using TapQueue.Shared.Api;
 namespace TapQueue.Server.Jobs;
 
 /// <summary>Sends a user's held jobs to a physical printer.</summary>
-public sealed class ReleaseService(JobStore jobs, Spool spool, PrinterRegistry printers, EventLog events, ILogger<ReleaseService> logger)
+public sealed class ReleaseService(JobStore jobs, Spool spool, PrinterRegistry printers, AccessPolicy access, EventLog events, ILogger<ReleaseService> logger)
 {
     private static readonly TimeSpan BusyTimeout = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan BusyRetryDelay = TimeSpan.FromSeconds(3);
@@ -34,8 +34,11 @@ public sealed class ReleaseService(JobStore jobs, Spool spool, PrinterRegistry p
     private async Task<ReleaseResponse> ReleaseJobsAsync(UserRecord user, PrinterRecord printer, IReadOnlyList<long>? jobIds, CancellationToken ct)
     {
         var held = jobs.ListForUser(user.Id, heldOnly: true);
-        if (user.Disabled)
-            return new ReleaseResponse(held.Select(j => new ReleaseResult(j.Id, j.Name, false, "This account is disabled.")).ToList());
+        var refusal = user.Disabled ? "This account is disabled."
+            : !access.CanReleaseAt(user.Id, printer.Id) ? $"You aren't allowed to print at {printer.Name}."
+            : null;
+        if (refusal is not null)
+            return new ReleaseResponse(held.Select(j => new ReleaseResult(j.Id, j.Name, false, refusal)).ToList());
         var toRelease = jobIds is null ? held : held.Where(j => jobIds.Contains(j.Id)).ToList();
 
         var results = new List<ReleaseResult>();
