@@ -10,7 +10,7 @@ const string Usage = """
     Usage:
       tapqueue-station [--config <path>]      Run the station (default /etc/tapqueue/station.toml)
       tapqueue-station --list-devices         Show input devices, to find the badge reader
-      tapqueue-station --test [--device <path>]
+      tapqueue-station --test [--reader keyboard|pcprox] [--device <path>]
                                               Print each card number read, without contacting the server
     """;
 
@@ -29,6 +29,7 @@ try
 {
     config = File.Exists(configPath) || !testMode ? TomlConfig.Load<StationConfig>(configPath) : new StationConfig();
     config.Device = Option("--device") ?? config.Device;
+    config.Reader = Option("--reader") ?? config.Reader;
     config.Validate(needServer: !testMode);
 }
 catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
@@ -42,8 +43,8 @@ using var cts = new CancellationTokenSource();
 using var sigterm = PosixSignalRegistration.Create(PosixSignal.SIGTERM, _ => cts.Cancel());
 using var sigint = PosixSignalRegistration.Create(PosixSignal.SIGINT, _ => cts.Cancel());
 
-IBadgeReader reader = string.IsNullOrWhiteSpace(config.Device)
-    ? new StdinBadgeReader()
+IBadgeReader reader = config.Reader == "pcprox" ? new PcProxReader(config.Device, Log)
+    : string.IsNullOrWhiteSpace(config.Device) ? new StdinBadgeReader()
     : new EvdevBadgeReader(config.Device, Log);
 if (reader is StdinBadgeReader)
     Log("No device configured; type or scan card numbers followed by Enter.");

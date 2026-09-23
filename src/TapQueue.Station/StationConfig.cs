@@ -10,8 +10,15 @@ public sealed class StationConfig
     public string Token { get; set; } = "";
 
     /// <summary>
+    /// "keyboard": a reader that types the card number (read from /dev/input).
+    /// "pcprox": an RFIDeas pcProx polled over /dev/hidraw, which also works when it's set to type nothing.
+    /// </summary>
+    public string Reader { get; set; } = "keyboard";
+
+    /// <summary>
     /// The badge reader's input device, e.g. /dev/input/by-id/usb-…-event-kbd.
     /// Empty reads card numbers from standard input instead (for testing).
+    /// For reader = "pcprox", a /dev/hidraw* path; empty finds the reader automatically.
     /// </summary>
     public string Device { get; set; } = "";
 
@@ -30,6 +37,8 @@ public sealed class StationConfig
             if (string.IsNullOrWhiteSpace(Token))
                 throw new InvalidDataException("Set token to the station token from `tapqueue-admin stations add`.");
         }
+        if (Reader is not ("keyboard" or "pcprox"))
+            throw new InvalidDataException($"reader must be \"keyboard\" or \"pcprox\", not \"{Reader}\".");
         if (RepeatSeconds < 0 || MinCardLength < 1)
             throw new InvalidDataException("repeat_seconds must be >= 0 and min_card_length >= 1.");
     }
