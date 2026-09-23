@@ -328,7 +328,7 @@ dialog form { margin: 0; }
 .dialog-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 20px 18px; }
 
 .secret { display: flex; gap: 8px; align-items: center; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; }
-.secret code { flex: 1; overflow-wrap: anywhere; }
+.secret code { flex: 1; overflow-wrap: anywhere; white-space: pre-wrap; }
 .callout { background: var(--warn-weak); color: var(--warn); border-radius: var(--radius-sm); padding: 9px 12px; font-size: 13px; margin-bottom: 12px; }
 .callout.info { background: var(--accent-weak); color: var(--accent); }
 
