@@ -1,4 +1,3 @@
-using TapQueue.Server.Config;
 using TapQueue.Server.Data;
 using TapQueue.Server.Jobs;
 
@@ -9,7 +8,7 @@ namespace TapQueue.Server.Ipp;
 /// until their owner releases them at a physical printer.
 /// </summary>
 public sealed class IppPrinterEndpoint(
-    ServerConfig config,
+    ServerSettings settings,
     QueueStore queues,
     JobStore jobs,
     Spool spool,
@@ -249,7 +248,7 @@ public sealed class IppPrinterEndpoint(
             DocumentFormat: c.Request.OperationString("document-format") ?? "application/octet-stream",
             Copies: Math.Clamp(copies, 1, 999),
             SourceIp: c.ClientIp,
-            ExpiresAt: DateTimeOffset.UtcNow.AddHours(config.Jobs.HoldHours),
+            ExpiresAt: DateTimeOffset.UtcNow.AddHours(settings.HoldHours),
             JobAttributes: jobGroup is { Attributes.Count: > 0 } ? JobTemplate.Encode(jobGroup) : null));
 
         if (userId is null)

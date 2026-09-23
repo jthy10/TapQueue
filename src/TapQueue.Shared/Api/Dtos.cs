@@ -1,6 +1,7 @@
 namespace TapQueue.Shared.Api;
 
 /// <summary>The server itself, for `tapqueue-admin status` and the admin console.</summary>
+/// <param name="ChangedSettings">Settings changed from the console or CLI rather than taken from server.toml.</param>
 public sealed record ServerInfoDto(
     string Version,
     DateTimeOffset StartedAt,
@@ -10,7 +11,14 @@ public sealed record ServerInfoDto(
     int SchemaVersion,
     int HoldHours,
     int SessionTimeoutMinutes,
-    int HeldJobs);
+    int HeldJobs,
+    IReadOnlyList<string>? ChangedSettings = null);
+
+/// <summary>
+/// Settings that apply while the server runs. Null leaves one as it is; <see cref="Reset"/> names
+/// ones (holdHours, sessionTimeoutMinutes) to take from server.toml again.
+/// </summary>
+public sealed record UpdateServerSettingsRequest(int? HoldHours = null, int? SessionTimeoutMinutes = null, IReadOnlyList<string>? Reset = null);
 
 /// <summary>One line of the activity log.</summary>
 /// <param name="Category">admin, job, tap or signin.</param>

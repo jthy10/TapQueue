@@ -11,12 +11,12 @@ namespace TapQueue.Server.Jobs;
 /// username is only used to pick between several sessions on one machine (e.g. a terminal
 /// server), or, in dev mode, as a fallback when no client is running.
 /// </summary>
-public sealed class JobOwnerResolver(SessionStore sessions, UserStore users, ServerConfig config)
+public sealed class JobOwnerResolver(SessionStore sessions, UserStore users, ServerConfig config, ServerSettings settings)
 {
     public (long? UserId, string? OwnerHint) Resolve(string sourceIp, string? requestingUserName)
     {
         var windowsUser = NormalizeWindowsUser(requestingUserName);
-        var active = sessions.ActiveForIp(sourceIp, TimeSpan.FromMinutes(config.Auth.SessionTimeoutMinutes));
+        var active = sessions.ActiveForIp(sourceIp, settings.SessionTimeout);
 
         var distinctUsers = active.Select(s => s.UserId).Distinct().ToList();
         if (distinctUsers.Count == 1)

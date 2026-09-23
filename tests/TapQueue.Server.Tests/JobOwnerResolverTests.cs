@@ -9,6 +9,7 @@ public sealed class JobOwnerResolverTests : IDisposable
     private readonly string _dir = Directory.CreateTempSubdirectory("tapqueue-test").FullName;
     private readonly UserStore _users;
     private readonly SessionStore _sessions;
+    private readonly ServerSettings _settings;
     private readonly ServerConfig _config = new();
 
     public JobOwnerResolverTests()
@@ -17,9 +18,10 @@ public sealed class JobOwnerResolverTests : IDisposable
         db.Migrate();
         _users = new UserStore(db);
         _sessions = new SessionStore(db);
+        _settings = new ServerSettings(db, _config);
     }
 
-    private JobOwnerResolver Resolver => new(_sessions, _users, _config);
+    private JobOwnerResolver Resolver => new(_sessions, _users, _config, _settings);
 
     [Theory]
     [InlineData(@"CORP\jake", "jake")]

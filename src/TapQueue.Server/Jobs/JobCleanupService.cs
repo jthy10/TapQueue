@@ -1,10 +1,9 @@
-using TapQueue.Server.Config;
 using TapQueue.Server.Data;
 
 namespace TapQueue.Server.Jobs;
 
 /// <summary>Deletes held jobs nobody released in time, half-received jobs, dead client sessions and old activity.</summary>
-public sealed class JobCleanupService(JobStore jobs, SessionStore sessions, Spool spool, EventLog events, ServerConfig config, ILogger<JobCleanupService> logger)
+public sealed class JobCleanupService(JobStore jobs, SessionStore sessions, Spool spool, EventLog events, ServerSettings settings, ILogger<JobCleanupService> logger)
     : BackgroundService
 {
     private static readonly TimeSpan ReceivingTimeout = TimeSpan.FromHours(1);
@@ -37,9 +36,9 @@ public sealed class JobCleanupService(JobStore jobs, SessionStore sessions, Spoo
             logger.LogInformation("Job {JobId} \"{Name}\" {Status}", job.Id, job.Name, newStatus);
             if (newStatus == JobStatus.Expired)
                 events.Record(EventCategory.Job, "system", job.Username is null ? EventLog.Job(job.Id) : EventLog.User(job.Username),
-                    $"\"{job.Name}\" (job #{job.Id}) expired after {config.Jobs.HoldHours} hours without being released.");
+                    $"\"{job.Name}\" (job #{job.Id}) expired after {settings.HoldHours} hours without being released.");
         }
-        sessions.DeleteExpired(TimeSpan.FromMinutes(config.Auth.SessionTimeoutMinutes));
+        sessions.DeleteExpired(settings.SessionTimeout);
         events.DeleteOlderThan(now - EventRetention);
     }
 }

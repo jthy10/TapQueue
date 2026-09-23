@@ -116,12 +116,12 @@ public static class ClientApi
     {
         var http = context.HttpContext;
         var services = http.RequestServices;
-        var config = services.GetRequiredService<ServerConfig>();
+        var settings = services.GetRequiredService<ServerSettings>();
 
         var token = BearerToken(http);
         var session = token is null
             ? null
-            : services.GetRequiredService<SessionStore>().Touch(Tokens.Hash(token), http.ClientIp(), TimeSpan.FromMinutes(config.Auth.SessionTimeoutMinutes));
+            : services.GetRequiredService<SessionStore>().Touch(Tokens.Hash(token), http.ClientIp(), settings.SessionTimeout);
         var user = session is null ? null : services.GetRequiredService<UserStore>().FindById(session.UserId);
         if (user is null)
             return Results.Json(new ErrorResponse("Session expired. Sign in again."), statusCode: StatusCodes.Status401Unauthorized);

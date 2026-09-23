@@ -275,6 +275,28 @@ public sealed class Database
                 published_at  TEXT NOT NULL
             );
         """,
+
+        // 8: settings edited in the console (server.toml gives the defaults), sessions an admin
+        // signed out, and PCs that run the TapQueue service.
+        """
+            CREATE TABLE settings (
+                key    TEXT PRIMARY KEY,
+                value  TEXT NOT NULL
+            );
+
+            ALTER TABLE sessions ADD COLUMN signed_out_at TEXT;
+
+            CREATE TABLE workstations (
+                hostname         TEXT PRIMARY KEY COLLATE NOCASE,
+                last_ip          TEXT NOT NULL,
+                version          TEXT,
+                binary_sha256    TEXT,
+                update_error     TEXT,
+                pending_command  TEXT,
+                first_seen_at    TEXT NOT NULL,
+                last_seen_at     TEXT NOT NULL
+            );
+        """,
     ];
 
     public void Migrate()

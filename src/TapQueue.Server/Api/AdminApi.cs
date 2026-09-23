@@ -21,6 +21,7 @@ public static class AdminApi
         var admin = app.MapGroup("/api/v1/admin").AddEndpointFilter(RequireAdmin);
 
         admin.MapGet("/server", ServerInfo);
+        admin.MapPatch("/server/settings", UpdateServerSettings);
         admin.MapGet("/users", (UserStore users, GroupStore groups) =>
         {
             var memberships = groups.Memberships();
@@ -85,13 +86,48 @@ public static class AdminApi
 
         admin.MapGet("/client-builds", (ClientBuildStore builds) => builds.List().Select(b => b.ToDto()));
         admin.MapPost("/client-builds", PublishClientBuild);
-        admin.MapGet("/clients", (SessionStore sessions, ServerConfig config) =>
-            sessions.ListActive(TimeSpan.FromMinutes(config.Auth.SessionTimeoutMinutes)));
+        admin.MapGet("/clients", (SessionStore sessions, ServerSettings settings) => sessions.ListActive(settings.SessionTimeout));
     }
 
-    private static ServerInfoDto ServerInfo(ServerConfig config, Database database, JobStore jobs) => new(
+    private static ServerInfoDto ServerInfo(ServerConfig config, ServerSettings settings, Database database, JobStore jobs) => new(
         TapQueueVersion.Current, ServerClock.StartedAt, config.Auth.Mode, config.Server.Listen, config.Server.DataDir,
-        database.SchemaVersion(), config.Jobs.HoldHours, config.Auth.SessionTimeoutMinutes, jobs.CountHeld());
+        database.SchemaVersion(), settings.HoldHours, settings.SessionTimeoutMinutes, jobs.CountHeld(),
+        ServerSettings.Keys.Where(settings.IsSaved).ToList());
+
+    private static IResult UpdateServerSettings(UpdateServerSettingsRequest request, ServerConfig config, ServerSettings settings,
+        Database database, JobStore jobs, EventLog events)
+    {
+        if (request.HoldHours is < 1 or > 720)
+            return Results.BadRequest(new ErrorResponse("holdHours must be 1 to 720 (30 days)."));
+        // Clients check in every minute, so anything shorter would sign everyone out between heartbeats.
+        if (request.SessionTimeoutMinutes is < 2 or > 1440)
+            return Results.BadRequest(new ErrorResponse("sessionTimeoutMinutes must be 2 to 1440 (a day)."));
+        foreach (var key in request.Reset ?? [])
+            if (!ServerSettings.Keys.Contains(key))
+                return Results.BadRequest(new ErrorResponse($"Can't reset \"{key}\"; only {string.Join(", ", ServerSettings.Keys)}."));
+
+        var changes = new List<string>();
+        void Apply(string key, int? value, int current, string name, string unit)
+        {
+            if (request.Reset?.Contains(key) == true)
+            {
+                settings.Set(key, null);
+                changes.Add($"{name} back to server.toml's ({Plural(key == ServerSettings.HoldHoursKey ? settings.HoldHours : settings.SessionTimeoutMinutes, unit)})");
+            }
+            else if (value is { } v && (v != current || !settings.IsSaved(key)))
+            {
+                settings.Set(key, v);
+                changes.Add($"{name} {Plural(v, unit)}");
+            }
+        }
+        Apply(ServerSettings.HoldHoursKey, request.HoldHours, settings.HoldHours, "held jobs kept for", "hour");
+        Apply(ServerSettings.SessionTimeoutKey, request.SessionTimeoutMinutes, settings.SessionTimeoutMinutes, "session timeout", "minute");
+        if (changes.Count > 0)
+            events.Admin(null, $"Server settings: {string.Join("; ", changes)}.");
+        return Results.Ok(ServerInfo(config, settings, database, jobs));
+
+        static string Plural(int n, string unit) => n == 1 ? $"1 {unit}" : $"{n} {unit}s";
+    }
 
     /// <summary>The request body is TapQueueClient.exe. Clients start installing it on their next heartbeat.</summary>
     private static async Task<IResult> PublishClientBuild(HttpContext http, string? version, ClientBuildStore builds, EventLog events, ILoggerFactory loggers)
