@@ -81,6 +81,7 @@ public static class AdminApi
             events.List(category, subject, before, limit ?? 100));
 
         admin.MapStationsApi();
+        admin.MapWorkstationsApi();
 
         admin.MapGroupsApi();
         admin.MapUsersBulkApi();

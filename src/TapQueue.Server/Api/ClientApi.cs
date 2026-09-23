@@ -18,6 +18,9 @@ public static class ClientApi
         // Queue names and client builds are not secret: anyone who can reach the server can print to it.
         app.MapGet("/api/v1/client/setup", (QueueStore queues, ClientBuildStore builds) =>
             new ClientSetupResponse(queues.List().Select(ToDto).ToList(), builds.Latest()?.ToDto()));
+        // The same, from services that say which PC they are and what they run (0.3 on), so they show
+        // up under Workstations and can be told to update now.
+        app.MapPost("/api/v1/client/setup", CheckIn);
         app.MapGet("/api/v1/client/builds/{sha256}", DownloadBuild);
 
         var me = app.MapGroup("/api/v1").AddEndpointFilter(RequireSession);
@@ -75,6 +78,17 @@ public static class ClientApi
             builds.Latest()?.ToDto()));
     }
 
+    private static IResult CheckIn(ClientSetupRequest request, HttpContext http, QueueStore queues, ClientBuildStore builds, WorkstationStore workstations)
+    {
+        var computer = request.Computer?.Trim();
+        if (string.IsNullOrEmpty(computer) || computer.Length > 255)
+            return Results.BadRequest(new ErrorResponse("computer is required."));
+        var command = workstations.CheckIn(computer, http.ClientIp(), request with { UpdateError = Clean(request.UpdateError) });
+        return Results.Ok(new ClientSetupResponse(queues.List().Select(ToDto).ToList(), builds.Latest()?.ToDto(), command));
+
+        static string? Clean(string? error) => string.IsNullOrWhiteSpace(error) ? null : error.Trim()[..Math.Min(error.Trim().Length, 500)];
+    }
+
     private static QueueDto ToDto(QueueRecord q) => new(q.Id, q.Name, q.Description, $"/ipp/{q.Id}");
 
     /// <param name="computer">Sent by the client so the log says which PC is updating.</param>
@@ -123,6 +137,9 @@ public static class ClientApi
             ? null
             : services.GetRequiredService<SessionStore>().Touch(Tokens.Hash(token), http.ClientIp(), settings.SessionTimeout);
         var user = session is null ? null : services.GetRequiredService<UserStore>().FindById(session.UserId);
+        if (user is null && token is not null && services.GetRequiredService<SessionStore>().WasSignedOut(Tokens.Hash(token)))
+            // 403, not 401: the client stays signed out instead of signing straight back in.
+            return Results.Json(new ErrorResponse("An admin signed you out of TapQueue on this PC."), statusCode: StatusCodes.Status403Forbidden);
         if (user is null)
             return Results.Json(new ErrorResponse("Session expired. Sign in again."), statusCode: StatusCodes.Status401Unauthorized);
 

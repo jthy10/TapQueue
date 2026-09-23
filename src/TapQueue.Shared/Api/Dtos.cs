@@ -210,10 +210,46 @@ public sealed record StationBuildDto(string Version, string Sha256, long SizeByt
 public sealed record ClientHeartbeatResponse(ClientBuildDto? ClientBuild);
 
 /// <summary>What the TapQueue service on each PC needs: the printers to add and the client build to run.</summary>
-public sealed record ClientSetupResponse(IReadOnlyList<QueueDto> Queues, ClientBuildDto? ClientBuild);
+/// <param name="Command">One of <see cref="WorkstationCommand"/>, sent once.</param>
+public sealed record ClientSetupResponse(IReadOnlyList<QueueDto> Queues, ClientBuildDto? ClientBuild, string? Command = null);
+
+/// <summary>The TapQueue service checking in: which PC it is, what it runs, and why its last update failed.</summary>
+public sealed record ClientSetupRequest(string Computer, string? Version, string? Sha256, string? UpdateError);
+
+public static class WorkstationCommand
+{
+    /// <summary>Check for a client build now, and try again even if installing it failed before.</summary>
+    public const string Update = "update";
+}
+
+public static class WorkstationStatus
+{
+    /// <summary>The TapQueue service checks in this often.</summary>
+    public const int CheckInSeconds = 60;
+
+    /// <summary>A PC that hasn't checked in for this long is shown as offline.</summary>
+    public const int OfflineAfterSeconds = 3 * CheckInSeconds;
+}
+
+/// <summary>A PC running the TapQueue service, and who's signed in on it.</summary>
+/// <param name="Online">Its TapQueue service checked in in the last <c>WorkstationStatus.OfflineAfterSeconds</c> seconds.</param>
+/// <param name="UpToDate">It runs the client build the server publishes (true when none is published).</param>
+/// <param name="UpdateError">Why installing the published build failed, until it succeeds.</param>
+public sealed record WorkstationDto(
+    string Hostname,
+    string LastIp,
+    string? Version,
+    bool UpToDate,
+    string? UpdateError,
+    string? PendingCommand,
+    bool Online,
+    DateTimeOffset FirstSeenAt,
+    DateTimeOffset LastSeenAt,
+    IReadOnlyList<ClientSessionDto> Sessions);
 
 /// <summary>A signed-in client, for `tapqueue-admin clients`.</summary>
-public sealed record ClientSessionDto(string Username, string? Hostname, string? WindowsUser, string? ClientVersion, string RemoteIp, DateTimeOffset LastSeenAt);
+/// <param name="Id">The session, for signing it out.</param>
+public sealed record ClientSessionDto(long Id, string Username, string? Hostname, string? WindowsUser, string? ClientVersion, string RemoteIp, DateTimeOffset LastSeenAt);
 
 /// <summary>Release held jobs to a printer. A null <see cref="JobIds"/> releases every held job.</summary>
 public sealed record ReleaseRequest(string PrinterId, IReadOnlyList<long>? JobIds = null);
