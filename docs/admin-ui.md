@@ -64,9 +64,9 @@ the files from disk, so edits show up on reload without a rebuild.
 
 Each phase ships on its own and leaves the console usable.
 
-1. **Shell and what exists today.** Overview, Jobs, Users, Cards, Printers, Queues, Stations,
+1. **Shell and what exists today.** *(Done.)* Overview, Jobs, Users, Cards, Printers, Queues, Stations,
    Workstations, Updates (client builds), Server (status).
-2. **People.** Enable/disable users, edit display names, card labels and reassigning, enrolling
+2. **People.** *(Done.)* Enable/disable users, edit display names, card labels and reassigning, enrolling
    by tapping, cancel/release any job, delete users. An `events` table records every admin
    change, release and tap, which feeds Activity and the Overview.
 3. **Groups and permissions.** Groups, membership, and which queues and printers a group may

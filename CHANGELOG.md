@@ -17,6 +17,13 @@ breaking changes; they're listed under **Changed** with what to do.
   printers, queues, stations, workstations, client updates and server status. It has no sign-in
   yet, so it's only served with `auth.mode = "dev"`. See [docs/admin-ui.md](docs/admin-ui.md).
 - Admin API: `GET /server`, `GET /jobs/{id}` and `DELETE /jobs/{id}` (cancel a held job).
+- Users can be renamed, disabled and deleted. A disabled user is signed out, can't sign in, has
+  new jobs refused and can't release; their held jobs are kept. Deleting a user cancels their held
+  jobs and removes their cards; job history keeps their name.
+- Cards can have a label and be moved to another user.
+- Activity log of admin changes, prints, releases, badge taps and sign-ins, kept for 90 days
+  (`GET /api/v1/admin/events`), shown on the console's Activity page and in each user's,
+  printer's and station's details.
 
 ### Changed
 - With `auth.mode = "dev"`, the admin API accepts requests without the admin token.
