@@ -1,0 +1,15 @@
+# TapQueue Windows client configuration.
+# Put this at C:\ProgramData\TapQueue\client.toml (or next to TapQueueClient.exe).
+
+# The TapQueue server.
+server_url = "http://tapqueue-server:8631"
+
+# Your TapQueue username. Leave empty to use your Windows username.
+username = ""
+
+# Your client token from `tapqueue-admin users add <username>`.
+# Not needed when the server is running with auth.mode = "dev".
+token = ""
+
+# Add the server's print queue(s) to this PC automatically.
+install_printers = true

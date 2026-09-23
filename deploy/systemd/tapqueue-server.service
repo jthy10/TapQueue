@@ -1,0 +1,29 @@
+[Unit]
+Description=TapQueue print server
+Documentation=https://github.com/jthy10/TapQueue
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=tapqueue
+Group=tapqueue
+ExecStart=/opt/tapqueue/tapqueue-server --config /etc/tapqueue/server.toml
+Restart=on-failure
+RestartSec=5
+
+# Held print jobs live here; keep them private to the service.
+StateDirectory=tapqueue
+StateDirectoryMode=0700
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

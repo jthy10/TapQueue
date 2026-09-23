@@ -1,0 +1,42 @@
+# TapQueue server configuration.
+# Default location: /etc/tapqueue/server.toml (override with --config or TAPQUEUE_CONFIG).
+
+[server]
+# Address and port for both IPP (what Windows prints to) and the REST API.
+listen = "0.0.0.0:8631"
+# Database and held jobs. Must be writable by the server.
+data_dir = "/var/lib/tapqueue"
+
+[auth]
+# "dev":   the client config only needs a username; unknown users are created automatically.
+#          Anyone on the network can claim to be anyone. For testing only.
+# "token": each user needs a token from `tapqueue-admin users add <username>` in their client.toml.
+mode = "token"
+# Client sessions with no heartbeat for this long are dropped.
+session_timeout_minutes = 10
+
+[admin]
+# Used by tapqueue-admin. Generate one with: openssl rand -hex 32
+token = "change-me"
+
+[jobs]
+# Held jobs not released within this many hours are deleted.
+hold_hours = 24
+
+# A queue is a printer users see in Windows. Jobs sent to it are held until released.
+[[queues]]
+id = "secure"                          # part of the URL: ipp://<server>:8631/ipp/secure
+name = "TapQueue Secure Print"         # the name shown in the Windows print dialog
+description = "Tap your badge at any TapQueue printer to release your print."
+location = ""
+color = false
+duplex = false
+default_media = "na_letter_8.5x11in"   # or iso_a4_210x297mm
+
+# A physical printer that held jobs can be released to.
+[[printers]]
+id = "office"
+name = "Office printer"
+location = ""
+uri = "ipp://192.0.2.10/ipp/print"     # most network printers: ipp://<ip>/ipp/print
+tls_skip_verify = true                 # only matters for ipps:// (printers use self-signed certs)
