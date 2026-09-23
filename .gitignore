@@ -487,3 +487,7 @@ $RECYCLE.BIN/
 *.db-shm
 *.db-wal
 /artifacts/
+
+# Release archives from scripts/package.sh
+/dist/
+/out/
