@@ -71,6 +71,24 @@ public sealed class Database
                 error               TEXT
             );
             CREATE INDEX IF NOT EXISTS ix_jobs_user_status ON jobs(user_id, status);
+
+            CREATE TABLE IF NOT EXISTS badges (
+                id            INTEGER PRIMARY KEY,
+                card_hash     TEXT NOT NULL UNIQUE,
+                card_hint     TEXT NOT NULL,
+                user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                created_at    TEXT NOT NULL,
+                last_used_at  TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS stations (
+                id            TEXT PRIMARY KEY COLLATE NOCASE,
+                printer_id    TEXT NOT NULL,
+                token_hash    TEXT NOT NULL UNIQUE,
+                created_at    TEXT NOT NULL,
+                last_seen_at  TEXT,
+                last_ip       TEXT
+            );
             """;
         cmd.ExecuteNonQuery();
     }

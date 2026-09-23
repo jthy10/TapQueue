@@ -60,3 +60,39 @@ public sealed record CreateUserRequest(string Username, string? DisplayName);
 public sealed record UserTokenResponse(UserDto User, string Token);
 
 public sealed record ErrorResponse(string Error);
+
+/// <param name="CardHint">The last few characters of the card number. The full number isn't stored.</param>
+public sealed record BadgeDto(long Id, string Username, string CardHint, DateTimeOffset CreatedAt, DateTimeOffset? LastUsedAt);
+
+public sealed record CreateBadgeRequest(string Username, string Card);
+
+/// <summary>A card that was tapped at a station but isn't linked to anyone yet.</summary>
+public sealed record UnknownTapDto(string Card, string StationId, DateTimeOffset At);
+
+public sealed record StationDto(string Id, string PrinterId, DateTimeOffset CreatedAt, DateTimeOffset? LastSeenAt, string? LastIp);
+
+public sealed record CreateStationRequest(string Id, string PrinterId);
+
+/// <summary>Returned when a station is created or its token is reset. The token is only ever shown here.</summary>
+public sealed record StationTokenResponse(StationDto Station, string Token);
+
+/// <summary>What a release station gets back when it checks in.</summary>
+public sealed record StationInfoResponse(string StationId, PrinterDto Printer);
+
+public sealed record StationTapRequest(string Card);
+
+public static class TapOutcome
+{
+    /// <summary>Every held job was sent to the printer.</summary>
+    public const string Released = "released";
+    /// <summary>The badge belongs to someone, but they have nothing waiting.</summary>
+    public const string NoJobs = "no-jobs";
+    /// <summary>Nobody has this badge.</summary>
+    public const string UnknownBadge = "unknown-badge";
+    /// <summary>Some or all jobs couldn't be sent. They stay held.</summary>
+    public const string Failed = "failed";
+}
+
+/// <param name="Outcome">One of <see cref="TapOutcome"/>.</param>
+/// <param name="Message">A short sentence suitable for showing at the printer.</param>
+public sealed record StationTapResponse(string Outcome, string Message, UserDto? User, IReadOnlyList<ReleaseResult> Results);
