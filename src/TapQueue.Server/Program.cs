@@ -37,6 +37,9 @@ builder.Services.AddSingleton(database);
 builder.Services.AddSingleton(new Spool(config.Server.DataDir));
 builder.Services.AddSingleton<UserStore>();
 builder.Services.AddSingleton<SessionStore>();
+builder.Services.AddSingleton<BadgeStore>();
+builder.Services.AddSingleton<StationStore>();
+builder.Services.AddSingleton<UnknownTaps>();
 builder.Services.AddSingleton<JobStore>();
 builder.Services.AddSingleton<JobOwnerResolver>();
 builder.Services.AddSingleton<PrinterRegistry>();
@@ -56,6 +59,7 @@ app.MapGet("/icons/{size:int}.png", (int size) =>
 app.MapGet("/healthz", () => Results.Ok(new { status = "ok" }));
 app.MapClientApi();
 app.MapAdminApi();
+app.MapStationApi();
 
 app.Logger.LogInformation("Config: {Path} | auth mode: {Mode} | data: {DataDir}", configPath, config.Auth.Mode, config.Server.DataDir);
 foreach (var queue in config.Queues)
