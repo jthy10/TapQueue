@@ -57,14 +57,26 @@ public sealed class ClientUpdateTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task DownloadNeedsASession()
+    public async Task ServiceGetsQueuesAndBuildWithoutSigningIn()
     {
         var published = await PublishAsync("0.3.0", Exe);
-        using var anonymous = _server.NewClient();
+        using var service = _server.NewClient();
 
-        using var response = await anonymous.GetAsync(published.DownloadPath);
+        var setup = await service.GetFromJsonAsync<ClientSetupResponse>("/api/v1/client/setup", TapQueueJson.Options);
 
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal(TestServer.QueueId, Assert.Single(setup!.Queues).Id);
+        Assert.Equal(published, setup.ClientBuild);
+        Assert.Equal(Exe, await service.GetByteArrayAsync(published.DownloadPath + "?computer=TEST-PC"));
+    }
+
+    [Fact]
+    public async Task UnknownBuildIsNotFound()
+    {
+        using var service = _server.NewClient();
+
+        using var response = await service.GetAsync($"/api/v1/client/builds/{new string('0', 64)}");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]

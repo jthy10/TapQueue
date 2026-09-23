@@ -14,10 +14,14 @@ public static class ClientApi
     public static void MapClientApi(this IEndpointRouteBuilder app)
     {
         app.MapPost("/api/v1/client/session", CreateSession);
+        // For the TapQueue service on each PC, which runs as the machine rather than a user.
+        // Queue names and client builds are not secret: anyone who can reach the server can print to it.
+        app.MapGet("/api/v1/client/setup", (QueueStore queues, ClientBuildStore builds) =>
+            new ClientSetupResponse(queues.List().Select(ToDto).ToList(), builds.Latest()?.ToDto()));
+        app.MapGet("/api/v1/client/builds/{sha256}", DownloadBuild);
 
         var me = app.MapGroup("/api/v1").AddEndpointFilter(RequireSession);
         me.MapPost("/client/heartbeat", (ClientBuildStore builds) => new ClientHeartbeatResponse(builds.Latest()?.ToDto()));
-        me.MapGet("/client/builds/{sha256}", DownloadBuild);
         me.MapGet("/printers", (PrinterRegistry printers) => printers.All.Select(printers.ToDto));
         me.MapGet("/me/jobs", (HttpContext http, JobStore jobs, bool? all) =>
             jobs.ListForUser(CurrentUser(http).Id, heldOnly: all != true).Select(j => j.ToDto()));
@@ -53,20 +57,22 @@ public static class ClientApi
         return Results.Ok(new ClientSessionResponse(
             token,
             user.ToDto(),
-            queues.List().Select(q => new QueueDto(q.Id, q.Name, q.Description, $"/ipp/{q.Id}")).ToList(),
+            queues.List().Select(ToDto).ToList(),
             printers.All.Select(printers.ToDto).ToList(),
             HeartbeatSeconds,
             builds.Latest()?.ToDto()));
     }
 
-    private static IResult DownloadBuild(string sha256, HttpContext http, ClientBuildStore builds, ILoggerFactory loggers)
+    private static QueueDto ToDto(QueueRecord q) => new(q.Id, q.Name, q.Description, $"/ipp/{q.Id}");
+
+    /// <param name="computer">Sent by the client so the log says which PC is updating.</param>
+    private static IResult DownloadBuild(string sha256, string? computer, HttpContext http, ClientBuildStore builds, ILoggerFactory loggers)
     {
         if (builds.Find(sha256) is not { } build || builds.FileFor(build.Sha256) is not { } path)
             return Results.NotFound(new ErrorResponse("No such client build."));
-        var session = (SessionRecord)http.Items[nameof(SessionRecord)]!;
         loggers.CreateLogger("TapQueue.Server.Api.ClientApi").LogInformation(
-            "{User} on {Host} ({Ip}) is downloading client {Version} to update itself",
-            CurrentUser(http).Username, session.Hostname, http.ClientIp(), build.Version);
+            "{Computer} ({Ip}) is downloading client {Version} to update itself",
+            string.IsNullOrWhiteSpace(computer) ? "A PC" : computer.Trim(), http.ClientIp(), build.Version);
         return Results.File(path, "application/vnd.microsoft.portable-executable", "TapQueueClient.exe");
     }
 
@@ -106,7 +112,6 @@ public static class ClientApi
             return Results.Json(new ErrorResponse("Session expired. Sign in again."), statusCode: StatusCodes.Status401Unauthorized);
 
         http.Items[nameof(UserRecord)] = user;
-        http.Items[nameof(SessionRecord)] = session;
         return await next(context);
     }
 

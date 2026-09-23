@@ -91,6 +91,9 @@ public sealed record ClientBuildDto(string Version, string Sha256, long SizeByte
 
 public sealed record ClientHeartbeatResponse(ClientBuildDto? ClientBuild);
 
+/// <summary>What the TapQueue service on each PC needs: the printers to add and the client build to run.</summary>
+public sealed record ClientSetupResponse(IReadOnlyList<QueueDto> Queues, ClientBuildDto? ClientBuild);
+
 /// <summary>A signed-in client, for `tapqueue-admin clients`.</summary>
 public sealed record ClientSessionDto(string Username, string? Hostname, string? WindowsUser, string? ClientVersion, string RemoteIp, DateTimeOffset LastSeenAt);
 
