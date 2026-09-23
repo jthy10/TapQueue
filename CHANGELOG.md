@@ -11,6 +11,8 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-23
+
 ### Changed
 - Releases are tagged `server-vX.Y.Z`; the Windows client is released separately as `client-vX.Y.Z`.
 - **Breaking:** queues and printers are stored in the database instead of `server.toml`, and are
@@ -57,5 +59,6 @@ First working version.
   readers. A tap releases the user's held jobs to the station's printer.
 - Badge enrollment by an admin (`badges add --last-tap`).
 
-[Unreleased]: https://github.com/jthy10/TapQueue/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.2.0...HEAD
+[0.2.0]: https://github.com/jthy10/TapQueue/compare/v0.1.0...server-v0.2.0
 [0.1.0]: https://github.com/jthy10/TapQueue/releases/tag/v0.1.0

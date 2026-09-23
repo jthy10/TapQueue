@@ -9,6 +9,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-23
+
 ### Added
 - Installer, `TapQueue_client_X.Y.Z.exe`: installs for the whole PC (Program Files), asks for the
   server address and keeps it in `C:\ProgramData\TapQueue\client.toml`, starts TapQueue for every
@@ -28,5 +30,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 First working version: a tray app configured by a file that signs in, adds the printer, and shows
 and releases held jobs.
 
-[Unreleased]: https://github.com/jthy10/TapQueue/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/jthy10/TapQueue/compare/client-v0.2.0...HEAD
+[0.2.0]: https://github.com/jthy10/TapQueue/compare/v0.1.0...client-v0.2.0
 [0.1.0]: https://github.com/jthy10/TapQueue/releases/tag/v0.1.0
