@@ -1,6 +1,10 @@
-# Changelog
+# Changelog: server and station
 
-All notable changes to TapQueue are recorded here. The format follows
+All notable changes to the TapQueue server, release station and `tapqueue-admin` are recorded
+here; they share a version and are released together with tags `server-vX.Y.Z`. The Windows
+client has its own version and [changelog](CHANGELOG-client.md). Up to 0.1.0 everything shared one version.
+
+The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/). Until 1.0, a minor version bump (0.x.0) can contain
 breaking changes; they're listed under **Changed** with what to do.
@@ -8,6 +12,7 @@ breaking changes; they're listed under **Changed** with what to do.
 ## [Unreleased]
 
 ### Changed
+- Releases are tagged `server-vX.Y.Z`; the Windows client is released separately as `client-vX.Y.Z`.
 - **Breaking:** queues and printers are stored in the database instead of `server.toml`, and are
   managed with `tapqueue-admin queues …` and `tapqueue-admin printers …`. Changes take effect
   without restarting the server. The server refuses to start while `server.toml` still has
@@ -15,16 +20,24 @@ breaking changes; they're listed under **Changed** with what to do.
 - The database schema is versioned, and upgrades are applied automatically at startup.
 
 ### Added
-- Windows client updates: `tapqueue-admin clients publish <zip>` pushes a client build out, and
-  every client installs it within about a minute. `tapqueue-admin clients` shows which version
-  each client runs. See [docs/windows-client.md](docs/windows-client.md#updates).
+- One-command installs from GitHub:
+  `curl -fsSL https://raw.githubusercontent.com/jthy10/TapQueue/main/install.sh | sudo bash -s server`
+  (or `station`). Run it again to upgrade.
+- `install-station.sh` in the station archive: asks for the server and station token, finds a
+  pcProx or keyboard-style reader, and installs the service.
+- Pushing Windows client updates: `tapqueue-admin clients publish TapQueue_client_X.Y.Z_win-x64.zip`
+  makes every PC install that build within about a minute. `tapqueue-admin clients` shows which
+  version each PC runs, and the log shows each PC downloading it.
+  See [docs/windows-client.md](docs/windows-client.md#updates).
+- Optional `tapqueue-console` service shows the server's live log on its own screen.
+- The server logs one line per event.
 - `tapqueue-admin printers add|edit|remove`, `queues`, `queues add|edit|remove`, `stations move`
   and `status`.
 - Printers used by a release station can't be removed until the station is moved.
 - `--version` on every program. The version, including the commit it was built from, also shows up
   in the server and station logs, `/healthz`, and the tray menu.
-- Release archives for the server, station and Windows client, built by CI and attached to GitHub
-  releases.
+- Release archives (`TapQueue_server_X.Y.Z_linux-x64.tar.gz`, `TapQueue_station_…`), built by CI
+  and attached to GitHub releases.
 - `install-server.sh` in the server archive installs or upgrades the server in one step.
 - `tapqueue-admin` run with `sudo` on the server reads the admin token from `/etc/tapqueue/server.toml`.
 - Documentation split into `docs/`, including how jobs are matched to people and where that
