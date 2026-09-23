@@ -24,6 +24,13 @@ breaking changes; they're listed under **Changed** with what to do.
 - Activity log of admin changes, prints, releases, badge taps and sign-ins, kept for 90 days
   (`GET /api/v1/admin/events`), shown on the console's Activity page and in each user's,
   printer's and station's details.
+- Groups decide which queues people may print to and which printers they may release at. Users
+  in several groups get whatever any of them allows; users in no group may use everything.
+  Jobs to a queue someone isn't allowed are refused, taps at a printer they aren't allowed say
+  so, and clients are only offered what's allowed. Managed on the console's Groups page or
+  `/api/v1/admin/groups`.
+- Users: CSV import (previewed before anything changes), CSV export, and bulk disable, enable,
+  delete and group changes.
 
 ### Changed
 - With `auth.mode = "dev"`, the admin API accepts requests without the admin token.

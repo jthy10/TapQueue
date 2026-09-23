@@ -69,7 +69,7 @@ Each phase ships on its own and leaves the console usable.
 2. **People.** *(Done.)* Enable/disable users, edit display names, card labels and reassigning, enrolling
    by tapping, cancel/release any job, delete users. An `events` table records every admin
    change, release and tap, which feeds Activity and the Overview.
-3. **Groups and permissions.** Groups, membership, and which queues and printers a group may
+3. **Groups and permissions.** *(Done, with CSV import/export and bulk actions.)* Groups, membership, and which queues and printers a group may
    use, checked when a job is printed (rejected with a clear IPP error) and when it's released
    (skipped, and the station says why). Users with no group can use everything, so nothing
    changes until groups are set up.
