@@ -31,9 +31,18 @@ breaking changes; they're listed under **Changed** with what to do.
   `/api/v1/admin/groups`.
 - Users: CSV import (previewed before anything changes), CSV export, and bulk disable, enable,
   delete and group changes.
+- Stations send a heartbeat every 15 seconds, so the console shows whether each one is online,
+  its version and whether its reader is working. Their settings (printer, reader, device, repeat
+  time, minimum card length, name, location) can be changed from the server and apply without
+  touching station.toml; a station can be restarted remotely or taken out of service with a
+  message. See [docs/release-station.md](docs/release-station.md#managing-stations-from-the-server).
+- Station updates: publish a `tapqueue-station` build on the server and every station installs
+  it and restarts.
 
 ### Changed
 - With `auth.mode = "dev"`, the admin API accepts requests without the admin token.
+- The station systemd unit has a state directory and starts from a build installed there.
+  Re-run `install-station.sh` to get it.
 
 ## [0.2.0] - 2026-09-23
 

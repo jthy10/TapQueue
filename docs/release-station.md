@@ -65,3 +65,24 @@ it stays held so the user can try again at another printer.
 
 > Card numbers from cheap 125 kHz and MIFARE readers are easy to copy, just like a building badge.
 > TapQueue treats a tap as "this person is standing at the printer", nothing stronger.
+
+## Managing stations from the server
+
+Once a station has its server address and token, everything else can be set from the admin
+console's Stations page (or `PATCH /api/v1/admin/stations/<id>`), and overrides station.toml:
+the printer it releases to, the reader and device, the repeat time, the minimum card length, its
+name and location. A station sends a heartbeat every 15 seconds and picks up changes with the
+reply; changing the reader makes it restart itself. The console shows each station's version,
+reader status and when it last reported in; after 45 seconds without a heartbeat it shows as
+offline.
+
+A station can be **taken out of service** with a message: taps then release nothing and the
+message is logged at the station instead. **Restart** asks it to restart on its next heartbeat.
+
+### Updates
+
+Publish a station build from the console's Updates page (the `tapqueue-station` program from the
+station archive). Every station downloads it, checks it runs (`--version`), installs it into
+`/var/lib/tapqueue-station` and restarts, within about 15 seconds. The service starts from there
+when a build has been installed that way. Running `install-station.sh` again removes it, so a
+build installed by hand always takes over.

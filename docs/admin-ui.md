@@ -73,10 +73,14 @@ Each phase ships on its own and leaves the console usable.
    use, checked when a job is printed (rejected with a clear IPP error) and when it's released
    (skipped, and the station says why). Users with no group can use everything, so nothing
    changes until groups are set up.
-4. **Station control.** Stations send a heartbeat (version, reader state, uptime) and receive
-   commands with the reply: restart, re-read settings, update. Settings that don't need to live
-   on the box (printer, messages, repeat time) move to the server. Station builds are published
-   and installed like Windows client builds.
+4. **Station control.** *(Done.)* Stations send a heartbeat every 15 s (version, reader state,
+   uptime) and get settings, commands (restart) and the published build back. Every setting
+   except the server address and token can be set from the console, and a station can be taken
+   out of service with a message. Station builds are published and installed like client builds.
+   Not done: tap feedback. The pcProx's LED and beeper are only reachable through the
+   configuration commands that stop it reading cards, sound would need ALSA installed on every
+   station, and the HP M404n ignores PJL panel messages. A screen or USB status light at the
+   station is the likely way; `feedback` in station settings is reserved for it.
 5. **Workstation and server control.** Sign out a session, tell a client to update now, live
    server log (streamed), server settings (hold hours, session timeout), restart.
 6. **Quotas.** Page counting for PDF and PWG raster jobs, page limits per user and group, per
