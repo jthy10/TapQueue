@@ -32,7 +32,7 @@ export async function render(root, ctx) {
       description: "Every signed-in client downloads and installs it on its next heartbeat.",
       submitLabel: "Publish",
       body: [
-        field("TapQueueClient.exe", input("file", { type: "file", accept: ".exe", required: true }), "From the client archive (tapqueue-client-<version>-win-x64.zip)."),
+        field("TapQueueClient.exe", input("file", { type: "file", accept: ".exe", required: true }), "From the client archive (TapQueue_client_<version>_win-x64.zip)."),
         field("Version", input("version", { required: true, placeholder: "e.g. 0.3.0+1a2b3c4" }), "As in the archive's version.txt. Shown on this page and in each client's tray menu."),
       ],
       onSubmit: async ({ file, version }) => {

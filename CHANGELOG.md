@@ -11,6 +11,16 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+### Added
+- Admin console at `http://<server>:8631/admin`: an overview of what needs attention, jobs
+  (release or cancel any held job), users, cards (enroll one by tapping it at a station),
+  printers, queues, stations, workstations, client updates and server status. It has no sign-in
+  yet, so it's only served with `auth.mode = "dev"`. See [docs/admin-ui.md](docs/admin-ui.md).
+- Admin API: `GET /server`, `GET /jobs/{id}` and `DELETE /jobs/{id}` (cancel a held job).
+
+### Changed
+- With `auth.mode = "dev"`, the admin API accepts requests without the admin token.
+
 ## [0.2.0] - 2026-09-23
 
 ### Changed

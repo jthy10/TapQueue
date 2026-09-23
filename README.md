@@ -55,7 +55,7 @@ IP address can't handle.
 2. [Install the Windows client](docs/windows-client.md) on each PC.
 3. [Set up a release station](docs/release-station.md) next to each printer and enroll badges.
 
-Reference: [admin CLI](docs/admin-cli.md) · changelogs: [server and station](CHANGELOG.md),
+Reference: [admin console](docs/admin-ui.md) · [admin CLI](docs/admin-cli.md) · changelogs: [server and station](CHANGELOG.md),
 [Windows client](CHANGELOG-client.md) ·
 [development](docs/development.md) · [releasing](docs/releasing.md)
 
