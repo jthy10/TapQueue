@@ -22,7 +22,8 @@ export async function render(root, ctx) {
         stat("Held jobs", held.length, "jobs", waiting(held)),
         stat("Printers online", [online, h("small", null, ` / ${printers.length}`)], "printers",
           online === printers.length ? "All reachable" : `${printers.length - online} unreachable`),
-        stat("Stations", stations.length, "stations", stations.length ? `Last tap-in ${lastSeen(stations)}` : "None set up"),
+        stat("Stations online", [stations.filter((s) => s.online).length, h("small", null, ` / ${stations.length}`)], "stations",
+          stations.length === 0 ? "None set up" : stations.every((s) => s.online) ? "All reporting in" : `${stations.filter((s) => !s.online).length} offline`),
         stat("Workstations", clients.length, "workstations", "Signed in now"),
       ),
       h("div", { class: "grid two" },
@@ -53,11 +54,6 @@ function stat(label, value, href, note) {
   return h("a", { class: "panel stat", href }, h("div", { class: "stat-label" }, label), h("div", { class: "stat-value" }, value), h("div", { class: "stat-note" }, note));
 }
 
-function lastSeen(stations) {
-  const seen = stations.map((s) => s.lastSeenAt).filter(Boolean).sort().at(-1);
-  return seen ? time(seen).textContent : "never";
-}
-
 function attention({ printers, stations, unknown, queues, outdated, latestBuild, server }) {
   const items = [];
   const add = (tone, title, text, href) => items.push(h("li", null,
@@ -71,8 +67,13 @@ function attention({ printers, stations, unknown, queues, outdated, latestBuild,
     else if (p.printer.stateMessage && p.printer.stateMessage !== "ready") add("warn", `${p.printer.name}: ${p.printer.stateMessage}`, null, `printers/${p.printer.id}`);
   }
   const printerIds = new Set(printers.map((p) => p.printer.id.toLowerCase()));
-  for (const s of stations)
-    if (!printerIds.has(s.printerId.toLowerCase())) add("bad", `Station ${s.id} has no printer`, `It's assigned to "${s.printerId}", which doesn't exist.`, `stations/${s.id}`);
+  for (const s of stations) {
+    const name = s.name || s.id;
+    if (!printerIds.has(s.printerId.toLowerCase())) add("bad", `Station ${name} has no printer`, `It's assigned to "${s.printerId}", which doesn't exist.`, `stations/${s.id}`);
+    else if (!s.online) add("bad", `Station ${name} is offline`, s.lastHeartbeatAt ? `Last heard from ${time(s.lastHeartbeatAt).textContent}.` : "It has never reported in. Check its token and server_url.", `stations/${s.id}`);
+    else if (s.readerStatus && s.readerStatus !== "ok") add("warn", `Station ${name}: ${s.readerStatus}`, "Taps there won't be read until it's fixed.", `stations/${s.id}`);
+    else if (!s.settings.enabled) add("warn", `Station ${name} is out of service`, s.settings.maintenanceMessage || null, `stations/${s.id}`);
+  }
   if (unknown.length) add("warn", `${plural(unknown.length, "unknown card")} tapped recently`, "Link them to people on the Cards page.", "cards");
   if (outdated.length) add("warn", `${plural(outdated.length, "workstation")} not on client ${latestBuild.version}`, "They update within a minute of their next heartbeat.", "workstations");
   if (server.authMode === "dev") add("warn", "Dev sign-in is on", "Clients can sign in as anyone without a token. Fine for testing only.", "server");

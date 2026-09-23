@@ -66,9 +66,9 @@ async function render() {
       const path = next ? `${page}/${encodeURIComponent(next)}` : page;
       if (location.pathname !== `/admin/${path}`) history.pushState(null, "", `/admin/${path}`);
     },
-    /** Runs fn every ms while this page is showing and the tab is visible. */
+    /** Runs fn every ms while this page is showing and the tab is visible. A failed refresh just waits for the next one. */
     every(ms, fn) {
-      timers.push(setInterval(() => { if (!document.hidden) fn(); }, ms));
+      timers.push(setInterval(() => { if (!document.hidden) Promise.resolve().then(fn).catch(() => {}); }, ms));
     },
     /** False once the admin has moved to another page, so late responses don't draw over it. */
     get current() { return thisRender === renderCount; },
