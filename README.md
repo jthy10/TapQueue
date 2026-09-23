@@ -5,14 +5,14 @@ and their jobs wait on the server until they walk up to any printer and release 
 Nothing sits in the output tray for someone else to pick up.
 
 > **Status: early development (v0.1).** Print → hold → release works end to end against a real
-> printer. Badge readers at the printer are the next milestone. Expect breaking changes.
+> printer, from the tray app or by tapping a badge at a release station. Expect breaking changes.
 
 ```
  Windows 11 PC                     TapQueue server (Linux)                 At the printer
 ┌─────────────────────┐   IPP    ┌─────────────────────────────┐        ┌──────────────────┐
 │ "TapQueue Secure    │ ───────▶ │ Holds jobs per user         │ badge  │ Release station  │
 │  Print" printer     │          │ Users, sessions, printers   │ ◀───── │ (card reader)    │
-│  (built-in driver)  │          │ Releases to the printer     │        │   — coming next  │
+│  (built-in driver)  │          │ Releases to the printer     │        │                  │
 │ TapQueue tray app   │ ◀──────▶ │                             │  IPP   ┌──────────┐
 └─────────────────────┘  REST    └─────────────────────────────┘ ─────▶ │ Printer  │
                                                                          └──────────┘
@@ -25,7 +25,7 @@ Nothing sits in the output tray for someone else to pick up.
 | **tapqueue-server**: IPP hold queue, REST API, releases jobs to printers | `src/TapQueue.Server` | Linux |
 | **tapqueue-admin**: command-line admin tool | `src/TapQueue.Admin` | Linux (anywhere .NET runs) |
 | **TapQueueClient.exe**: tray app, adds the printer, shows held jobs | `src/TapQueue.Client.Windows` | Windows 11 |
-| **Release station**: badge reader next to the printer | *planned* | Linux |
+| **tapqueue-station**: USB badge reader next to a printer; a tap releases your jobs | `src/TapQueue.Station` | Linux |
 
 ## How it works
 
@@ -38,9 +38,10 @@ Nothing sits in the output tray for someone else to pick up.
 3. **The job is matched to a person.** The username inside a print job is easy to fake, so the
    server doesn't rely on it. The TapQueue tray app signs in to the server and keeps a session open.
    A job belongs to the user who is signed in on the machine that sent it.
-4. **The user releases it at a printer.** Right now that's done from the tray app or `tapqueue-admin`.
-   Next it will be a badge tap. The server sends the document and its print options straight to the
-   printer over IPP.
+4. **The user releases it at a printer** by tapping their badge on the release station next to it
+   (or from the tray app). The server sends every held job, with its print options, straight to that
+   printer over IPP. The station never touches the documents and doesn't need to be connected to
+   the printer. It only needs to reach the server over the network.
 5. **Unreleased jobs expire** after `hold_hours` (default 24) and are deleted from disk.
 
 Users, badges and sign-in methods all point at the same user record. Moving from "username in a
@@ -95,6 +96,51 @@ users are created the first time they sign in. **Don't use dev mode on a network
    lets it add the printer.
 4. Print something to **TapQueue Secure Print**, then right-click the tray icon → **Release all to** → pick a printer.
 
+### 4. Release station (badge reader)
+
+Any small Linux box next to the printer with a USB badge reader plugged in. Most USB readers
+(RFIDeas pcProx, generic 125 kHz/13.56 MHz readers) act as a keyboard: they "type" the card number
+and press Enter. The station reads the reader directly from `/dev/input` and grabs it, so card
+numbers don't end up typed into a login prompt.
+
+On the server, create the station and choose which `[[printers]]` entry it releases to:
+
+```sh
+tapqueue-admin stations add lobby office     # prints the station token
+```
+
+On the station (x86_64 Ubuntu; build with
+`dotnet publish src/TapQueue.Station -c Release -r linux-x64 --self-contained -p:PublishSingleFile=true -o out`,
+or get it from the CI artifacts):
+
+```sh
+sudo useradd --system --no-create-home --shell /usr/sbin/nologin --groups input tapqueue-station
+sudo install -d /opt/tapqueue /etc/tapqueue
+sudo install -m 755 tapqueue-station /opt/tapqueue/
+
+/opt/tapqueue/tapqueue-station --list-devices                    # find the reader
+sudo /opt/tapqueue/tapqueue-station --test --device /dev/input/by-id/usb-…-event-kbd
+                                                                 # tap a card; its number is printed
+sudo install -m 640 -g tapqueue-station config/station.example.toml /etc/tapqueue/station.toml
+sudoedit /etc/tapqueue/station.toml          # server_url, token, device
+sudo install -m 644 deploy/systemd/tapqueue-station.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now tapqueue-station
+journalctl -u tapqueue-station -f            # "Station "lobby" releases to Office printer (online)."
+```
+
+**Enrolling badges.** Tap a new card at any station. The station reports it as unrecognized. Then link it:
+
+```sh
+tapqueue-admin badges add jsmith --last-tap  # links the card most recently tapped anywhere
+tapqueue-admin badges add jsmith 04A1B2C3    # or type the number if you already know it
+```
+
+A tap then sends all of that user's held jobs to the station's printer. If a job can't be sent,
+it stays held so the user can try again at another printer.
+
+> Card numbers from cheap 125 kHz and MIFARE readers are easy to copy, just like a building badge.
+> TapQueue treats a tap as "this person is standing at the printer", nothing stronger.
+
 ## Admin CLI
 
 ```
@@ -104,6 +150,15 @@ tapqueue-admin users reset-token <username>    Issue a new client token
 tapqueue-admin jobs [--status held]            List recent jobs
 tapqueue-admin printers [--refresh]            Printer reachability and status
 tapqueue-admin release <user> <printer> [ids]  Release a user's held jobs to a printer
+tapqueue-admin badges [username]               List badges
+tapqueue-admin badges add <user> <card>|--last-tap
+                                               Link a badge to a user
+tapqueue-admin badges unknown                  Unrecognized cards tapped in the last hour
+tapqueue-admin badges remove <badge-id>        Unlink a badge
+tapqueue-admin stations                        Release stations and when they last checked in
+tapqueue-admin stations add <id> <printer>     Create a station and print its token
+tapqueue-admin stations reset-token <id>       Issue a new station token
+tapqueue-admin stations remove <id>            Delete a station
 ```
 
 Connection settings come from `--server`/`--token`, `TAPQUEUE_SERVER`/`TAPQUEUE_ADMIN_TOKEN`, or
@@ -139,11 +194,12 @@ src/TapQueue.Server/          ASP.NET Core server
   Data/                       SQLite storage
   Api/                        REST API for clients and admins
 src/TapQueue.Admin/           tapqueue-admin
+src/TapQueue.Station/         tapqueue-station (badge reader service)
 src/TapQueue.Client.Windows/  WinForms tray client
 src/TapQueue.Shared/          API types and config loading shared by all of the above
 tests/                        unit tests
 config/                       example config files
-deploy/                       systemd unit
+deploy/                       systemd units
 ```
 
 ## Roadmap
@@ -152,8 +208,10 @@ deploy/                       systemd unit
 - [x] Hold jobs per user; release to a physical printer over IPP, keeping print options
 - [x] Windows tray client configured by a file
 - [x] Admin CLI
-- [ ] **Release station**: Linux service for a USB/NFC badge reader next to each printer
-- [ ] Badge enrollment ("tap to link your card")
+- [x] Release station: Linux service for a USB badge reader next to each printer
+- [x] Badge enrollment by an admin (tap, then `badges add --last-tap`)
+- [ ] Feedback at the printer (screen or beeper) for "nothing to print" and errors
+- [ ] Self-service badge enrollment from the tray app
 - [ ] TLS for client and IPP connections
 - [ ] Web admin console
 - [ ] Directory sync (Active Directory / LDAP / Entra ID)
