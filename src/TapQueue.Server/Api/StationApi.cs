@@ -20,6 +20,16 @@ public static class StationApi
                 : Results.Conflict(new ErrorResponse($"Station \"{current.Id}\" is assigned to printer \"{current.PrinterId}\", which doesn't exist."));
         });
         station.MapPost("/tap", Tap);
+        station.MapPost("/heartbeat", (StationHeartbeatRequest beat, HttpContext http, StationStore stations, StationBuildStore builds) =>
+        {
+            var current = CurrentStation(http);
+            var command = stations.Heartbeat(current.Id, beat);
+            return new StationHeartbeatResponse(current.Settings.ToDto(), command, builds.Latest()?.ToStationDto());
+        });
+        station.MapGet("/builds/{sha256}", (string sha256, StationBuildStore builds) =>
+            builds.Find(sha256) is { } build && builds.FileFor(build.Sha256) is { } path
+                ? Results.File(path, "application/octet-stream", "tapqueue-station")
+                : Results.NotFound(new ErrorResponse("No such station build.")));
     }
 
     private static async Task<IResult> Tap(StationTapRequest request, HttpContext http, BadgeStore badges, UserStore users,
@@ -34,6 +44,13 @@ public static class StationApi
         var printer = printers.Find(station.PrinterId);
         if (printer is null)
             return Results.Conflict(new ErrorResponse($"Station \"{station.Id}\" is assigned to printer \"{station.PrinterId}\", which doesn't exist."));
+
+        if (!station.Settings.Enabled)
+        {
+            logger.LogInformation("Tap at disabled station {Station} ignored", station.Id);
+            return Results.Ok(new StationTapResponse(TapOutcome.StationDisabled,
+                station.Settings.MaintenanceMessage.Length > 0 ? station.Settings.MaintenanceMessage : "This station is out of service. Use another printer.", null, []));
+        }
 
         var badge = badges.Use(card);
         var user = badge is null ? null : users.FindById(badge.UserId);

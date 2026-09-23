@@ -78,17 +78,7 @@ public static class AdminApi
         admin.MapGet("/events", (EventLog events, string? category, string? subject, long? before, int? limit) =>
             events.List(category, subject, before, limit ?? 100));
 
-        admin.MapGet("/stations", (StationStore stations) => stations.List().Select(s => s.ToDto()));
-        admin.MapPost("/stations", CreateStation);
-        admin.MapPatch("/stations/{id}", UpdateStation);
-        admin.MapPost("/stations/{id}/token", ResetStationToken);
-        admin.MapDelete("/stations/{id}", (string id, StationStore stations, EventLog events) =>
-        {
-            if (!stations.Delete(id))
-                return Results.NotFound(new ErrorResponse($"No station \"{id}\"."));
-            events.Admin(EventLog.Station(id), $"Removed station {id}.");
-            return Results.NoContent();
-        });
+        admin.MapStationsApi();
 
         admin.MapGroupsApi();
         admin.MapUsersBulkApi();
@@ -259,45 +249,6 @@ public static class AdminApi
             ? $"Changed card {badge.CardHint} of {badge.Username}."
             : $"Moved card {badge.CardHint} from {badge.Username} to {updated.Username}.");
         return Results.Ok(updated.ToDto());
-    }
-
-    private static IResult CreateStation(CreateStationRequest request, StationStore stations, PrinterRegistry printers, EventLog events)
-    {
-        var id = request.Id?.Trim();
-        if (!Ids.IsValid(id))
-            return Results.BadRequest(new ErrorResponse($"Station id must be {Ids.Rule}."));
-        var printer = printers.Find(request.PrinterId ?? "");
-        if (printer is null)
-            return Results.NotFound(new ErrorResponse($"Unknown printer \"{request.PrinterId}\". See `tapqueue-admin printers`."));
-        if (stations.Get(id!) is not null)
-            return Results.Conflict(new ErrorResponse($"Station \"{id}\" already exists."));
-
-        var token = Tokens.New();
-        var station = stations.Create(id!, printer.Id, Tokens.Hash(token));
-        events.Admin(EventLog.Station(station.Id), $"Added station {station.Id}, releasing to {printer.Name}.");
-        return Results.Ok(new StationTokenResponse(station.ToDto(), token));
-    }
-
-    private static IResult UpdateStation(string id, UpdateStationRequest request, StationStore stations, PrinterRegistry printers, EventLog events)
-    {
-        if (stations.Get(id) is null)
-            return Results.NotFound(new ErrorResponse($"No station \"{id}\"."));
-        if (printers.Find(request.PrinterId ?? "") is not { } printer)
-            return Results.NotFound(new ErrorResponse($"Unknown printer \"{request.PrinterId}\". See `tapqueue-admin printers`."));
-        var station = stations.SetPrinter(id, printer.Id)!;
-        events.Admin(EventLog.Station(station.Id), $"Station {station.Id} now releases to {printer.Name}.");
-        return Results.Ok(station.ToDto());
-    }
-
-    private static IResult ResetStationToken(string id, StationStore stations, EventLog events)
-    {
-        var station = stations.Get(id);
-        if (station is null)
-            return Results.NotFound(new ErrorResponse($"No station \"{id}\"."));
-        var token = Tokens.New();
-        stations.SetTokenHash(station.Id, Tokens.Hash(token));
-        events.Admin(EventLog.Station(station.Id), $"Made a new token for station {station.Id}; the old one stopped working.");
-        return Results.Ok(new StationTokenResponse(station.ToDto(), token));
     }
 
     private static IResult CreateUser(CreateUserRequest request, UserStore users, UserLifecycle lifecycle)

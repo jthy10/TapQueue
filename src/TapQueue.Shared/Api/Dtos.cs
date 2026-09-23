@@ -229,11 +229,91 @@ public sealed record UpdateBadgeRequest(string? Username = null, string? Label =
 /// <summary>A card that was tapped at a station but isn't linked to anyone yet.</summary>
 public sealed record UnknownTapDto(string Card, string StationId, DateTimeOffset At);
 
-public sealed record StationDto(string Id, string PrinterId, DateTimeOffset CreatedAt, DateTimeOffset? LastSeenAt, string? LastIp);
+/// <param name="LastSeenAt">Its last request of any kind (heartbeat, check-in, tap).</param>
+/// <param name="Online">It sent a heartbeat in the last <c>StationStatus.OfflineAfterSeconds</c> seconds.</param>
+/// <param name="ReaderStatus">"ok", or what's wrong with the badge reader, as the station last reported.</param>
+public sealed record StationDto(
+    string Id,
+    string PrinterId,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? LastSeenAt,
+    string? LastIp,
+    string Name = "",
+    string Location = "",
+    bool Online = false,
+    string? Version = null,
+    DateTimeOffset? StartedAt = null,
+    string? ReaderStatus = null,
+    DateTimeOffset? LastHeartbeatAt = null,
+    StationSettingsDto? Settings = null,
+    string? PendingCommand = null);
+
+/// <summary>
+/// Settings the server holds for a station. Null reader/device/repeat/min-length mean "whatever
+/// station.toml says"; the station reports what it actually uses in its heartbeat.
+/// </summary>
+/// <param name="Version">Goes up with every change, so a station knows when to re-apply them.</param>
+/// <param name="Feedback">"none" or "speaker": tones through the station computer's speaker on each tap.</param>
+/// <param name="Enabled">A disabled station answers taps with <paramref name="MaintenanceMessage"/> and releases nothing.</param>
+public sealed record StationSettingsDto(
+    int Version,
+    string PrinterId,
+    string? Reader,
+    string? Device,
+    int? RepeatSeconds,
+    int? MinCardLength,
+    string Feedback,
+    bool Enabled,
+    string MaintenanceMessage);
+
+public static class StationStatus
+{
+    /// <summary>Stations send a heartbeat this often.</summary>
+    public const int HeartbeatSeconds = 15;
+    /// <summary>A station that hasn't sent one for this long shows as offline.</summary>
+    public const int OfflineAfterSeconds = 45;
+}
+
+public static class StationCommand
+{
+    /// <summary>Exit, and let systemd start the station again (it re-reads everything).</summary>
+    public const string Restart = "restart";
+}
+
+/// <param name="Reader">The reader the station is actually using: "keyboard" or "pcprox".</param>
+/// <param name="ReaderStatus">"ok", or what's wrong (unplugged, no permission…).</param>
+/// <param name="Sha256">Of the station's own program file, to tell whether it needs the published build.</param>
+/// <param name="SettingsVersion">The settings version it has applied.</param>
+public sealed record StationHeartbeatRequest(
+    string Version,
+    DateTimeOffset StartedAt,
+    string Reader,
+    string ReaderStatus,
+    string? Sha256,
+    int SettingsVersion);
+
+/// <param name="Command">One of <see cref="StationCommand"/>, sent once.</param>
+/// <param name="Build">The build the station should be running, if one has been published.</param>
+public sealed record StationHeartbeatResponse(StationSettingsDto Settings, string? Command, StationBuildDto? Build);
 
 public sealed record CreateStationRequest(string Id, string PrinterId);
 
-public sealed record UpdateStationRequest(string PrinterId);
+/// <summary>
+/// Fields left null are unchanged. <paramref name="Reset"/> names settings to hand back to station.toml:
+/// "reader", "device", "repeatSeconds", "minCardLength".
+/// </summary>
+public sealed record UpdateStationRequest(
+    string? PrinterId = null,
+    string? Name = null,
+    string? Location = null,
+    bool? Enabled = null,
+    string? MaintenanceMessage = null,
+    string? Reader = null,
+    string? Device = null,
+    int? RepeatSeconds = null,
+    int? MinCardLength = null,
+    string? Feedback = null,
+    IReadOnlyList<string>? Reset = null);
 
 /// <summary>Returned when a station is created or its token is reset. The token is only ever shown here.</summary>
 public sealed record StationTokenResponse(StationDto Station, string Token);
@@ -253,6 +333,8 @@ public static class TapOutcome
     public const string UnknownBadge = "unknown-badge";
     /// <summary>The badge's owner isn't allowed to release at this station's printer (their groups).</summary>
     public const string NotAllowed = "not-allowed";
+    /// <summary>The station is disabled (out of service).</summary>
+    public const string StationDisabled = "station-disabled";
     /// <summary>The badge's owner is disabled.</summary>
     public const string Disabled = "disabled";
     /// <summary>Some or all jobs couldn't be sent. They stay held.</summary>
