@@ -20,7 +20,11 @@ public static class AdminApi
         var admin = app.MapGroup("/api/v1/admin").AddEndpointFilter(RequireAdmin);
 
         admin.MapGet("/server", ServerInfo);
-        admin.MapGet("/users", (UserStore users) => users.List().Select(u => u.ToAdminDto()));
+        admin.MapGet("/users", (UserStore users, GroupStore groups) =>
+        {
+            var memberships = groups.Memberships();
+            return users.List().Select(u => u.ToAdminDto(memberships.GetValueOrDefault(u.Id) ?? []));
+        });
         admin.MapPost("/users", CreateUser);
         admin.MapPatch("/users/{username}", UpdateUser);
         admin.MapDelete("/users/{username}", DeleteUser);
@@ -84,6 +88,8 @@ public static class AdminApi
             events.Admin(EventLog.Station(id), $"Removed station {id}.");
             return Results.NoContent();
         });
+
+        admin.MapGroupsApi();
 
         admin.MapGet("/client-builds", (ClientBuildStore builds) => builds.List().Select(b => b.ToDto()));
         admin.MapPost("/client-builds", PublishClientBuild);
@@ -216,7 +222,7 @@ public static class AdminApi
     private static QueueAdminDto ToAdminDto(QueueRecord q) =>
         new(q.Id, q.Name, q.Description, q.Location, q.Color, q.Duplex, q.DefaultMedia, $"/ipp/{q.Id}");
 
-    private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    internal static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private static IResult CreateBadge(CreateBadgeRequest request, UserStore users, BadgeStore badges, UnknownTaps unknownTaps, EventLog events)
     {
@@ -306,7 +312,7 @@ public static class AdminApi
         return Results.Ok(new UserTokenResponse(user.ToDto(), token));
     }
 
-    private static IResult UpdateUser(string username, UpdateUserRequest request, UserStore users, EventLog events, ILoggerFactory loggers)
+    private static IResult UpdateUser(string username, UpdateUserRequest request, UserStore users, GroupStore groups, EventLog events, ILoggerFactory loggers)
     {
         if (users.FindByUsername(username) is not { } user)
             return Results.NotFound(new ErrorResponse($"No user \"{username}\"."));
@@ -324,7 +330,7 @@ public static class AdminApi
                 ? $"Disabled {user.Username}. They're signed out and can't print or release."
                 : $"Re-enabled {user.Username}.");
         }
-        return Results.Ok(user.ToAdminDto());
+        return Results.Ok(user.ToAdminDto(groups.Memberships().GetValueOrDefault(user.Id) ?? []));
     }
 
     /// <summary>Cancels the user's held jobs, then deletes them with their cards. Job history keeps their name.</summary>

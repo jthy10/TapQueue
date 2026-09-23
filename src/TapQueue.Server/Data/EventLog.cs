@@ -30,6 +30,7 @@ public sealed class EventLog(Database database)
     public static string Queue(string id) => $"queue:{id}";
     public static string Station(string id) => $"station:{id}";
     public static string Job(long id) => $"job:{id}";
+    public static string Group(string id) => $"group:{id}";
 
     public void Record(string category, string actor, string? subject, string message) =>
         database.Execute("""

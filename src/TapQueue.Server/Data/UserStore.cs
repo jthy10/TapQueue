@@ -3,18 +3,18 @@ using TapQueue.Shared.Api;
 
 namespace TapQueue.Server.Data;
 
-public sealed record UserRecord(long Id, string Username, string DisplayName, string? TokenHash, DateTimeOffset CreatedAt, DateTimeOffset? DisabledAt)
+public sealed record UserRecord(long Id, string Username, string DisplayName, string? TokenHash, DateTimeOffset CreatedAt, DateTimeOffset? DisabledAt, string Source)
 {
     public bool Disabled => DisabledAt is not null;
 
     public UserDto ToDto() => new(Id, Username, DisplayName);
 
-    public UserAdminDto ToAdminDto() => new(Id, Username, DisplayName, CreatedAt, DisabledAt);
+    public UserAdminDto ToAdminDto(IReadOnlyList<string> groups) => new(Id, Username, DisplayName, CreatedAt, DisabledAt, groups, Source);
 }
 
 public sealed class UserStore(Database database)
 {
-    private const string Columns = "id, username, display_name, token_hash, created_at, disabled_at";
+    private const string Columns = "id, username, display_name, token_hash, created_at, disabled_at, source";
 
     public UserRecord? FindByUsername(string username) =>
         database.QueryOne($"SELECT {Columns} FROM users WHERE username = $u", Map, ("$u", username));
@@ -62,5 +62,5 @@ public sealed class UserStore(Database database)
     }
 
     private static UserRecord Map(SqliteDataReader r) =>
-        new(r.GetInt64(0), r.GetString(1), r.GetString(2), r.GetStringOrNull(3), r.GetTime(4), r.GetTimeOrNull(5));
+        new(r.GetInt64(0), r.GetString(1), r.GetString(2), r.GetStringOrNull(3), r.GetTime(4), r.GetTimeOrNull(5), r.GetString(6));
 }

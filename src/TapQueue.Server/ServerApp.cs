@@ -35,6 +35,8 @@ public static class ServerApp
         builder.Services.AddSingleton(services => new ClientBuildStore(services.GetRequiredService<Database>(), config.Server.DataDir));
         builder.Services.AddSingleton<EventLog>();
         builder.Services.AddSingleton<UserStore>();
+        builder.Services.AddSingleton<GroupStore>();
+        builder.Services.AddSingleton<AccessPolicy>();
         builder.Services.AddSingleton<SessionStore>();
         builder.Services.AddSingleton<BadgeStore>();
         builder.Services.AddSingleton<StationStore>();

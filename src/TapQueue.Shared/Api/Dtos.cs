@@ -21,7 +21,50 @@ public sealed record EventDto(long Id, DateTimeOffset At, string Category, strin
 public sealed record UserDto(long Id, string Username, string DisplayName);
 
 /// <summary>What admins see of a user. A disabled user can't sign in, print or release.</summary>
-public sealed record UserAdminDto(long Id, string Username, string DisplayName, DateTimeOffset CreatedAt, DateTimeOffset? DisabledAt);
+/// <param name="Groups">Ids of the groups they're in.</param>
+/// <param name="Source">"local" for users managed in TapQueue; later, the directory that syncs them.</param>
+public sealed record UserAdminDto(
+    long Id,
+    string Username,
+    string DisplayName,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? DisabledAt,
+    IReadOnlyList<string> Groups,
+    string Source = "local");
+
+/// <summary>
+/// A group of users and what they may use. Users in no group may use everything; users in groups may
+/// use whatever any of their groups allows.
+/// </summary>
+public sealed record GroupDto(
+    string Id,
+    string Name,
+    string Description,
+    bool AllQueues,
+    IReadOnlyList<string> QueueIds,
+    bool AllPrinters,
+    IReadOnlyList<string> PrinterIds,
+    int MemberCount,
+    string Source = "local");
+
+/// <param name="AllQueues">Defaults to true, so a new group doesn't take anything away until it's restricted.</param>
+public sealed record CreateGroupRequest(
+    string Id,
+    string Name,
+    string? Description = null,
+    bool? AllQueues = null,
+    IReadOnlyList<string>? QueueIds = null,
+    bool? AllPrinters = null,
+    IReadOnlyList<string>? PrinterIds = null);
+
+/// <summary>Fields left null are unchanged. QueueIds/PrinterIds replace the whole list.</summary>
+public sealed record UpdateGroupRequest(
+    string? Name = null,
+    string? Description = null,
+    bool? AllQueues = null,
+    IReadOnlyList<string>? QueueIds = null,
+    bool? AllPrinters = null,
+    IReadOnlyList<string>? PrinterIds = null);
 
 /// <summary>Fields left null are unchanged.</summary>
 public sealed record UpdateUserRequest(string? DisplayName = null, bool? Disabled = null);
@@ -173,6 +216,8 @@ public static class TapOutcome
     public const string NoJobs = "no-jobs";
     /// <summary>Nobody has this badge.</summary>
     public const string UnknownBadge = "unknown-badge";
+    /// <summary>The badge's owner isn't allowed to release at this station's printer (their groups).</summary>
+    public const string NotAllowed = "not-allowed";
     /// <summary>The badge's owner is disabled.</summary>
     public const string Disabled = "disabled";
     /// <summary>Some or all jobs couldn't be sent. They stay held.</summary>

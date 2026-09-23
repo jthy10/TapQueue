@@ -33,6 +33,18 @@ public sealed class Database
         return cmd.ExecuteNonQuery();
     }
 
+    /// <summary>Runs several statements as one transaction: all of them happen, or none do.</summary>
+    public int ExecuteAtomically(string sql, params (string Name, object? Value)[] parameters)
+    {
+        using var db = Open();
+        using var transaction = db.BeginTransaction();
+        using var cmd = Command(db, sql, parameters);
+        cmd.Transaction = transaction;
+        var changed = cmd.ExecuteNonQuery();
+        transaction.Commit();
+        return changed;
+    }
+
     /// <summary>Runs a query and returns the first column of the first row, or null if there are no rows.</summary>
     public object? Scalar(string sql, params (string Name, object? Value)[] parameters)
     {
@@ -196,6 +208,43 @@ public sealed class Database
                 message   TEXT NOT NULL
             );
             CREATE INDEX ix_events_subject ON events(subject);
+        """,
+
+        // 6: groups, and which queues and printers each may use (AccessPolicy). source and external_id
+        // let a directory sync (AD, Entra) own some users and groups later; "local" ones are managed here.
+        """
+            CREATE TABLE groups (
+                id            TEXT PRIMARY KEY COLLATE NOCASE,
+                name          TEXT NOT NULL,
+                description   TEXT NOT NULL DEFAULT '',
+                all_queues    INTEGER NOT NULL DEFAULT 1,
+                all_printers  INTEGER NOT NULL DEFAULT 1,
+                source        TEXT NOT NULL DEFAULT 'local',
+                external_id   TEXT,
+                created_at    TEXT NOT NULL
+            );
+
+            CREATE TABLE group_members (
+                group_id  TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+                user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                PRIMARY KEY (group_id, user_id)
+            );
+            CREATE INDEX ix_group_members_user ON group_members(user_id);
+
+            CREATE TABLE group_queues (
+                group_id  TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+                queue_id  TEXT NOT NULL REFERENCES queues(id) ON DELETE CASCADE,
+                PRIMARY KEY (group_id, queue_id)
+            );
+
+            CREATE TABLE group_printers (
+                group_id    TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+                printer_id  TEXT NOT NULL REFERENCES printers(id) ON DELETE CASCADE,
+                PRIMARY KEY (group_id, printer_id)
+            );
+
+            ALTER TABLE users ADD COLUMN source TEXT NOT NULL DEFAULT 'local';
+            ALTER TABLE users ADD COLUMN external_id TEXT;
         """,
     ];
 
