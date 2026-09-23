@@ -11,6 +11,9 @@ Group=tapqueue
 ExecStart=/opt/tapqueue/tapqueue-server --config /etc/tapqueue/server.toml
 Restart=on-failure
 RestartSec=5
+# Exit code 75 is a restart asked for from the admin console: start again, and don't call it a failure.
+RestartForceExitStatus=75
+SuccessExitStatus=75
 
 # Held print jobs live here; keep them private to the service.
 StateDirectory=tapqueue

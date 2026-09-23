@@ -5,6 +5,7 @@ using TapQueue.Server.Config;
 using TapQueue.Server.Data;
 using TapQueue.Server.Ipp;
 using TapQueue.Server.Jobs;
+using TapQueue.Server.Logging;
 using TapQueue.Server.Printers;
 using TapQueue.Server.Users;
 using TapQueue.Shared;
@@ -29,6 +30,10 @@ public static class ServerApp
         builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
         // One line per event, so the log reads well in journalctl and on the server's screen.
         builder.Logging.AddSimpleConsole(o => o.SingleLine = true);
+        // The tail of the log for the console's live view.
+        var logBuffer = new LogBuffer();
+        builder.Logging.AddProvider(logBuffer);
+        builder.Services.AddSingleton(logBuffer);
         builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.PropertyNamingPolicy = TapQueueJson.Options.PropertyNamingPolicy);
         builder.Services.AddSingleton(config);
         builder.Services.AddSingleton(database);

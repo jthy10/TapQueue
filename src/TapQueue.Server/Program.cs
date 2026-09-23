@@ -38,7 +38,8 @@ if (config.Auth.Mode == "dev")
     app.Logger.LogWarning("auth.mode = \"dev\": anyone can sign in as any username. Use \"token\" outside of testing.");
 
 app.Run();
-return 0;
+// Non-zero when an admin asked for a restart (see AdminServerApi), so systemd starts it again.
+return Environment.ExitCode;
 
 static string ConfigPath(string[] args)
 {

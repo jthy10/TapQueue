@@ -2,6 +2,7 @@ namespace TapQueue.Shared.Api;
 
 /// <summary>The server itself, for `tapqueue-admin status` and the admin console.</summary>
 /// <param name="ChangedSettings">Settings changed from the console or CLI rather than taken from server.toml.</param>
+/// <param name="CanRestart">True when systemd runs the server, so it comes back after a restart.</param>
 public sealed record ServerInfoDto(
     string Version,
     DateTimeOffset StartedAt,
@@ -12,7 +13,12 @@ public sealed record ServerInfoDto(
     int HoldHours,
     int SessionTimeoutMinutes,
     int HeldJobs,
-    IReadOnlyList<string>? ChangedSettings = null);
+    IReadOnlyList<string>? ChangedSettings = null,
+    bool CanRestart = false);
+
+/// <summary>One line of the server's log, for the live log in the console.</summary>
+/// <param name="Level">debug, info, warning or error.</param>
+public sealed record LogLineDto(long Id, DateTimeOffset At, string Level, string Category, string Message);
 
 /// <summary>
 /// Settings that apply while the server runs. Null leaves one as it is; <see cref="Reset"/> names

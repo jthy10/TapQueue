@@ -22,6 +22,7 @@ public static class AdminApi
 
         admin.MapGet("/server", ServerInfo);
         admin.MapPatch("/server/settings", UpdateServerSettings);
+        admin.MapServerApi();
         admin.MapGet("/users", (UserStore users, GroupStore groups) =>
         {
             var memberships = groups.Memberships();
@@ -92,7 +93,7 @@ public static class AdminApi
     private static ServerInfoDto ServerInfo(ServerConfig config, ServerSettings settings, Database database, JobStore jobs) => new(
         TapQueueVersion.Current, ServerClock.StartedAt, config.Auth.Mode, config.Server.Listen, config.Server.DataDir,
         database.SchemaVersion(), settings.HoldHours, settings.SessionTimeoutMinutes, jobs.CountHeld(),
-        ServerSettings.Keys.Where(settings.IsSaved).ToList());
+        ServerSettings.Keys.Where(settings.IsSaved).ToList(), AdminServerApi.CanRestart);
 
     private static IResult UpdateServerSettings(UpdateServerSettingsRequest request, ServerConfig config, ServerSettings settings,
         Database database, JobStore jobs, EventLog events)

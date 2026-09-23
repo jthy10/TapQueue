@@ -54,4 +54,44 @@ public sealed class ServerControlTests : IAsyncLifetime
         var response = await PatchSettings(new(holdHours, sessionTimeout));
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
+
+    [Fact]
+    public async Task TheLogShowsWhatJustHappened()
+    {
+        using var alice = await _server.SignInAsync("alice");
+
+        var lines = (await _server.Admin.GetFromJsonAsync<List<LogLineDto>>("/api/v1/admin/server/log", TapQueueJson.Options))!;
+        var signIn = Assert.Single(lines, l => l.Message.StartsWith("alice signed in"));
+        Assert.Equal("info", signIn.Level);
+        Assert.Equal("ClientApi", signIn.Category);
+
+        var after = (await _server.Admin.GetFromJsonAsync<List<LogLineDto>>($"/api/v1/admin/server/log?after={signIn.Id}", TapQueueJson.Options))!;
+        Assert.DoesNotContain(after, l => l.Id <= signIn.Id);
+    }
+
+    [Fact]
+    public async Task TheLogStreamSendsNewLinesAsTheyHappen()
+    {
+        using var stream = await _server.Admin.GetStreamAsync("/api/v1/admin/server/log/stream");
+        using var reader = new StreamReader(stream);
+        using var bob = await _server.SignInAsync("bob");
+
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        string? line;
+        while ((line = await reader.ReadLineAsync(timeout.Token)) is not null && !line.Contains("bob signed in"))
+        {
+        }
+        Assert.NotNull(line);
+        Assert.StartsWith("data: ", line);
+    }
+
+    [Fact]
+    public async Task RestartIsRefusedWhenNothingWouldStartTheServerAgain()
+    {
+        var info = (await _server.Admin.GetFromJsonAsync<ServerInfoDto>("/api/v1/admin/server", TapQueueJson.Options))!;
+        Assert.False(info.CanRestart); // tests don't run under systemd
+
+        var response = await _server.Admin.PostAsync("/api/v1/admin/server/restart", null);
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+    }
 }
