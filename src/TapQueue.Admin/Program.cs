@@ -14,8 +14,20 @@ const string Usage = """
       tapqueue-admin jobs [--status held|released|expired|canceled]
                                                      List recent jobs
       tapqueue-admin printers [--refresh]            List printers and whether they're reachable
+      tapqueue-admin printers add <printer-id> <uri> [--name "Office printer"] [--location ...] [--tls-skip-verify]
+                                                     Add a printer, e.g. uri ipp://192.0.2.10/ipp/print
+      tapqueue-admin printers edit <printer-id> [--uri ...] [--name ...] [--location ...] [--tls-skip-verify on|off]
+      tapqueue-admin printers remove <printer-id>
       tapqueue-admin release <username> <printer-id> [job-id ...]
                                                      Send a user's held jobs (all, or just these) to a printer
+
+      tapqueue-admin queues                          List queues (the printers users see in Windows)
+      tapqueue-admin queues add <queue-id> --name "TapQueue Secure Print" [--description ...] [--location ...]
+                                [--color] [--duplex] [--media iso_a4_210x297mm]
+                                                     Add a queue; clients print to ipp://<server>:8631/ipp/<queue-id>
+      tapqueue-admin queues edit <queue-id> [--name ...] [--description ...] [--location ...]
+                                [--color on|off] [--duplex on|off] [--media ...]
+      tapqueue-admin queues remove <queue-id>
 
       tapqueue-admin badges [username]               List badges
       tapqueue-admin badges add <username> <card>    Link a card number to a user
@@ -27,6 +39,8 @@ const string Usage = """
       tapqueue-admin stations                        List release stations
       tapqueue-admin stations add <station-id> <printer-id>
                                                      Create a station and print its token
+      tapqueue-admin stations move <station-id> <printer-id>
+                                                     Make a station release to a different printer
       tapqueue-admin stations reset-token <station-id>
                                                      Issue a new station token (the old one stops working)
       tapqueue-admin stations remove <station-id>    Delete a station
@@ -47,8 +61,9 @@ for (var i = 0; i < args.Length; i++)
     }
     if (args[i].StartsWith("--"))
     {
-        var takesValue = args[i] is "--server" or "--token" or "--name" or "--status";
-        options[args[i]] = takesValue && i + 1 < args.Length ? args[++i] : null;
+        var takesValue = args[i] is "--server" or "--token" or "--name" or "--status" or "--uri" or "--location" or "--description" or "--media";
+        var switchWithValue = args[i] is "--tls-skip-verify" or "--color" or "--duplex" && i + 1 < args.Length && ParseSwitch(args[i + 1]) is not null;
+        options[args[i]] = (takesValue || switchWithValue) && i + 1 < args.Length ? args[++i] : null;
     }
     else
     {
@@ -83,6 +98,13 @@ try
         ("users", "reset-token") when positional.Count == 3 => await ResetToken(positional[2]),
         ("jobs", null) => await ListJobs(options.GetValueOrDefault("--status")),
         ("printers", null) => await ListPrinters(options.ContainsKey("--refresh")),
+        ("printers", "add") when positional.Count == 4 => await AddPrinter(positional[2], positional[3]),
+        ("printers", "edit") when positional.Count == 3 => await EditPrinter(positional[2]),
+        ("printers", "remove") when positional.Count == 3 => await Delete($"printers/{Uri.EscapeDataString(positional[2])}", $"Removed printer {positional[2]}."),
+        ("queues", null) => await ListQueues(),
+        ("queues", "add") when positional.Count == 3 => await AddQueue(positional[2]),
+        ("queues", "edit") when positional.Count == 3 => await EditQueue(positional[2]),
+        ("queues", "remove") when positional.Count == 3 => await Delete($"queues/{Uri.EscapeDataString(positional[2])}", $"Removed queue {positional[2]}."),
         ("release", not null) when positional.Count >= 3 => await Release(positional[1], positional[2], positional.Skip(3).ToList()),
         ("badges", null) => await ListBadges(null),
         ("badges", "add") when positional.Count == 4 => await AddBadge(positional[2], positional[3]),
@@ -92,6 +114,7 @@ try
         ("badges", not null) when positional.Count == 2 => await ListBadges(positional[1]),
         ("stations", null) => await ListStations(),
         ("stations", "add") when positional.Count == 4 => await AddStation(positional[2], positional[3]),
+        ("stations", "move") when positional.Count == 4 => await MoveStation(positional[2], positional[3]),
         ("stations", "reset-token") when positional.Count == 3 => await ResetStationToken(positional[2]),
         ("stations", "remove") when positional.Count == 3 => await RemoveStation(positional[2]),
         _ => BadUsage(),
@@ -148,14 +171,93 @@ async Task<int> ListJobs(string? status)
 
 async Task<int> ListPrinters(bool refresh)
 {
-    var printers = await Get<List<PrinterDto>>(refresh ? "printers?refresh=true" : "printers");
+    var printers = await Get<List<PrinterAdminDto>>(refresh ? "printers?refresh=true" : "printers");
     if (printers is null) return 1;
-    Table(["ID", "NAME", "ONLINE", "MODEL", "STATUS"], printers.Select(p => new[]
+    if (printers.Count == 0)
     {
-        p.Id, p.Name, p.Online ? "yes" : "no", p.MakeAndModel ?? "", p.StateMessage ?? "",
+        Console.WriteLine("No printers yet. Add one with: tapqueue-admin printers add <printer-id> ipp://<printer-ip>/ipp/print");
+        return 0;
+    }
+    Table(["ID", "NAME", "URI", "ONLINE", "MODEL", "STATUS"], printers.Select(p => new[]
+    {
+        p.Printer.Id, p.Printer.Name, p.Uri, p.Printer.Online ? "yes" : "no", p.Printer.MakeAndModel ?? "", p.Printer.StateMessage ?? "",
     }));
     return 0;
 }
+
+async Task<int> AddPrinter(string id, string uri)
+{
+    var printer = await Send<PrinterAdminDto>(HttpMethod.Post, "printers", new CreatePrinterRequest(
+        id, uri, options.GetValueOrDefault("--name"), options.GetValueOrDefault("--location"), Switch("--tls-skip-verify")));
+    if (printer is null) return 1;
+    PrintPrinter("Added", printer);
+    return 0;
+}
+
+async Task<int> EditPrinter(string id)
+{
+    var printer = await Send<PrinterAdminDto>(HttpMethod.Patch, $"printers/{Uri.EscapeDataString(id)}", new UpdatePrinterRequest(
+        options.GetValueOrDefault("--uri"), options.GetValueOrDefault("--name"), options.GetValueOrDefault("--location"), Switch("--tls-skip-verify")));
+    if (printer is null) return 1;
+    PrintPrinter("Updated", printer);
+    return 0;
+}
+
+static void PrintPrinter(string verb, PrinterAdminDto p) =>
+    Console.WriteLine($"{verb} printer {p.Printer.Id} ({p.Printer.Name}) at {p.Uri}: " +
+        (p.Printer.Online ? $"online, {p.Printer.MakeAndModel}" : $"not reachable yet ({p.Printer.StateMessage})"));
+
+async Task<int> ListQueues()
+{
+    var queues = await Get<List<QueueAdminDto>>("queues");
+    if (queues is null) return 1;
+    if (queues.Count == 0)
+    {
+        Console.WriteLine("No queues yet. Add one with: tapqueue-admin queues add secure --name \"TapQueue Secure Print\"");
+        return 0;
+    }
+    Table(["ID", "NAME", "PATH", "COLOR", "DUPLEX", "MEDIA"], queues.Select(q => new[]
+    {
+        q.Id, q.Name, q.IppPath, q.Color ? "yes" : "no", q.Duplex ? "yes" : "no", q.DefaultMedia,
+    }));
+    return 0;
+}
+
+async Task<int> AddQueue(string id)
+{
+    if (options.GetValueOrDefault("--name") is not { } name)
+    {
+        Console.Error.WriteLine("--name is required: it's the printer name users see in Windows.");
+        return 2;
+    }
+    var queue = await Send<QueueAdminDto>(HttpMethod.Post, "queues", new CreateQueueRequest(id, name,
+        options.GetValueOrDefault("--description"), options.GetValueOrDefault("--location"), Switch("--color"), Switch("--duplex"),
+        options.GetValueOrDefault("--media")));
+    if (queue is null) return 1;
+    Console.WriteLine($"Added queue \"{queue.Name}\". Clients print to ipp://<server>:<port>{queue.IppPath}");
+    return 0;
+}
+
+async Task<int> EditQueue(string id)
+{
+    var queue = await Send<QueueAdminDto>(HttpMethod.Patch, $"queues/{Uri.EscapeDataString(id)}", new UpdateQueueRequest(
+        options.GetValueOrDefault("--name"), options.GetValueOrDefault("--description"), options.GetValueOrDefault("--location"),
+        Switch("--color"), Switch("--duplex"), options.GetValueOrDefault("--media")));
+    if (queue is null) return 1;
+    Console.WriteLine($"Updated queue {queue.Id} (\"{queue.Name}\"). Windows picks up changes the next time it asks the queue for its settings.");
+    return 0;
+}
+
+/// <summary>"--duplex" alone means on; "--duplex off" turns it off; not given means unchanged.</summary>
+bool? Switch(string name) =>
+    !options.TryGetValue(name, out var value) ? null : value is null || ParseSwitch(value) == true;
+
+static bool? ParseSwitch(string value) => value.ToLowerInvariant() switch
+{
+    "on" or "yes" or "true" => true,
+    "off" or "no" or "false" => false,
+    _ => null,
+};
 
 async Task<int> Release(string username, string printerId, List<string> jobIds)
 {
@@ -234,6 +336,14 @@ async Task<int> AddStation(string id, string printerId)
     Console.WriteLine($"Created station {result.Station.Id}, releasing to printer {result.Station.PrinterId}.");
     Console.WriteLine($"Station token: {result.Token}");
     Console.WriteLine("Put it in the station's /etc/tapqueue/station.toml as `token = \"...\"`. It won't be shown again.");
+    return 0;
+}
+
+async Task<int> MoveStation(string id, string printerId)
+{
+    var station = await Send<StationDto>(HttpMethod.Patch, $"stations/{Uri.EscapeDataString(id)}", new UpdateStationRequest(printerId));
+    if (station is null) return 1;
+    Console.WriteLine($"Station {station.Id} now releases to printer {station.PrinterId}.");
     return 0;
 }
 

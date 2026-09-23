@@ -96,7 +96,8 @@ public static class AdminApi
         var stations = store.StationsUsing(id);
         if (stations.Count > 0)
             return Results.Conflict(new ErrorResponse(
-                $"Stations {string.Join(", ", stations)} release to printer \"{id}\". Move them to another printer or remove them first."));
+                $"{(stations.Count == 1 ? "Station" : "Stations")} {string.Join(", ", stations)} {(stations.Count == 1 ? "releases" : "release")} to printer \"{id}\". " +
+                "Move them with `tapqueue-admin stations move` or remove them first."));
         if (!store.Delete(id))
             return Results.NotFound(new ErrorResponse($"No printer \"{id}\"."));
         printers.Forget(id);
