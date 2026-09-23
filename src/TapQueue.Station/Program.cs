@@ -44,10 +44,10 @@ using var sigterm = PosixSignalRegistration.Create(PosixSignal.SIGTERM, _ => cts
 using var sigint = PosixSignalRegistration.Create(PosixSignal.SIGINT, _ => cts.Cancel());
 
 IBadgeReader reader = config.Reader == "pcprox" ? new PcProxReader(config.Device, Log)
-    : string.IsNullOrWhiteSpace(config.Device) ? new StdinBadgeReader()
+    : config.Device is "stdin" or "" ? new StdinBadgeReader()
     : new EvdevBadgeReader(config.Device, Log);
 if (reader is StdinBadgeReader)
-    Log("No device configured; type or scan card numbers followed by Enter.");
+    Log("Reading card numbers from standard input; type or scan one followed by Enter.");
 
 try
 {
