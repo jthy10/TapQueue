@@ -11,6 +11,8 @@ public sealed class ServerConfig
 
     public void Validate()
     {
+        if (!System.Net.IPEndPoint.TryParse(Server.Listen, out var listen) || listen.Port == 0)
+            throw new InvalidDataException($"server.listen \"{Server.Listen}\" must look like 0.0.0.0:8631.");
         if (Queues.Count == 0)
             throw new InvalidDataException("Config must define at least one [[queues]] entry.");
         if (Printers.Count == 0)
