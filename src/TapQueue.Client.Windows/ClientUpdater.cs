@@ -17,6 +17,15 @@ public sealed class ClientUpdater(HttpClient http, ILogger logger)
     private string? _ownSha256;
     private string? _failedSha256;
 
+    /// <summary>Why installing the server's build failed, reported to the server until an install works.</summary>
+    public string? LastError { get; private set; }
+
+    /// <summary>The SHA-256 of the running TapQueueClient.exe, so the server can tell whether this PC is up to date.</summary>
+    public async Task<string> OwnSha256Async(CancellationToken ct) => _ownSha256 ??= await HashFileAsync(_exePath, ct);
+
+    /// <summary>An admin asked for an update now: try the build again even if it failed before.</summary>
+    public void RetryFailed() => _failedSha256 = null;
+
     private string NewExePath => _exePath + ".new";
     private string OldExePath => _exePath + ".old";
 
@@ -25,9 +34,11 @@ public sealed class ClientUpdater(HttpClient http, ILogger logger)
     {
         if (build is null || build.Sha256 == _failedSha256)
             return false;
-        _ownSha256 ??= await HashFileAsync(_exePath, ct);
-        if (string.Equals(build.Sha256, _ownSha256, StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(build.Sha256, await OwnSha256Async(ct), StringComparison.OrdinalIgnoreCase))
+        {
+            LastError = null;
             return false;
+        }
 
         logger.LogInformation("Installing TapQueue client {Version} (running {Current})", build.Version, Shared.TapQueueVersion.Current);
         try
@@ -37,7 +48,8 @@ public sealed class ClientUpdater(HttpClient http, ILogger logger)
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or HttpRequestException or InvalidDataException)
         {
-            _failedSha256 = build.Sha256; // don't retry this build every minute; a newer one gets a fresh try
+            _failedSha256 = build.Sha256; // don't retry this build every minute; a newer one (or "update now") gets a fresh try
+            LastError = ex.Message;
             logger.LogError("Couldn't install TapQueue client {Version}: {Error}", build.Version, ex.Message);
             return false;
         }

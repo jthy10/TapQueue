@@ -26,6 +26,7 @@ public sealed class TrayApp : ApplicationContext
     private List<JobDto> _heldJobs = [];
     private HashSet<long>? _knownJobIds;
     private bool _connected;
+    private bool _signedOut;
     private readonly DateTime _exeWrittenAt = File.GetLastWriteTimeUtc(Environment.ProcessPath!);
     private bool _polling;
     private string? _lastError;
@@ -68,6 +69,7 @@ public sealed class TrayApp : ApplicationContext
     private async Task ConnectAsync()
     {
         _retryTimer.Stop();
+        _signedOut = false;
         try
         {
             var session = await _api.SignInAsync();
@@ -200,6 +202,15 @@ public sealed class TrayApp : ApplicationContext
     {
         _pollTimer.Stop();
         _heartbeatTimer.Stop();
+        if (ex is TapQueueApiException { Status: System.Net.HttpStatusCode.Forbidden })
+        {
+            // An admin signed this session out. Stay out (jobs printed here no longer go to this
+            // user) until the user signs in again from the menu or Windows logs them in again.
+            _signedOut = true;
+            SetConnected(false, ex.Message);
+            Notify("Signed out of TapQueue", ex.Message, ToolTipIcon.Warning);
+            return;
+        }
         SetConnected(false, ex.Message);
         _retryTimer.Start();
     }
@@ -214,8 +225,8 @@ public sealed class TrayApp : ApplicationContext
 
     private void UpdateTooltip()
     {
-        var text = _connected
-            ? $"TapQueue — {_heldJobs.Count} held job{(_heldJobs.Count == 1 ? "" : "s")}"
+        var text = _connected ? $"TapQueue — {_heldJobs.Count} held job{(_heldJobs.Count == 1 ? "" : "s")}"
+            : _signedOut ? "TapQueue — signed out"
             : "TapQueue — can't reach server";
         _tray.Text = text.Length > 63 ? text[..63] : text; // NotifyIcon limit
     }
@@ -225,8 +236,8 @@ public sealed class TrayApp : ApplicationContext
         var menu = _tray.ContextMenuStrip!;
         menu.Items.Clear();
 
-        var status = _connected
-            ? $"Signed in as {_api.Session?.User.DisplayName}"
+        var status = _connected ? $"Signed in as {_api.Session?.User.DisplayName}"
+            : _signedOut ? "Signed out by an admin"
             : $"Not connected{(_lastError is null ? "" : $": {Shorten(_lastError, 60)}")}";
         menu.Items.Add(new ToolStripMenuItem(status) { Enabled = false });
         menu.Items.Add(new ToolStripMenuItem($"{_heldJobs.Count} held job{(_heldJobs.Count == 1 ? "" : "s")}") { Enabled = false });
@@ -241,7 +252,7 @@ public sealed class TrayApp : ApplicationContext
         menu.Items.Add(releaseAll);
         menu.Items.Add("Held jobs…", null, (_, _) => ShowJobsForm());
         if (!_connected)
-            menu.Items.Add("Retry connection", null, async (_, _) => await ConnectAsync());
+            menu.Items.Add(_signedOut ? "Sign in again" : "Retry connection", null, async (_, _) => await ConnectAsync());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(new ToolStripMenuItem($"TapQueue {TapQueueVersion.Current}") { Enabled = false });
         menu.Items.Add("Exit", null, (_, _) => ExitThread());

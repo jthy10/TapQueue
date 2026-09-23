@@ -10,14 +10,12 @@ namespace TapQueue.Client.Windows;
 
 /// <summary>
 /// The "TapQueue" Windows service (<c>TapQueueClient.exe --service</c>, installed by the setup
-/// program, runs as LocalSystem). Once a minute it asks the server for its queues and client
-/// build, keeps the PC's printers in step, and installs a newly published client.
+/// program, runs as LocalSystem). Once a minute it checks in with the server (saying which PC this is and
+/// which client it runs, so it shows under Workstations), gets its queues and client build, keeps the PC's printers in step, and installs a newly published client.
 /// Logs go to the Windows Application event log (source "TapQueue").
 /// </summary>
 public sealed class MachineService(ClientConfig config, IHostApplicationLifetime lifetime, ILogger<MachineService> logger) : BackgroundService
 {
-    private static readonly TimeSpan Interval = TimeSpan.FromMinutes(1);
-
     public static async Task<int> RunAsync(string[] args)
     {
         var (config, path) = ClientConfig.Load(args);
@@ -49,11 +47,16 @@ public sealed class MachineService(ClientConfig config, IHostApplicationLifetime
         {
             try
             {
-                var setup = await http.GetFromJsonAsync<ClientSetupResponse>("api/v1/client/setup", TapQueueJson.Options, stoppingToken)
-                            ?? throw new InvalidDataException("Empty response from the server.");
+                var setup = await CheckInAsync(http, updater, stoppingToken);
                 if (lastError is not null)
                     logger.LogInformation("Reached {Server} again", config.ServerUrl);
                 lastError = null;
+
+                if (setup.Command == WorkstationCommand.Update)
+                {
+                    logger.LogInformation("An admin asked this PC to update now");
+                    updater.RetryFailed();
+                }
 
                 if (config.InstallPrinters)
                     await printers.SyncAsync(setup.Queues, http.BaseAddress);
@@ -68,7 +71,7 @@ public sealed class MachineService(ClientConfig config, IHostApplicationLifetime
                     return;
                 }
             }
-            catch (Exception ex) when ((ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException or InvalidDataException)
+            catch (Exception ex) when ((ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException or InvalidDataException or IOException)
                                        && !stoppingToken.IsCancellationRequested)
             {
                 if (ex.Message != lastError) // log each new problem once, not every minute
@@ -78,12 +81,28 @@ public sealed class MachineService(ClientConfig config, IHostApplicationLifetime
 
             try
             {
-                await Task.Delay(Interval, stoppingToken);
+                await Task.Delay(TimeSpan.FromSeconds(WorkstationStatus.CheckInSeconds), stoppingToken);
             }
             catch (OperationCanceledException)
             {
                 break;
             }
         }
+    }
+
+    /// <summary>
+    /// Says which PC this is and what it runs, and gets the queues, the client build and any command
+    /// back. Servers older than 0.3 only have the anonymous GET.
+    /// </summary>
+    private static async Task<ClientSetupResponse> CheckInAsync(HttpClient http, ClientUpdater updater, CancellationToken ct)
+    {
+        var report = new ClientSetupRequest(Environment.MachineName, TapQueueVersion.Current, await updater.OwnSha256Async(ct), updater.LastError);
+        using var response = await http.PostAsJsonAsync("api/v1/client/setup", report, TapQueueJson.Options, ct);
+        if (response.StatusCode is System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.MethodNotAllowed)
+            return await http.GetFromJsonAsync<ClientSetupResponse>("api/v1/client/setup", TapQueueJson.Options, ct)
+                   ?? throw new InvalidDataException("Empty response from the server.");
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<ClientSetupResponse>(TapQueueJson.Options, ct)
+               ?? throw new InvalidDataException("Empty response from the server.");
     }
 }
