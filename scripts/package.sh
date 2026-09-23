@@ -2,7 +2,7 @@
 # Builds release archives into dist/:
 #   tapqueue-server-<version>-linux-x64.tar.gz    tapqueue-server, tapqueue-admin, libe_sqlite3.so, example config, systemd unit, install-server.sh
 #   tapqueue-station-<version>-linux-x64.tar.gz   tapqueue-station, example config, systemd unit, udev rule
-#   tapqueue-client-<version>-win-x64.zip         TapQueueClient.exe, example config
+#   tapqueue-client-<version>-win-x64.zip         TapQueueClient.exe, example config, version.txt
 #   SHA256SUMS
 # Used by CI on every push and by the release workflow on tags.
 set -euo pipefail
@@ -31,6 +31,8 @@ cp config/station.example.toml deploy/systemd/tapqueue-station.service deploy/ud
 
 publish TapQueue.Client.Windows win-x64 client -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true
 cp config/client.example.toml "$out/client/"
+# `tapqueue-admin clients publish` reads this; it matches what the client reports (TapQueueVersion.Current).
+echo "$version+$(git rev-parse --short=7 HEAD)" > "$out/client/version.txt"
 
 tar -czf "$dist/tapqueue-server-$version-linux-x64.tar.gz" --transform "s:^\.:tapqueue-server-$version:" -C "$out/server" .
 tar -czf "$dist/tapqueue-station-$version-linux-x64.tar.gz" --transform "s:^\.:tapqueue-station-$version:" -C "$out/station" .

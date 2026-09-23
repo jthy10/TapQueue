@@ -46,6 +46,12 @@ const string Usage = """
                                                      Issue a new station token (the old one stops working)
       tapqueue-admin stations remove <station-id>    Delete a station
 
+      tapqueue-admin clients                         Signed-in Windows clients and the version each runs
+      tapqueue-admin clients publish <tapqueue-client-X.Y.Z-win-x64.zip | TapQueueClient.exe> [--version-name ...]
+                                                     Push a client build out; every client installs it
+                                                     on its next heartbeat (about a minute)
+      tapqueue-admin clients builds                  Published client builds, newest (the one clients run) first
+
     Connection (flag > environment > ~/.config/tapqueue/admin.toml > /etc/tapqueue/server.toml):
       --server <url>    TAPQUEUE_SERVER       default http://localhost:8631
       --token <token>   TAPQUEUE_ADMIN_TOKEN  admin.token from server.toml
@@ -67,7 +73,7 @@ for (var i = 0; i < args.Length; i++)
     }
     if (args[i].StartsWith("--"))
     {
-        var takesValue = args[i] is "--server" or "--token" or "--name" or "--status" or "--uri" or "--location" or "--description" or "--media";
+        var takesValue = args[i] is "--server" or "--token" or "--name" or "--status" or "--uri" or "--location" or "--description" or "--media" or "--version-name";
         var switchWithValue = args[i] is "--tls-skip-verify" or "--color" or "--duplex" && i + 1 < args.Length && ParseSwitch(args[i + 1]) is not null;
         options[args[i]] = (takesValue || switchWithValue) && i + 1 < args.Length ? args[++i] : null;
     }
@@ -125,6 +131,9 @@ try
         ("stations", "move") when positional.Count == 4 => await MoveStation(positional[2], positional[3]),
         ("stations", "reset-token") when positional.Count == 3 => await ResetStationToken(positional[2]),
         ("stations", "remove") when positional.Count == 3 => await RemoveStation(positional[2]),
+        ("clients", null) => await ListClients(),
+        ("clients", "publish") when positional.Count == 3 => await PublishClient(positional[2], options.GetValueOrDefault("--version-name")),
+        ("clients", "builds") when positional.Count == 2 => await ListClientBuilds(),
         _ => BadUsage(),
     };
 }
@@ -382,6 +391,77 @@ async Task<int> ResetStationToken(string id)
 }
 
 async Task<int> RemoveStation(string id) => await Delete($"stations/{Uri.EscapeDataString(id)}", $"Removed station {id}.");
+
+async Task<int> ListClients()
+{
+    var clients = await Get<List<ClientSessionDto>>("clients");
+    var builds = await Get<List<ClientBuildDto>>("client-builds");
+    if (clients is null || builds is null) return 1;
+    var latest = builds.FirstOrDefault();
+    Console.WriteLine(latest is null
+        ? "No client build published; clients keep whatever they run."
+        : $"Published client: {latest.Version} ({Ago(latest.PublishedAt)})");
+    Table(["USER", "COMPUTER", "WINDOWS USER", "VERSION", "ADDRESS", "LAST SEEN"], clients.Select(c => new[]
+    {
+        c.Username, c.Hostname ?? "", c.WindowsUser ?? "",
+        (c.ClientVersion ?? "unknown") + (latest is not null && c.ClientVersion != latest.Version ? " (updating)" : ""),
+        c.RemoteIp, Ago(c.LastSeenAt),
+    }));
+    return 0;
+}
+
+async Task<int> ListClientBuilds()
+{
+    var builds = await Get<List<ClientBuildDto>>("client-builds");
+    if (builds is null) return 1;
+    Table(["VERSION", "PUBLISHED", "SIZE", "SHA-256"], builds.Select(b => new[]
+    {
+        b.Version, Ago(b.PublishedAt), FormatSize(b.SizeBytes), b.Sha256[..16] + "…",
+    }));
+    return 0;
+}
+
+// Takes the release zip from scripts/package.sh (TapQueueClient.exe + version.txt) or a bare exe.
+async Task<int> PublishClient(string path, string? version)
+{
+    if (!File.Exists(path))
+    {
+        Console.Error.WriteLine($"{path} not found.");
+        return 2;
+    }
+
+    using var zip = path.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ? System.IO.Compression.ZipFile.OpenRead(path) : null;
+    var exeEntry = zip?.GetEntry("TapQueueClient.exe");
+    if (zip is not null && exeEntry is null)
+    {
+        Console.Error.WriteLine($"{path} has no TapQueueClient.exe in it.");
+        return 2;
+    }
+    if (version is null && zip?.GetEntry("version.txt") is { } versionEntry)
+    {
+        using var reader = new StreamReader(versionEntry.Open());
+        version = (await reader.ReadToEndAsync()).Trim();
+    }
+    if (string.IsNullOrEmpty(version))
+    {
+        Console.Error.WriteLine("Can't tell which version this is. Pass --version-name, e.g. --version-name 0.2.0+1a2b3c4.");
+        return 2;
+    }
+
+    await using var exe = exeEntry?.Open() ?? File.OpenRead(path);
+    using var content = new StreamContent(exe);
+    content.Headers.ContentType = new("application/octet-stream");
+    using var response = await http.PostAsync($"client-builds?version={Uri.EscapeDataString(version)}", content);
+    if (!response.IsSuccessStatusCode)
+    {
+        await PrintError(response);
+        return 1;
+    }
+    var build = (await response.Content.ReadFromJsonAsync<ClientBuildDto>(TapQueueJson.Options))!;
+    Console.WriteLine($"Published Windows client {build.Version} ({FormatSize(build.SizeBytes)}).");
+    Console.WriteLine("Clients install it on their next heartbeat, within about a minute. Watch with: tapqueue-admin clients");
+    return 0;
+}
 
 async Task<int> Delete(string path, string doneMessage)
 {
