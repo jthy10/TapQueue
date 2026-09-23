@@ -48,17 +48,11 @@ using var cts = new CancellationTokenSource();
 using var sigterm = PosixSignalRegistration.Create(PosixSignal.SIGTERM, _ => cts.Cancel());
 using var sigint = PosixSignalRegistration.Create(PosixSignal.SIGINT, _ => cts.Cancel());
 
-IBadgeReader reader = config.Reader == "pcprox" ? new PcProxReader(config.Device, Log)
-    : config.Device is "stdin" or "" ? new StdinBadgeReader()
-    : new EvdevBadgeReader(config.Device, Log);
-if (reader is StdinBadgeReader)
-    Log("Reading card numbers from standard input; type or scan one followed by Enter.");
-
 try
 {
     if (testMode)
     {
-        await foreach (var card in reader.ReadCardsAsync(cts.Token))
+        await foreach (var card in CreateReader(config.Reader, config.Device).ReadCardsAsync(cts.Token))
             Log($"Read card: {card} ({card.Length} characters)");
         return 0;
     }
@@ -69,18 +63,27 @@ try
     Log($"tapqueue-station {TapQueueVersion.Current}, server {config.ServerUrl}");
     await CheckInAsync(http, cts.Token);
 
+    // Settings held on the server (reader, repeat time…) win over station.toml.
+    var runtime = new StationRuntime(http, config, Log);
+    await runtime.StartAsync(cts.Token);
+    var reader = CreateReader(runtime.Settings.Reader, runtime.Settings.Device);
+    runtime.Reader = reader;
+    _ = runtime.RunAsync(cts.Token).ContinueWith(t => Log($"Heartbeats stopped: {t.Exception?.GetBaseException().Message}"),
+        TaskContinuationOptions.OnlyOnFaulted);
+
     string? lastCard = null;
     var lastCardAt = DateTimeOffset.MinValue;
     await foreach (var card in reader.ReadCardsAsync(cts.Token))
     {
-        if (card.Length < config.MinCardLength)
+        var settings = runtime.Settings;
+        if (card.Length < settings.MinCardLength)
         {
-            Log($"Ignored a {card.Length}-character read (min_card_length is {config.MinCardLength}).");
+            Log($"Ignored a {card.Length}-character read (min_card_length is {settings.MinCardLength}).");
             continue;
         }
         // Readers often report a card held on the pad more than once.
         var now = DateTimeOffset.UtcNow;
-        if (card == lastCard && now - lastCardAt < TimeSpan.FromSeconds(config.RepeatSeconds))
+        if (card == lastCard && now - lastCardAt < TimeSpan.FromSeconds(settings.RepeatSeconds))
             continue;
         (lastCard, lastCardAt) = (card, now);
 
@@ -91,6 +94,16 @@ try
 catch (OperationCanceledException) when (cts.IsCancellationRequested)
 {
     return 0;
+}
+
+IBadgeReader CreateReader(string kind, string device)
+{
+    IBadgeReader reader = kind == "pcprox" ? new PcProxReader(device, Log)
+        : device is "stdin" or "" ? new StdinBadgeReader()
+        : new EvdevBadgeReader(device, Log);
+    if (reader is StdinBadgeReader)
+        Log("Reading card numbers from standard input; type or scan one followed by Enter.");
+    return reader;
 }
 
 // Confirms the token works and shows which printer this station releases to. Keeps retrying

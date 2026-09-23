@@ -33,6 +33,8 @@ internal sealed partial class PcProxReader(string? devicePath, Action<string> lo
     private const uint HidIocGFeature = 0xC0094807;
     private const int ReportLength = 8;
 
+    public string Status { get; private set; } = "starting";
+
     public async IAsyncEnumerable<string> ReadCardsAsync([EnumeratorCancellation] CancellationToken ct)
     {
         var waitingLogged = false;
@@ -47,6 +49,7 @@ internal sealed partial class PcProxReader(string? devicePath, Action<string> lo
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
+                Status = ex is UnauthorizedAccessException ? $"No permission to open {node}" : $"Can't open {node}";
                 if (!waitingLogged)
                 {
                     log(ex is UnauthorizedAccessException
@@ -60,6 +63,7 @@ internal sealed partial class PcProxReader(string? devicePath, Action<string> lo
                 if (!waitingLogged)
                 {
                     log("No RFIDeas pcProx reader found. Waiting for it...");
+                    Status = "No pcProx reader plugged in";
                     waitingLogged = true;
                 }
                 await Task.Delay(TimeSpan.FromSeconds(2), ct);
@@ -72,6 +76,7 @@ internal sealed partial class PcProxReader(string? devicePath, Action<string> lo
                 var fd = (int)handle.DangerousGetHandle();
                 var openedDevnum = UsbDevnum(node!);
                 log($"Polling pcProx reader on {node}");
+                Status = "ok";
 
                 byte[]? lastCard = null;
                 var lastSeen = DateTimeOffset.MinValue;

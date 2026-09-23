@@ -8,11 +8,16 @@ internal interface IBadgeReader
 {
     /// <summary>Card numbers as the reader sends them, one per tap.</summary>
     IAsyncEnumerable<string> ReadCardsAsync(CancellationToken ct);
+
+    /// <summary>"ok" while the reader is connected; otherwise what's wrong. Reported in heartbeats.</summary>
+    string Status { get; }
 }
 
 /// <summary>One card number per line on standard input. For testing without a reader.</summary>
 internal sealed class StdinBadgeReader : IBadgeReader
 {
+    public string Status => "ok";
+
     public async IAsyncEnumerable<string> ReadCardsAsync([EnumeratorCancellation] CancellationToken ct)
     {
         while (await Console.In.ReadLineAsync(ct) is { } line)
@@ -34,6 +39,8 @@ internal sealed partial class EvdevBadgeReader(string devicePath, Action<string>
     private const uint EviocGrab = 0x40044590; // _IOW('E', 0x90, int)
     private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(5);
 
+    public string Status { get; private set; } = "starting";
+
     // struct input_event: struct timeval (two longs), __u16 type, __u16 code, __s32 value.
     private static readonly int TimevalSize = 2 * IntPtr.Size;
     private static readonly int EventSize = TimevalSize + 8;
@@ -50,6 +57,7 @@ internal sealed partial class EvdevBadgeReader(string devicePath, Action<string>
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
+                Status = ex is UnauthorizedAccessException ? $"No permission to read {devicePath}" : $"Reader not found at {devicePath}";
                 if (!waitingLogged)
                 {
                     log(ex is UnauthorizedAccessException
@@ -66,6 +74,7 @@ internal sealed partial class EvdevBadgeReader(string devicePath, Action<string>
                 if (Ioctl((int)handle.DangerousGetHandle(), EviocGrab, 1) != 0)
                     log($"Warning: couldn't grab {devicePath} (errno {Marshal.GetLastPInvokeError()}); card numbers may also be typed into the console.");
                 log($"Listening for badges on {devicePath}");
+                Status = "ok";
                 waitingLogged = false;
 
                 var decoder = new KeyDecoder();
@@ -86,6 +95,7 @@ internal sealed partial class EvdevBadgeReader(string devicePath, Action<string>
                     }
                     if (read == 0)
                     {
+                        Status = $"Lost the reader at {devicePath}";
                         log($"Lost badge reader {devicePath}");
                         break;
                     }

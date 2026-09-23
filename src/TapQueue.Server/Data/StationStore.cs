@@ -15,8 +15,8 @@ public sealed record StationSettings(
     bool Enabled,
     string MaintenanceMessage)
 {
+    /// <summary>The only kind so far. Reserved for a screen or status light at the station later.</summary>
     public const string NoFeedback = "none";
-    public const string SpeakerFeedback = "speaker";
 
     public StationSettingsDto ToDto() => new(Version, PrinterId, Reader, Device, RepeatSeconds, MinCardLength, Feedback, Enabled, MaintenanceMessage);
 }

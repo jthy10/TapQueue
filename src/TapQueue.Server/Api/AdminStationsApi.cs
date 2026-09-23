@@ -78,8 +78,8 @@ public static class AdminStationsApi
         }
         if (request.Feedback is not null)
         {
-            if (request.Feedback is not (StationSettings.NoFeedback or StationSettings.SpeakerFeedback))
-                return Results.BadRequest(new ErrorResponse("feedback must be \"none\" or \"speaker\"."));
+            if (request.Feedback is not StationSettings.NoFeedback)
+                return Results.BadRequest(new ErrorResponse("feedback must be \"none\"; stations have no feedback devices yet."));
             s = s with { Feedback = request.Feedback };
         }
         if (request.MaintenanceMessage is not null) s = s with { MaintenanceMessage = request.MaintenanceMessage.Trim() };

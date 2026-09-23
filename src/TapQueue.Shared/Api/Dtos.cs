@@ -253,7 +253,7 @@ public sealed record StationDto(
 /// station.toml says"; the station reports what it actually uses in its heartbeat.
 /// </summary>
 /// <param name="Version">Goes up with every change, so a station knows when to re-apply them.</param>
-/// <param name="Feedback">"none" or "speaker": tones through the station computer's speaker on each tap.</param>
+/// <param name="Feedback">How the station tells people what happened. Only "none" so far; reserved for a screen or status light.</param>
 /// <param name="Enabled">A disabled station answers taps with <paramref name="MaintenanceMessage"/> and releases nothing.</param>
 public sealed record StationSettingsDto(
     int Version,
