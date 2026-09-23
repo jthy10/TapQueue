@@ -35,6 +35,20 @@ public sealed class PrintAndReleaseTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task HeldJobsKnowTheirPageCount()
+    {
+        using var alice = await _server.SignInAsync("alice");
+        var threePages = await File.ReadAllBytesAsync(Path.Combine(AppContext.BaseDirectory, "Fixtures", "three-pages.pdf"));
+
+        await _server.PrintAsync("Three pages", threePages);
+        await _server.PrintAsync("Not really a PDF", Pdf);
+
+        var jobs = await alice.GetFromJsonAsync<List<JobDto>>("/api/v1/me/jobs", TapQueueJson.Options) ?? [];
+        Assert.Equal(3, jobs.Single(j => j.Name == "Three pages").Pages);
+        Assert.Null(jobs.Single(j => j.Name == "Not really a PDF").Pages);
+    }
+
+    [Fact]
     public async Task ReleaseSendsTheDocumentAndPrintOptionsToThePrinter()
     {
         using var alice = await _server.SignInAsync("alice");

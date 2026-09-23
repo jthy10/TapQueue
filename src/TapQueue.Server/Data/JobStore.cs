@@ -32,11 +32,15 @@ public sealed record JobRecord(
     DateTimeOffset? ReleasedAt,
     string? ReleasedPrinterId,
     string? Error,
-    string? FormerOwner)
+    string? FormerOwner,
+    int? Pages)
 {
+    /// <summary>What the job counts against a quota: its pages times copies, and 1 page if it couldn't be counted.</summary>
+    public int ChargedPages => (Pages ?? 1) * Copies;
+
     public JobDto ToDto() => new(
         Id, Name, QueueId, Status, SizeBytes, DocumentFormat, Copies, Username, OwnerHint,
-        SubmittedAt, ExpiresAt, ReleasedAt, ReleasedPrinterId, Error, FormerOwner);
+        SubmittedAt, ExpiresAt, ReleasedAt, ReleasedPrinterId, Error, FormerOwner, Pages);
 }
 
 /// <param name="JobAttributes">The encoded IPP job-attributes group from the client (copies, media, page-ranges…).</param>
@@ -56,7 +60,7 @@ public sealed class JobStore(Database database)
     private const string SelectColumns = """
         SELECT j.id, j.user_id, u.username, j.owner_hint, j.queue_id, j.name, j.document_format, j.copies,
                j.size_bytes, j.status, j.source_ip, j.submitted_at, j.expires_at, j.released_at,
-               j.released_printer_id, j.error, j.former_owner
+               j.released_printer_id, j.error, j.former_owner, j.pages
         FROM jobs j LEFT JOIN users u ON u.id = j.user_id
         """;
 
@@ -95,9 +99,10 @@ public sealed class JobStore(Database database)
         database.Execute("UPDATE jobs SET status = $to, error = $err WHERE id = $id AND status = $from",
             ("$to", to), ("$err", error), ("$id", id), ("$from", from)) == 1;
 
-    public void MarkReceived(long id, long sizeBytes) =>
-        database.Execute("UPDATE jobs SET status = $held, size_bytes = $size WHERE id = $id AND status = $receiving",
-            ("$held", JobStatus.Held), ("$size", sizeBytes), ("$id", id), ("$receiving", JobStatus.Receiving));
+    /// <param name="pages">Pages per copy, or null if they couldn't be counted.</param>
+    public void MarkReceived(long id, long sizeBytes, int? pages) =>
+        database.Execute("UPDATE jobs SET status = $held, size_bytes = $size, pages = $pages WHERE id = $id AND status = $receiving",
+            ("$held", JobStatus.Held), ("$size", sizeBytes), ("$pages", pages), ("$id", id), ("$receiving", JobStatus.Receiving));
 
     public byte[]? GetJobAttributes(long id) =>
         database.Scalar("SELECT job_attributes FROM jobs WHERE id = $id", ("$id", id)) as byte[];
@@ -136,5 +141,6 @@ public sealed class JobStore(Database database)
         ReleasedAt: r.GetTimeOrNull(13),
         ReleasedPrinterId: r.GetStringOrNull(14),
         Error: r.GetStringOrNull(15),
-        FormerOwner: r.GetStringOrNull(16));
+        FormerOwner: r.GetStringOrNull(16),
+        Pages: r.IsDBNull(17) ? null : r.GetInt32(17));
 }

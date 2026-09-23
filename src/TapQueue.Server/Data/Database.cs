@@ -297,6 +297,18 @@ public sealed class Database
                 last_seen_at     TEXT NOT NULL
             );
         """,
+
+        // 9: quotas. pages is the job's page count (per copy, after page-ranges), NULL if it
+        // couldn't be counted. A quota is a page limit per period (day, week or month) on a user or group.
+        """
+            ALTER TABLE jobs ADD COLUMN pages INTEGER;
+            CREATE INDEX ix_jobs_user_released ON jobs(user_id, released_at);
+
+            ALTER TABLE users ADD COLUMN quota_pages INTEGER;
+            ALTER TABLE users ADD COLUMN quota_period TEXT;
+            ALTER TABLE groups ADD COLUMN quota_pages INTEGER;
+            ALTER TABLE groups ADD COLUMN quota_period TEXT;
+        """,
     ];
 
     public void Migrate()

@@ -88,7 +88,7 @@ public sealed class IppPrinterEndpoint(
         IppOperation.PrintJob => PrintJobAsync(c),
         IppOperation.CreateJob => Task.FromResult(CreateJob(c)),
         IppOperation.SendDocument => SendDocumentAsync(c),
-        IppOperation.CloseJob => Task.FromResult(CloseJob(c)),
+        IppOperation.CloseJob => CloseJobAsync(c),
         IppOperation.CancelJob => Task.FromResult(CancelJob(c)),
         IppOperation.GetJobAttributes => Task.FromResult(GetJobAttributes(c)),
         IppOperation.GetJobs => Task.FromResult(GetJobs(c)),
@@ -116,8 +116,7 @@ public sealed class IppPrinterEndpoint(
 
         var job = NewJob(c);
         var size = await ReceiveDocumentAsync(c, job.Id, append: false);
-        jobs.MarkReceived(job.Id, size);
-        LogHeld(job.Id);
+        await HoldAsync(job.Id, size, c.Http.RequestAborted);
         return JobResponse(c, jobs.Get(job.Id)!);
     }
 
@@ -145,14 +144,11 @@ public sealed class IppPrinterEndpoint(
 
         var size = await ReceiveDocumentAsync(c, job.Id, append: true);
         if (lastDocument.Value)
-        {
-            jobs.MarkReceived(job.Id, size);
-            LogHeld(job.Id);
-        }
+            await HoldAsync(job.Id, size, c.Http.RequestAborted);
         return JobResponse(c, jobs.Get(job.Id)!);
     }
 
-    private IppMessage CloseJob(RequestContext c)
+    private async Task<IppMessage> CloseJobAsync(RequestContext c)
     {
         if (FindOwnJob(c) is not { } job)
             return IppMessage.CreateResponse(c.Request, IppStatus.ClientErrorNotFound, "No such job");
@@ -160,8 +156,7 @@ public sealed class IppPrinterEndpoint(
         {
             var path = spool.PathFor(job.Id);
             var size = File.Exists(path) ? new FileInfo(path).Length : 0;
-            jobs.MarkReceived(job.Id, size);
-            LogHeld(job.Id);
+            await HoldAsync(job.Id, size, c.Http.RequestAborted);
         }
         return JobResponse(c, jobs.Get(job.Id)!);
     }
@@ -267,11 +262,26 @@ public sealed class IppPrinterEndpoint(
         return new FileInfo(spool.PathFor(jobId)).Length;
     }
 
+    /// <summary>The whole document is here: count its pages and hold it for its owner.</summary>
+    private async Task HoldAsync(long jobId, long size, CancellationToken ct)
+    {
+        var pages = PageCounter.Count(spool.PathFor(jobId));
+        if (pages is not null && jobs.GetJobAttributes(jobId) is { } attributes)
+        {
+            var ranges = (await JobTemplate.DecodeAsync(attributes, ct)).Attributes
+                .FirstOrDefault(a => a.Name == "page-ranges")?.Values.Select(v => v.Value).OfType<IppRange>().ToList();
+            pages = PageCounter.ApplyPageRanges(pages.Value, ranges);
+        }
+        jobs.MarkReceived(jobId, size, pages);
+        LogHeld(jobId);
+    }
+
     private void LogHeld(long jobId)
     {
         if (jobs.Get(jobId) is not { } job) return;
-        logger.LogInformation("Holding job {JobId} \"{Name}\" ({Size:N0} bytes, {Format}) for {Owner}",
-            job.Id, job.Name, job.SizeBytes, job.DocumentFormat, job.Username ?? $"nobody yet (client said \"{job.OwnerHint}\")");
+        logger.LogInformation("Holding job {JobId} \"{Name}\" ({Size:N0} bytes, {Format}, {Pages} pages) for {Owner}",
+            job.Id, job.Name, job.SizeBytes, job.DocumentFormat, job.Pages?.ToString() ?? "unknown",
+            job.Username ?? $"nobody yet (client said \"{job.OwnerHint}\")");
         events.Record(EventCategory.Job, job.Username ?? job.OwnerHint ?? job.SourceIp,
             job.Username is null ? EventLog.Job(job.Id) : EventLog.User(job.Username),
             job.Username is null

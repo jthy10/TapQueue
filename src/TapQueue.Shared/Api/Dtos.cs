@@ -165,6 +165,7 @@ public sealed record UpdateQueueRequest(
 /// <param name="Owner">The TapQueue user the job belongs to, or null if nobody has been matched to it yet.</param>
 /// <param name="ClaimedUser">The username the print client sent. Unverified; only shown to help an admin sort out unowned jobs.</param>
 /// <param name="FormerOwner">For jobs of a user who has since been deleted, their username.</param>
+/// <param name="Pages">Pages per copy (after any page range), or null if they couldn't be counted.</param>
 public sealed record JobDto(
     long Id,
     string Name,
@@ -180,7 +181,8 @@ public sealed record JobDto(
     DateTimeOffset? ReleasedAt,
     string? ReleasedPrinterId,
     string? Error,
-    string? FormerOwner = null);
+    string? FormerOwner = null,
+    int? Pages = null);
 
 /// <summary>Sent by the user client when it starts, and again whenever its session expires.</summary>
 public sealed record ClientSessionRequest(
