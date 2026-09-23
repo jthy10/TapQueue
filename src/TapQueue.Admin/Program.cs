@@ -46,7 +46,7 @@ const string Usage = """
                                                      Issue a new station token (the old one stops working)
       tapqueue-admin stations remove <station-id>    Delete a station
 
-    Connection (flag > environment > ~/.config/tapqueue/admin.toml):
+    Connection (flag > environment > ~/.config/tapqueue/admin.toml > /etc/tapqueue/server.toml):
       --server <url>    TAPQUEUE_SERVER       default http://localhost:8631
       --token <token>   TAPQUEUE_ADMIN_TOKEN  admin.token from server.toml
     """;
@@ -83,12 +83,13 @@ if (positional.Count == 0)
     return 2;
 }
 
-var fileConfig = LoadFileConfig();
+var fileConfig = LoadFileConfig() ?? AdminConfig.FromServerConfig() ?? new AdminConfig();
 var serverUrl = options.GetValueOrDefault("--server") ?? Environment.GetEnvironmentVariable("TAPQUEUE_SERVER") ?? fileConfig.ServerUrl;
 var token = options.GetValueOrDefault("--token") ?? Environment.GetEnvironmentVariable("TAPQUEUE_ADMIN_TOKEN") ?? fileConfig.Token;
 if (string.IsNullOrEmpty(token))
 {
-    Console.Error.WriteLine("No admin token. Pass --token, set TAPQUEUE_ADMIN_TOKEN, or put it in ~/.config/tapqueue/admin.toml.");
+    Console.Error.WriteLine("No admin token. Pass --token, set TAPQUEUE_ADMIN_TOKEN, put it in ~/.config/tapqueue/admin.toml, " +
+        "or run with sudo on the server so /etc/tapqueue/server.toml can be read.");
     return 2;
 }
 
@@ -430,10 +431,10 @@ int BadUsage()
     return 2;
 }
 
-static AdminConfig LoadFileConfig()
+static AdminConfig? LoadFileConfig()
 {
     var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "tapqueue", "admin.toml");
-    return File.Exists(path) ? TomlConfig.Load<AdminConfig>(path) : new AdminConfig();
+    return File.Exists(path) ? TomlConfig.Load<AdminConfig>(path) : null;
 }
 
 static void Table(string[] headers, IEnumerable<string[]> rows)

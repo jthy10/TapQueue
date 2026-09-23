@@ -30,7 +30,7 @@ and, if it breaks something, what to do about it.
 
 | File | Contents |
 |---|---|
-| `tapqueue-server-X.Y.Z-linux-x64.tar.gz` | `tapqueue-server`, `tapqueue-admin`, `libe_sqlite3.so`, example config, systemd unit |
+| `tapqueue-server-X.Y.Z-linux-x64.tar.gz` | `tapqueue-server`, `tapqueue-admin`, `libe_sqlite3.so`, example config, systemd unit, `install-server.sh` |
 | `tapqueue-station-X.Y.Z-linux-x64.tar.gz` | `tapqueue-station`, example config, systemd unit, pcProx udev rule |
 | `tapqueue-client-X.Y.Z-win-x64.zip` | `TapQueueClient.exe`, example config |
 | `SHA256SUMS` | checksums of the above |
