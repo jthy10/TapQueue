@@ -397,3 +397,10 @@ dialog form { margin: 0; }
 .feed-text { display: block; color: var(--text); }
 a.feed-text:hover { color: var(--accent); }
 .feed-meta { display: block; color: var(--muted); font-size: 12px; margin-top: 1px; }
+
+.check-list { display: grid; gap: 2px; max-height: 200px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px; }
+.check-list label { display: flex; gap: 10px; align-items: flex-start; padding: 5px 6px; border-radius: 4px; cursor: pointer; }
+.check-list label:hover { background: var(--surface-2); }
+.check-list input { margin-top: 2px; }
+.check-list small { display: block; color: var(--muted); font-size: 12px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }

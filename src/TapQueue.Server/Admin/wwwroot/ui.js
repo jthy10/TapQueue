@@ -192,12 +192,23 @@ export function select(name, options, value) {
 
 export const checkbox = (name, checked) => h("input", { type: "checkbox", name, checked });
 
-/** Every named control's value: checkboxes as booleans, the rest as trimmed strings. */
+/** Checkboxes that read back as an array of the checked values. options: [[value, label, hint?]] */
+export function checkList(name, options, selected = []) {
+  const chosen = new Set(selected.map((s) => s.toLowerCase()));
+  return h("div", { class: "check-list" }, options.length
+    ? options.map(([value, label, hint]) => h("label", null,
+      h("input", { type: "checkbox", name, value, "data-multi": "", checked: chosen.has(value.toLowerCase()) }),
+      h("span", null, label, hint && h("small", null, hint))))
+    : h("span", { class: "muted" }, "None set up yet."));
+}
+
+/** Every named control's value: checkboxes as booleans (or arrays, for checkList), the rest as trimmed strings. */
 export function readForm(form) {
   const data = {};
   for (const el of form.elements) {
     if (!el.name) continue;
-    data[el.name] = el.type === "checkbox" ? el.checked : el.type === "file" ? el.files[0] ?? null : el.value.trim();
+    if (el.type === "checkbox" && el.hasAttribute("data-multi")) data[el.name] = [...(data[el.name] ?? []), ...(el.checked ? [el.value] : [])];
+    else data[el.name] = el.type === "checkbox" ? el.checked : el.type === "file" ? el.files[0] ?? null : el.value.trim();
   }
   return data;
 }

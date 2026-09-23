@@ -1,6 +1,6 @@
 import { api, enc } from "../api.js";
 import { h, pageHead, panel, button, pill, time, dateTime, table, empty, drawer, props, sectionTitle, field, input,
-  formDialog, confirm, secret, attempt, loading, plural } from "../ui.js";
+  checkList, formDialog, confirm, secret, attempt, loading, plural } from "../ui.js";
 import { enrollCard, editCard, removeCard } from "./cards.js";
 import { jobStatus } from "./jobs.js";
 import { activityList } from "./activity.js";
@@ -13,12 +13,12 @@ export async function render(root, ctx) {
   panel({ flush: true, body: list }));
 
   async function load() {
-    const [users, badges, held, clients, server] = await Promise.all([
-      api.get("users"), api.get("badges"), api.get("jobs?status=held"), api.get("clients"), api.get("server"),
+    const [users, badges, held, clients, server, groups] = await Promise.all([
+      api.get("users"), api.get("badges"), api.get("jobs?status=held"), api.get("clients"), api.get("server"), api.get("groups"),
     ]);
     if (!ctx.current) return;
     const by = (rows, key) => rows.reduce((m, r) => m.set(r[key], [...(m.get(r[key]) ?? []), r]), new Map());
-    data = { users, server, badges: by(badges, "username"), held: by(held, "owner"), clients: by(clients, "username") };
+    data = { users, server, groups, badges: by(badges, "username"), held: by(held, "owner"), clients: by(clients, "username") };
 
     list.replaceChildren(table({
       rows: users,
@@ -29,6 +29,7 @@ export async function render(root, ctx) {
         : "Add people here, then give them their client token.", button("Add user", { kind: "primary", onclick: addUser })),
       columns: [
         { label: "Name", value: (u) => [h("span", { class: "cell-strong" }, u.displayName, " ", u.disabledAt && pill("Disabled", "bad")), h("span", { class: "sub" }, u.username)] },
+        { label: "Groups", value: (u) => u.groups.length ? u.groups.map(groupName).join(", ") : h("span", { class: "muted" }, "None (can use everything)") },
         { label: "Cards", value: (u) => count(data.badges.get(u.username), "card", "No card") },
         { label: "Held jobs", class: "num", value: (u) => data.held.get(u.username)?.length ?? 0 },
         { label: "Signed in", value: (u) => {
@@ -38,6 +39,8 @@ export async function render(root, ctx) {
       ],
     }));
   }
+
+  const groupName = (id) => data.groups.find((g) => g.id.toLowerCase() === id.toLowerCase())?.name ?? id;
 
   function count(rows, noun, none) {
     return rows?.length ? plural(rows.length, noun) : h("span", { class: "muted" }, none);
@@ -63,6 +66,11 @@ export async function render(root, ctx) {
         props([
           ["Status", user.disabledAt ? pill("Disabled", "bad") : pill("Active", "ok")],
           ["Added", dateTime(user.createdAt)],
+          ["Groups", h("div", null,
+            user.groups.length
+              ? h("div", { class: "chips" }, user.groups.map((g) => h("a", { class: "pill plain", href: `groups/${enc(g)}` }, groupName(g))))
+              : h("span", { class: "muted" }, "None, so they can print everywhere."),
+            h("div", { style: "margin-top:8px" }, button("Change groups", { small: true, onclick: () => changeGroups(user) })))],
         ]),
         sectionTitle("Cards"),
         badges.length
@@ -102,6 +110,26 @@ export async function render(root, ctx) {
         button("Reset token", { iconName: "key", onclick: () => resetToken(user) }),
         button("Rename", { kind: "primary", onclick: () => rename(user) }),
       ],
+    });
+  }
+
+  function changeGroups(user) {
+    if (data.groups.length === 0) {
+      formDialog({ title: "Change groups", body: h("p", { style: "margin:0" }, "There are no groups yet. Add one on the Groups page."), submitLabel: "OK", onSubmit: () => {} });
+      return;
+    }
+    formDialog({
+      title: `${user.displayName}'s groups`,
+      description: "They may use whatever any of their groups allows. With no groups, they can use everything.",
+      body: checkList("groups", data.groups.map((g) => [g.id, g.name, g.description]), user.groups),
+      onSubmit: async ({ groups = [] }) => {
+        const now = new Set(groups.map((g) => g.toLowerCase()));
+        const before = new Set(user.groups.map((g) => g.toLowerCase()));
+        for (const g of now) if (!before.has(g)) await api.put(`groups/${enc(g)}/members/${enc(user.username)}`);
+        for (const g of before) if (!now.has(g)) await api.del(`groups/${enc(g)}/members/${enc(user.username)}`);
+        await load();
+        open(user.username);
+      },
     });
   }
 

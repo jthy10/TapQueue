@@ -12,7 +12,7 @@ const nav = [
   ] },
   { group: "People", items: [
     { id: "users", label: "Users", icon: "users" },
-    { id: "groups", label: "Groups", icon: "groups", soon: true },
+    { id: "groups", label: "Groups", icon: "groups" },
     { id: "cards", label: "Cards", icon: "cards" },
   ] },
   { group: "Fleet", items: [
