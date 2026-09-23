@@ -38,8 +38,9 @@ catch (Exception ex) when (ex is IOException or InvalidDataException or Unauthor
 }
 
 using var cts = new CancellationTokenSource();
-using var sigterm = PosixSignalRegistration.Create(PosixSignal.SIGTERM, ctx => { ctx.Cancel = true; cts.Cancel(); });
-using var sigint = PosixSignalRegistration.Create(PosixSignal.SIGINT, ctx => { ctx.Cancel = true; cts.Cancel(); });
+// Let the default handling still end the process: a blocking read on the reader doesn't see the cancellation.
+using var sigterm = PosixSignalRegistration.Create(PosixSignal.SIGTERM, _ => cts.Cancel());
+using var sigint = PosixSignalRegistration.Create(PosixSignal.SIGINT, _ => cts.Cancel());
 
 IBadgeReader reader = string.IsNullOrWhiteSpace(config.Device)
     ? new StdinBadgeReader()
