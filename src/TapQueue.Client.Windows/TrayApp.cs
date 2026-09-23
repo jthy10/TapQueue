@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using TapQueue.Shared;
 using TapQueue.Shared.Api;
 using Timer = System.Windows.Forms.Timer;
@@ -5,17 +6,16 @@ using Timer = System.Windows.Forms.Timer;
 namespace TapQueue.Client.Windows;
 
 /// <summary>
-/// The tray app: keeps a session open with the server (which is how the server knows whose
-/// print jobs come from this PC), installs the print queue, and shows held jobs.
+/// The tray app, one per signed-in Windows user: keeps a session open with the server (which is
+/// how the server knows whose print jobs come from this PC) and shows held jobs. Printers and
+/// updates are handled for the whole PC by the TapQueue service (<see cref="MachineService"/>).
 /// </summary>
 public sealed class TrayApp : ApplicationContext
 {
     private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(15);
 
-    private readonly ClientConfig _config;
     private readonly string[] _args;
     private readonly TapQueueApi _api;
-    private readonly ClientUpdater _updater;
     private readonly NotifyIcon _tray;
     private readonly Icon _connectedIcon = TrayIcon.Create(connected: true);
     private readonly Icon _disconnectedIcon = TrayIcon.Create(connected: false);
@@ -26,7 +26,7 @@ public sealed class TrayApp : ApplicationContext
     private List<JobDto> _heldJobs = [];
     private HashSet<long>? _knownJobIds;
     private bool _connected;
-    private bool _printersChecked;
+    private readonly DateTime _exeWrittenAt = File.GetLastWriteTimeUtc(Environment.ProcessPath!);
     private bool _polling;
     private string? _lastError;
     private JobsForm? _jobsForm;
@@ -35,10 +35,8 @@ public sealed class TrayApp : ApplicationContext
     /// <param name="updatedFrom">The version this one replaced, when it was just started by an update.</param>
     public TrayApp(ClientConfig config, string[] args, string? updatedFrom)
     {
-        _config = config;
         _args = args;
         _api = new TapQueueApi(config);
-        _updater = new ClientUpdater(_api, Notify, ExitThread);
         _tray = new NotifyIcon
         {
             Icon = _disconnectedIcon,
@@ -59,10 +57,7 @@ public sealed class TrayApp : ApplicationContext
 
         BuildMenu();
         if (updatedFrom is not null)
-        {
-            _updater.CleanUp();
             Notify("TapQueue updated", $"Now running {TapQueueVersion.Current} (was {updatedFrom}).");
-        }
         _ = ConnectAsync();
     }
 
@@ -80,14 +75,7 @@ public sealed class TrayApp : ApplicationContext
             _heartbeatTimer.Interval = Math.Max(10, session.HeartbeatSeconds) * 1000;
             _heartbeatTimer.Start();
             _pollTimer.Start();
-
-            if (!_printersChecked && _config.InstallPrinters)
-            {
-                _printersChecked = true;
-                await InstallPrintersAsync(reinstall: false);
-            }
             await PollAsync();
-            await _updater.CheckAsync(session.ClientBuild, _args);
         }
         catch (Exception ex) when (ex is HttpRequestException or TapQueueApiException or TaskCanceledException)
         {
@@ -128,10 +116,11 @@ public sealed class TrayApp : ApplicationContext
 
     private async Task HeartbeatAsync()
     {
+        if (RestartIfUpdated())
+            return;
         try
         {
-            var heartbeat = await _api.HeartbeatAsync();
-            await _updater.CheckAsync(heartbeat?.ClientBuild, _args);
+            await _api.HeartbeatAsync();
         }
         catch (Exception ex) when (ex is HttpRequestException or TapQueueApiException or TaskCanceledException)
         {
@@ -179,16 +168,32 @@ public sealed class TrayApp : ApplicationContext
         await PollAsync();
     }
 
-    private async Task InstallPrintersAsync(bool reinstall)
+    /// <summary>
+    /// The TapQueue service replaces TapQueueClient.exe when an update is published. Start the new
+    /// exe (it waits for this one to exit) and exit.
+    /// </summary>
+    private bool RestartIfUpdated()
     {
-        foreach (var queue in _api.Session?.Queues ?? [])
+        var exe = Environment.ProcessPath!;
+        if (!File.Exists(exe) || File.GetLastWriteTimeUtc(exe) == _exeWrittenAt)
+            return false;
+        try
         {
-            var (success, output) = await PrinterInstaller.EnsureInstalledAsync(queue.Name, _api.IppUrl(queue), reinstall);
-            if (!success)
-                Notify("Couldn't add printer", $"\"{queue.Name}\": {output}\nTry running TapQueue once as administrator.", ToolTipIcon.Warning);
-            else if (output.Contains("installed") && !output.Contains("already"))
-                Notify("Printer added", $"You can now print to \"{queue.Name}\".");
+            var start = new ProcessStartInfo(exe) { UseShellExecute = false };
+            foreach (var arg in _args)
+                start.ArgumentList.Add(arg);
+            start.ArgumentList.Add(Program.WaitForArg);
+            start.ArgumentList.Add(Environment.ProcessId.ToString());
+            start.ArgumentList.Add(Program.UpdatedFromArg);
+            start.ArgumentList.Add(TapQueueVersion.Current);
+            Process.Start(start);
         }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            return false; // mid-swap; try again next heartbeat
+        }
+        ExitThread();
+        return true;
     }
 
     private void OnConnectionLost(Exception ex)
@@ -235,11 +240,6 @@ public sealed class TrayApp : ApplicationContext
         }
         menu.Items.Add(releaseAll);
         menu.Items.Add("Held jobs…", null, (_, _) => ShowJobsForm());
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(new ToolStripMenuItem("Reinstall TapQueue printer", null, async (_, _) => await InstallPrintersAsync(reinstall: true))
-        {
-            Enabled = _connected,
-        });
         if (!_connected)
             menu.Items.Add("Retry connection", null, async (_, _) => await ConnectAsync());
         menu.Items.Add(new ToolStripSeparator());

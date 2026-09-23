@@ -16,8 +16,12 @@ public sealed class ClientConfig
     /// <summary>Per-user token from `tapqueue-admin users add`. Not needed when the server runs in dev auth mode.</summary>
     public string Token { get; set; } = "";
 
-    /// <summary>Add the server's print queues to this PC automatically.</summary>
+    /// <summary>Let the TapQueue service add the server's print queues to this PC as printers.</summary>
     public bool InstallPrinters { get; set; } = true;
+
+    /// <summary>%ProgramData%\TapQueue: client.toml and the service's state. Only admins can write here.</summary>
+    public static string MachineDirectory { get; } =
+        System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "TapQueue");
 
     public string EffectiveUsername => string.IsNullOrWhiteSpace(Username) ? Environment.UserName : Username.Trim();
 
@@ -25,7 +29,7 @@ public sealed class ClientConfig
     {
         var path = FindPath(args) ?? throw new FileNotFoundException(
             "No client.toml found. Create one at " +
-            System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "TapQueue", "client.toml"));
+            System.IO.Path.Combine(MachineDirectory, "client.toml"));
 
         var config = TomlConfig.Load<ClientConfig>(path);
         if (!Uri.TryCreate(config.ServerUrl, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
@@ -41,7 +45,7 @@ public sealed class ClientConfig
 
         string[] candidates =
         [
-            System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "TapQueue", "client.toml"),
+            System.IO.Path.Combine(MachineDirectory, "client.toml"),
             System.IO.Path.Combine(AppContext.BaseDirectory, "client.toml"),
         ];
         return candidates.FirstOrDefault(File.Exists);

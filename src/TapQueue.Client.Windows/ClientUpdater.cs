@@ -1,62 +1,62 @@
-using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 using System.Security.Cryptography;
 using TapQueue.Shared.Api;
 
 namespace TapQueue.Client.Windows;
 
 /// <summary>
-/// Installs the client build the server says every client should run. If this exe's SHA-256
-/// differs from the server's build, it downloads the build next to itself, verifies it, swaps
-/// the files (Windows allows renaming a running exe), starts the new exe and exits.
-/// The new exe waits for this one to exit before it takes over (see <see cref="Program"/>).
+/// Installs the client build the server says every PC should run. Run by the TapQueue service,
+/// which can write to Program Files. If TapQueueClient.exe's SHA-256 differs from the server's
+/// build, it downloads the build next to it, verifies it and swaps the files (Windows allows
+/// renaming a running exe). Tray apps notice their exe changed and restart themselves
+/// (<see cref="TrayApp"/>); the service restarts itself.
 /// </summary>
-public sealed class ClientUpdater(TapQueueApi api, Action<string, string, ToolTipIcon> notify, Action exit)
+public sealed class ClientUpdater(HttpClient http, ILogger logger)
 {
-    public const string WaitForArg = "--wait-for";
-    public const string UpdatedFromArg = "--updated-from";
-
     private readonly string _exePath = Environment.ProcessPath!;
     private string? _ownSha256;
     private string? _failedSha256;
-    private bool _busy;
 
-    public string OldExePath => _exePath + ".old";
+    private string NewExePath => _exePath + ".new";
+    private string OldExePath => _exePath + ".old";
 
-    public async Task CheckAsync(ClientBuildDto? build, string[] args)
+    /// <summary>True if a different build was installed and this process should restart.</summary>
+    public async Task<bool> InstallIfDifferentAsync(ClientBuildDto? build, CancellationToken ct)
     {
-        if (build is null || _busy || build.Sha256 == _failedSha256)
-            return;
-        _busy = true;
+        if (build is null || build.Sha256 == _failedSha256)
+            return false;
+        _ownSha256 ??= await HashFileAsync(_exePath, ct);
+        if (string.Equals(build.Sha256, _ownSha256, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        logger.LogInformation("Installing TapQueue client {Version} (running {Current})", build.Version, Shared.TapQueueVersion.Current);
         try
         {
-            _ownSha256 ??= await HashFileAsync(_exePath, CancellationToken.None);
-            if (string.Equals(build.Sha256, _ownSha256, StringComparison.OrdinalIgnoreCase))
-                return;
-            await InstallAsync(build, args);
+            await InstallAsync(build, ct);
+            return true;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or HttpRequestException
-                                       or TapQueueApiException or TaskCanceledException or InvalidDataException
-                                       or System.ComponentModel.Win32Exception)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or HttpRequestException or InvalidDataException)
         {
-            _failedSha256 = build.Sha256; // don't retry this build every heartbeat; a newer one gets a fresh try
-            notify("Couldn't update TapQueue", $"Version {build.Version}: {ex.Message}", ToolTipIcon.Warning);
-        }
-        finally
-        {
-            _busy = false;
+            _failedSha256 = build.Sha256; // don't retry this build every minute; a newer one gets a fresh try
+            logger.LogError("Couldn't install TapQueue client {Version}: {Error}", build.Version, ex.Message);
+            return false;
         }
     }
 
-    private async Task InstallAsync(ClientBuildDto build, string[] args)
+    private async Task InstallAsync(ClientBuildDto build, CancellationToken ct)
     {
-        var newPath = _exePath + ".new";
-        await using (var file = File.Create(newPath))
-            await api.DownloadAsync(build.DownloadPath, file);
+        var url = build.DownloadPath.TrimStart('/') + "?computer=" + Uri.EscapeDataString(Environment.MachineName);
+        await using (var file = File.Create(NewExePath))
+        {
+            using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
+            response.EnsureSuccessStatusCode();
+            await response.Content.CopyToAsync(file, ct);
+        }
 
-        var sha256 = await HashFileAsync(newPath, CancellationToken.None);
+        var sha256 = await HashFileAsync(NewExePath, ct);
         if (!string.Equals(sha256, build.Sha256, StringComparison.OrdinalIgnoreCase))
         {
-            File.Delete(newPath);
+            File.Delete(NewExePath);
             throw new InvalidDataException("The download was damaged (checksum mismatch).");
         }
 
@@ -64,36 +64,26 @@ public sealed class ClientUpdater(TapQueueApi api, Action<string, string, ToolTi
         File.Move(_exePath, OldExePath);
         try
         {
-            File.Move(newPath, _exePath);
-            var start = new ProcessStartInfo(_exePath) { UseShellExecute = false };
-            foreach (var arg in args)
-                start.ArgumentList.Add(arg);
-            start.ArgumentList.Add(WaitForArg);
-            start.ArgumentList.Add(Environment.ProcessId.ToString());
-            start.ArgumentList.Add(UpdatedFromArg);
-            start.ArgumentList.Add(Shared.TapQueueVersion.Current);
-            Process.Start(start);
+            File.Move(NewExePath, _exePath);
         }
         catch
         {
-            // Put the running version back so the next start still works.
-            File.Delete(_exePath);
-            File.Move(OldExePath, _exePath);
+            File.Move(OldExePath, _exePath); // put the running version back
             throw;
         }
-        exit();
     }
 
-    /// <summary>After an update: removes the previous exe, which couldn't be deleted while it was running.</summary>
+    /// <summary>Removes the exe replaced by the last update, once nothing is running it.</summary>
     public void CleanUp()
     {
         try
         {
             File.Delete(OldExePath);
+            File.Delete(NewExePath);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // Still locked or not ours to delete; the next update overwrites it anyway.
+            // A tray app is still running the old exe; the next update overwrites it anyway.
         }
     }
 

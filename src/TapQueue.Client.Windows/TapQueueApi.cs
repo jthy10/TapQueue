@@ -31,16 +31,8 @@ public sealed class TapQueueApi(ClientConfig config) : IDisposable
         return Session;
     }
 
-    /// <summary>Keeps the session alive. Null from servers older than 0.2 (they reply 204).</summary>
-    public Task<ClientHeartbeatResponse?> HeartbeatAsync(CancellationToken ct = default) =>
-        SendAsync<ClientHeartbeatResponse>(HttpMethod.Post, "api/v1/client/heartbeat", null, ct);
-
-    /// <summary>Downloads a client build (<see cref="ClientBuildDto.DownloadPath"/>) into <paramref name="destination"/>.</summary>
-    public async Task DownloadAsync(string path, Stream destination, CancellationToken ct = default)
-    {
-        using var response = await SendRawAsync(HttpMethod.Get, path.TrimStart('/'), null, HttpCompletionOption.ResponseHeadersRead, ct);
-        await response.Content.CopyToAsync(destination, ct);
-    }
+    public Task HeartbeatAsync(CancellationToken ct = default) =>
+        SendAsync<object>(HttpMethod.Post, "api/v1/client/heartbeat", null, ct);
 
     public async Task<List<JobDto>> GetHeldJobsAsync(CancellationToken ct = default) =>
         await SendAsync<List<JobDto>>(HttpMethod.Get, "api/v1/me/jobs", null, ct) ?? [];
@@ -54,18 +46,7 @@ public sealed class TapQueueApi(ClientConfig config) : IDisposable
     public Task CancelJobAsync(long jobId, CancellationToken ct = default) =>
         SendAsync<object>(HttpMethod.Delete, $"api/v1/me/jobs/{jobId}", null, ct);
 
-    public Uri IppUrl(QueueDto queue) => new(_http.BaseAddress!, queue.IppPath.TrimStart('/'));
-
     private async Task<T?> SendAsync<T>(HttpMethod method, string path, object? body, CancellationToken ct)
-    {
-        using var response = await SendRawAsync(method, path, body, HttpCompletionOption.ResponseContentRead, ct);
-        if (response.StatusCode == HttpStatusCode.NoContent || typeof(T) == typeof(object))
-            return default;
-        return await response.Content.ReadFromJsonAsync<T>(TapQueueJson.Options, ct);
-    }
-
-    /// <summary>Sends with the session token, signing in again once if the session has lapsed. Throws on errors.</summary>
-    private async Task<HttpResponseMessage> SendRawAsync(HttpMethod method, string path, object? body, HttpCompletionOption completion, CancellationToken ct)
     {
         for (var attempt = 0; ; attempt++)
         {
@@ -75,24 +56,17 @@ public sealed class TapQueueApi(ClientConfig config) : IDisposable
             request.Headers.Authorization = new("Bearer", Session!.SessionToken);
             if (body is not null)
                 request.Content = JsonContent.Create(body, body.GetType(), options: TapQueueJson.Options);
-            var response = await _http.SendAsync(request, completion, ct);
+            using var response = await _http.SendAsync(request, ct);
 
             if (response.StatusCode == HttpStatusCode.Unauthorized && attempt == 0)
             {
-                response.Dispose();
                 await SignInAsync(ct);
                 continue;
             }
-            try
-            {
-                await EnsureSuccessAsync(response, ct);
-            }
-            catch
-            {
-                response.Dispose();
-                throw;
-            }
-            return response;
+            await EnsureSuccessAsync(response, ct);
+            if (response.StatusCode == HttpStatusCode.NoContent || typeof(T) == typeof(object))
+                return default;
+            return await response.Content.ReadFromJsonAsync<T>(TapQueueJson.Options, ct);
         }
     }
 

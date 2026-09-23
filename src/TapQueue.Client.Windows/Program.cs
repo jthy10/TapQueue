@@ -2,12 +2,26 @@ using System.Diagnostics;
 
 namespace TapQueue.Client.Windows;
 
+/// <summary>
+/// TapQueueClient.exe is three programs:
+///   (no arguments)       the tray app, started for each user at sign-in
+///   --service            the TapQueue Windows service: printers and updates for the whole PC
+///   --remove-printers    removes the printers the service added (run by the uninstaller)
+/// </summary>
 internal static class Program
 {
+    public const string WaitForArg = "--wait-for";
+    public const string UpdatedFromArg = "--updated-from";
+
     [STAThread]
     private static int Main(string[] args)
     {
-        // Started by an update: let the old version exit (and release the mutex) first.
+        if (args.Contains("--service"))
+            return MachineService.RunAsync(args.Where(a => a != "--service").ToArray()).GetAwaiter().GetResult();
+        if (args.Contains("--remove-printers"))
+            return PrinterSync.RemoveAllAsync().GetAwaiter().GetResult();
+
+        // Restarted after an update: let the old version exit (and release the mutex) first.
         var (appArgs, waitFor, updatedFrom) = SplitUpdateArgs(args);
         if (waitFor is { } pid)
             WaitForExit(pid);
@@ -34,7 +48,7 @@ internal static class Program
         return 0;
     }
 
-    /// <summary>Separates the arguments <see cref="ClientUpdater"/> adds from the user's own.</summary>
+    /// <summary>Separates the arguments <see cref="TrayApp"/> adds when it restarts after an update.</summary>
     private static (string[] AppArgs, int? WaitFor, string? UpdatedFrom) SplitUpdateArgs(string[] args)
     {
         var appArgs = new List<string>();
@@ -42,9 +56,9 @@ internal static class Program
         string? updatedFrom = null;
         for (var i = 0; i < args.Length; i++)
         {
-            if (args[i] == ClientUpdater.WaitForArg && i + 1 < args.Length && int.TryParse(args[i + 1], out var pid))
+            if (args[i] == WaitForArg && i + 1 < args.Length && int.TryParse(args[i + 1], out var pid))
                 waitFor = pid;
-            else if (args[i] == ClientUpdater.UpdatedFromArg && i + 1 < args.Length)
+            else if (args[i] == UpdatedFromArg && i + 1 < args.Length)
                 updatedFrom = args[i + 1];
             else
             {
