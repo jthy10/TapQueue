@@ -29,7 +29,7 @@ public static class ClientApi
         me.MapPost("/me/release", Release);
     }
 
-    private static IResult CreateSession(ClientSessionRequest request, HttpContext http, ServerConfig config,
+    private static IResult CreateSession(ClientSessionRequest request, HttpContext http, ServerConfig config, EventLog events,
         UserStore users, SessionStore sessions, QueueStore queues, PrinterRegistry printers, ClientBuildStore builds, ILoggerFactory loggers)
     {
         var logger = loggers.CreateLogger("TapQueue.Server.Api.ClientApi");
@@ -46,17 +46,21 @@ public static class ClientApi
                  !Tokens.FixedTimeEquals(user.TokenHash, Tokens.Hash(request.Token)))
         {
             logger.LogWarning("Rejected sign-in for \"{User}\" from {Ip}", username, http.ClientIp());
+            events.Record(EventCategory.SignIn, username, EventLog.User(username), $"Sign-in as {username} from {request.Hostname ?? http.ClientIp()} rejected: unknown user or wrong token.");
             return Results.Json(new ErrorResponse("Unknown user or wrong token."), statusCode: StatusCodes.Status401Unauthorized);
         }
 
         if (user.Disabled)
         {
             logger.LogWarning("Rejected sign-in for disabled user \"{User}\" from {Ip}", user.Username, http.ClientIp());
+            events.Record(EventCategory.SignIn, user.Username, EventLog.User(user.Username), $"{user.Username} tried to sign in on {request.Hostname ?? http.ClientIp()}, but their account is disabled.");
             return Results.Json(new ErrorResponse("Your TapQueue account is disabled. Ask an admin."), statusCode: StatusCodes.Status403Forbidden);
         }
 
         var token = Tokens.New();
         sessions.Create(Tokens.Hash(token), user.Id, request.WindowsUser, request.Hostname, http.ClientIp(), request.ClientVersion);
+        events.Record(EventCategory.SignIn, user.Username, EventLog.User(user.Username),
+            $"{user.Username} signed in on {request.Hostname ?? "an unknown PC"} ({http.ClientIp()}) as Windows user {request.WindowsUser ?? "?"}.");
         logger.LogInformation("{User} signed in from {Host} ({Ip}) as Windows user {WindowsUser}, client {Version}",
             user.Username, request.Hostname, http.ClientIp(), request.WindowsUser, request.ClientVersion ?? "unknown");
 
@@ -82,7 +86,7 @@ public static class ClientApi
         return Results.File(path, "application/vnd.microsoft.portable-executable", "TapQueueClient.exe");
     }
 
-    private static IResult CancelJob(long id, HttpContext http, JobStore jobs, Spool spool)
+    private static IResult CancelJob(long id, HttpContext http, JobStore jobs, Spool spool, EventLog events)
     {
         var job = jobs.Get(id);
         if (job is null || job.UserId != CurrentUser(http).Id)
@@ -90,6 +94,7 @@ public static class ClientApi
         if (!jobs.TryTransition(id, JobStatus.Held, JobStatus.Canceled))
             return Results.Conflict(new ErrorResponse("Job is no longer held."));
         spool.Delete(id);
+        events.Record(EventCategory.Job, job.Username!, EventLog.User(job.Username!), $"{job.Username} canceled \"{job.Name}\" (job #{job.Id}).");
         return Results.NoContent();
     }
 
@@ -98,7 +103,9 @@ public static class ClientApi
         var printer = printers.Find(request.PrinterId);
         if (printer is null)
             return Results.NotFound(new ErrorResponse($"Unknown printer \"{request.PrinterId}\"."));
-        return Results.Ok(await release.ReleaseAsync(CurrentUser(http), printer, request.JobIds, http.RequestAborted));
+        var user = CurrentUser(http);
+        var session = (SessionRecord)http.Items[nameof(SessionRecord)]!;
+        return Results.Ok(await release.ReleaseAsync(user, printer, request.JobIds, user.Username, $"from {session.Hostname ?? http.ClientIp()}", http.RequestAborted));
     }
 
     private static UserRecord CurrentUser(HttpContext http) => (UserRecord)http.Items[nameof(UserRecord)]!;
@@ -118,6 +125,7 @@ public static class ClientApi
             return Results.Json(new ErrorResponse("Session expired. Sign in again."), statusCode: StatusCodes.Status401Unauthorized);
 
         http.Items[nameof(UserRecord)] = user;
+        http.Items[nameof(SessionRecord)] = session;
         return await next(context);
     }
 

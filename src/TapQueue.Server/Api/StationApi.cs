@@ -23,7 +23,7 @@ public static class StationApi
     }
 
     private static async Task<IResult> Tap(StationTapRequest request, HttpContext http, BadgeStore badges, UserStore users,
-        PrinterRegistry printers, ReleaseService release, UnknownTaps unknownTaps, ILoggerFactory loggers)
+        PrinterRegistry printers, ReleaseService release, UnknownTaps unknownTaps, EventLog events, ILoggerFactory loggers)
     {
         var logger = loggers.CreateLogger("TapQueue.Server.Api.StationApi");
         var station = CurrentStation(http);
@@ -41,20 +41,27 @@ public static class StationApi
         {
             unknownTaps.Add(card, station.Id);
             logger.LogInformation("Unknown badge {Hint} tapped at station {Station}", BadgeStore.Hint(card), station.Id);
+            events.Record(EventCategory.Tap, EventLog.Station(station.Id), EventLog.Station(station.Id),
+                $"Unknown card {BadgeStore.Hint(card)} tapped at station {station.Id}.");
             return Results.Ok(new StationTapResponse(TapOutcome.UnknownBadge, "Badge not recognized. Ask an admin to link it to your account.", null, []));
         }
 
         if (user.Disabled)
         {
             logger.LogInformation("Disabled user {User} tapped at station {Station}", user.Username, station.Id);
+            events.Record(EventCategory.Tap, EventLog.Station(station.Id), EventLog.User(user.Username),
+                $"{user.Username} tapped at station {station.Id}, but their account is disabled.");
             return Results.Ok(new StationTapResponse(TapOutcome.Disabled, $"Sorry {user.DisplayName}, your account is disabled. Ask an admin.", user.ToDto(), []));
         }
 
         // Not tied to the request: the station giving up on a slow printer shouldn't leave a job half-sent.
-        var result = await release.ReleaseAsync(user, printer, jobIds: null, CancellationToken.None);
+        var result = await release.ReleaseAsync(user, printer, jobIds: null, EventLog.Station(station.Id), $"at station {station.Id}", CancellationToken.None);
         var sent = result.Results.Count(r => r.Success);
         var failed = result.Results.Count - sent;
         logger.LogInformation("{User} tapped at station {Station}: {Sent} released, {Failed} failed", user.Username, station.Id, sent, failed);
+        if (sent + failed == 0)
+            events.Record(EventCategory.Tap, EventLog.Station(station.Id), EventLog.User(user.Username),
+                $"{user.Username} tapped at station {station.Id} with nothing waiting.");
 
         var (outcome, message) = (sent, failed) switch
         {

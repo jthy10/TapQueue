@@ -15,6 +15,7 @@ public sealed class IppPrinterEndpoint(
     Spool spool,
     JobOwnerResolver owners,
     UserStore users,
+    EventLog events,
     ILogger<IppPrinterEndpoint> logger)
 {
     public async Task HandleAsync(HttpContext http, string queueId)
@@ -271,6 +272,11 @@ public sealed class IppPrinterEndpoint(
         if (jobs.Get(jobId) is not { } job) return;
         logger.LogInformation("Holding job {JobId} \"{Name}\" ({Size:N0} bytes, {Format}) for {Owner}",
             job.Id, job.Name, job.SizeBytes, job.DocumentFormat, job.Username ?? $"nobody yet (client said \"{job.OwnerHint}\")");
+        events.Record(EventCategory.Job, job.Username ?? job.OwnerHint ?? job.SourceIp,
+            job.Username is null ? EventLog.Job(job.Id) : EventLog.User(job.Username),
+            job.Username is null
+                ? $"\"{job.Name}\" (job #{job.Id}) arrived from {job.SourceIp} with no signed-in client there, so it isn't matched to anyone."
+                : $"{job.Username} printed \"{job.Name}\" (job #{job.Id}) to {job.QueueId}; it's held until they release it.");
     }
 
     /// <summary>Clients may only see and change jobs sent from their own machine.</summary>
@@ -296,6 +302,7 @@ public sealed class IppPrinterEndpoint(
         if (userId is null || users.FindById(userId.Value) is not { Disabled: true } user)
             return null;
         logger.LogInformation("Refused a job from disabled user {User} at {Ip}", user.Username, c.ClientIp);
+        events.Record(EventCategory.Job, user.Username, EventLog.User(user.Username), $"Refused a job from {user.Username}: their account is disabled.");
         return IppMessage.CreateResponse(c.Request, IppStatus.ClientErrorNotAuthorized, "Your TapQueue account is disabled.");
     }
 

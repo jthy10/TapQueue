@@ -43,8 +43,13 @@ public static class AdminApi
         admin.MapGet("/queues", (QueueStore queues) => queues.List().Select(ToAdminDto));
         admin.MapPost("/queues", CreateQueue);
         admin.MapPatch("/queues/{id}", UpdateQueue);
-        admin.MapDelete("/queues/{id}", (string id, QueueStore queues) =>
-            queues.Delete(id) ? Results.NoContent() : Results.NotFound(new ErrorResponse($"No queue \"{id}\".")));
+        admin.MapDelete("/queues/{id}", (string id, QueueStore queues, EventLog events) =>
+        {
+            if (!queues.Delete(id))
+                return Results.NotFound(new ErrorResponse($"No queue \"{id}\"."));
+            events.Admin(EventLog.Queue(id), $"Removed queue {id}.");
+            return Results.NoContent();
+        });
         admin.MapPost("/release", Release);
 
         admin.MapGet("/badges", (BadgeStore badges, UserStore users, string? username) =>
@@ -57,16 +62,28 @@ public static class AdminApi
         });
         admin.MapPost("/badges", CreateBadge);
         admin.MapPatch("/badges/{id:long}", UpdateBadge);
-        admin.MapDelete("/badges/{id:long}", (long id, BadgeStore badges) =>
-            badges.Delete(id) ? Results.NoContent() : Results.NotFound(new ErrorResponse($"No badge {id}.")));
+        admin.MapDelete("/badges/{id:long}", (long id, BadgeStore badges, EventLog events) =>
+        {
+            if (badges.Get(id) is not { } badge || !badges.Delete(id))
+                return Results.NotFound(new ErrorResponse($"No badge {id}."));
+            events.Admin(EventLog.User(badge.Username), $"Removed card {badge.CardHint} from {badge.Username}.");
+            return Results.NoContent();
+        });
         admin.MapGet("/badges/unknown", (UnknownTaps taps) => taps.Recent());
+        admin.MapGet("/events", (EventLog events, string? category, string? subject, long? before, int? limit) =>
+            events.List(category, subject, before, limit ?? 100));
 
         admin.MapGet("/stations", (StationStore stations) => stations.List().Select(s => s.ToDto()));
         admin.MapPost("/stations", CreateStation);
         admin.MapPatch("/stations/{id}", UpdateStation);
         admin.MapPost("/stations/{id}/token", ResetStationToken);
-        admin.MapDelete("/stations/{id}", (string id, StationStore stations) =>
-            stations.Delete(id) ? Results.NoContent() : Results.NotFound(new ErrorResponse($"No station \"{id}\".")));
+        admin.MapDelete("/stations/{id}", (string id, StationStore stations, EventLog events) =>
+        {
+            if (!stations.Delete(id))
+                return Results.NotFound(new ErrorResponse($"No station \"{id}\"."));
+            events.Admin(EventLog.Station(id), $"Removed station {id}.");
+            return Results.NoContent();
+        });
 
         admin.MapGet("/client-builds", (ClientBuildStore builds) => builds.List().Select(b => b.ToDto()));
         admin.MapPost("/client-builds", PublishClientBuild);
@@ -79,7 +96,7 @@ public static class AdminApi
         database.SchemaVersion(), config.Jobs.HoldHours, config.Auth.SessionTimeoutMinutes, jobs.CountHeld());
 
     /// <summary>The request body is TapQueueClient.exe. Clients start installing it on their next heartbeat.</summary>
-    private static async Task<IResult> PublishClientBuild(HttpContext http, string? version, ClientBuildStore builds, ILoggerFactory loggers)
+    private static async Task<IResult> PublishClientBuild(HttpContext http, string? version, ClientBuildStore builds, EventLog events, ILoggerFactory loggers)
     {
         version = Clean(version);
         if (version is null)
@@ -96,10 +113,11 @@ public static class AdminApi
         loggers.CreateLogger("TapQueue.Server.Api.AdminApi").LogInformation(
             "Published Windows client {Version} ({Size} bytes, sha256 {Sha256}); clients will update on their next heartbeat",
             build.Version, build.SizeBytes, build.Sha256);
+        events.Admin(null, $"Published Windows client {build.Version}; clients install it on their next heartbeat.");
         return Results.Ok(build.ToDto());
     }
 
-    private static IResult CancelJob(long id, JobStore jobs, Spool spool, ILoggerFactory loggers)
+    private static IResult CancelJob(long id, JobStore jobs, Spool spool, EventLog events, ILoggerFactory loggers)
     {
         if (jobs.Get(id) is not { } job)
             return Results.NotFound(new ErrorResponse($"No job {id}."));
@@ -107,10 +125,11 @@ public static class AdminApi
             return Results.Conflict(new ErrorResponse($"Job {id} is {job.Status}, not held, so it can't be canceled."));
         spool.Delete(id);
         loggers.CreateLogger("TapQueue.Server.Api.AdminApi").LogInformation("Admin canceled job {Id} ({Name}) of {User}", id, job.Name, job.Username ?? "nobody");
+        events.Admin(job.Username is null ? EventLog.Job(id) : EventLog.User(job.Username), $"Canceled \"{job.Name}\" (job #{id}) of {job.Username ?? "nobody"}.");
         return Results.NoContent();
     }
 
-    private static async Task<IResult> CreatePrinter(CreatePrinterRequest request, PrinterStore store, PrinterRegistry printers, CancellationToken ct)
+    private static async Task<IResult> CreatePrinter(CreatePrinterRequest request, PrinterStore store, PrinterRegistry printers, EventLog events, CancellationToken ct)
     {
         var id = request.Id?.Trim();
         if (!Ids.IsValid(id))
@@ -122,11 +141,12 @@ public static class AdminApi
 
         var printer = store.Create(new PrinterRecord(id!, Clean(request.Name) ?? id!, Clean(request.Location) ?? "",
             request.Uri.Trim(), request.TlsSkipVerify ?? false));
+        events.Admin(EventLog.Printer(printer.Id), $"Added printer {printer.Name} ({printer.Id}) at {printer.Uri}.");
         await printers.ProbeAsync(printer, ct);
         return Results.Ok(printers.ToAdminDto(printer));
     }
 
-    private static async Task<IResult> UpdatePrinter(string id, UpdatePrinterRequest request, PrinterStore store, PrinterRegistry printers, CancellationToken ct)
+    private static async Task<IResult> UpdatePrinter(string id, UpdatePrinterRequest request, PrinterStore store, PrinterRegistry printers, EventLog events, CancellationToken ct)
     {
         if (store.Get(id) is not { } printer)
             return Results.NotFound(new ErrorResponse($"No printer \"{id}\"."));
@@ -141,11 +161,12 @@ public static class AdminApi
             TlsSkipVerify = request.TlsSkipVerify ?? printer.TlsSkipVerify,
         })!;
         printers.Forget(printer.Id);
+        events.Admin(EventLog.Printer(printer.Id), $"Changed printer {printer.Name} ({printer.Id}).");
         await printers.ProbeAsync(printer, ct);
         return Results.Ok(printers.ToAdminDto(printer));
     }
 
-    private static IResult DeletePrinter(string id, PrinterStore store, PrinterRegistry printers)
+    private static IResult DeletePrinter(string id, PrinterStore store, PrinterRegistry printers, EventLog events)
     {
         var stations = store.StationsUsing(id);
         if (stations.Count > 0)
@@ -155,10 +176,11 @@ public static class AdminApi
         if (!store.Delete(id))
             return Results.NotFound(new ErrorResponse($"No printer \"{id}\"."));
         printers.Forget(id);
+        events.Admin(EventLog.Printer(id), $"Removed printer {id}.");
         return Results.NoContent();
     }
 
-    private static IResult CreateQueue(CreateQueueRequest request, QueueStore queues)
+    private static IResult CreateQueue(CreateQueueRequest request, QueueStore queues, EventLog events)
     {
         var id = request.Id?.Trim();
         if (!Ids.IsValid(id))
@@ -170,10 +192,11 @@ public static class AdminApi
 
         var queue = queues.Create(new QueueRecord(id!, name, Clean(request.Description) ?? QueueRecord.DefaultDescription,
             Clean(request.Location) ?? "", request.Color ?? false, request.Duplex ?? false, Clean(request.DefaultMedia) ?? QueueRecord.Letter));
+        events.Admin(EventLog.Queue(queue.Id), $"Added queue \"{queue.Name}\" ({queue.Id}).");
         return Results.Ok(ToAdminDto(queue));
     }
 
-    private static IResult UpdateQueue(string id, UpdateQueueRequest request, QueueStore queues)
+    private static IResult UpdateQueue(string id, UpdateQueueRequest request, QueueStore queues, EventLog events)
     {
         if (queues.Get(id) is not { } queue)
             return Results.NotFound(new ErrorResponse($"No queue \"{id}\"."));
@@ -186,6 +209,7 @@ public static class AdminApi
             Duplex = request.Duplex ?? queue.Duplex,
             DefaultMedia = Clean(request.DefaultMedia) ?? queue.DefaultMedia,
         })!;
+        events.Admin(EventLog.Queue(queue.Id), $"Changed queue \"{queue.Name}\" ({queue.Id}).");
         return Results.Ok(ToAdminDto(queue));
     }
 
@@ -194,7 +218,7 @@ public static class AdminApi
 
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
-    private static IResult CreateBadge(CreateBadgeRequest request, UserStore users, BadgeStore badges, UnknownTaps unknownTaps)
+    private static IResult CreateBadge(CreateBadgeRequest request, UserStore users, BadgeStore badges, UnknownTaps unknownTaps, EventLog events)
     {
         var card = BadgeStore.Normalize(request.Card ?? "");
         if (card.Length == 0)
@@ -207,10 +231,11 @@ public static class AdminApi
 
         var badge = badges.Add(user.Id, card, request.Label?.Trim() ?? "");
         unknownTaps.Remove(card);
+        events.Admin(EventLog.User(user.Username), $"Linked card {badge.CardHint} to {user.Username}.");
         return Results.Ok(badge.ToDto());
     }
 
-    private static IResult UpdateBadge(long id, UpdateBadgeRequest request, BadgeStore badges, UserStore users)
+    private static IResult UpdateBadge(long id, UpdateBadgeRequest request, BadgeStore badges, UserStore users, EventLog events)
     {
         if (badges.Get(id) is not { } badge)
             return Results.NotFound(new ErrorResponse($"No badge {id}."));
@@ -221,10 +246,14 @@ public static class AdminApi
                 return Results.NotFound(new ErrorResponse($"No user \"{request.Username}\"."));
             userId = user.Id;
         }
-        return Results.Ok(badges.Update(id, userId, request.Label?.Trim() ?? badge.Label)!.ToDto());
+        var updated = badges.Update(id, userId, request.Label?.Trim() ?? badge.Label)!;
+        events.Admin(EventLog.User(updated.Username), updated.UserId == badge.UserId
+            ? $"Changed card {badge.CardHint} of {badge.Username}."
+            : $"Moved card {badge.CardHint} from {badge.Username} to {updated.Username}.");
+        return Results.Ok(updated.ToDto());
     }
 
-    private static IResult CreateStation(CreateStationRequest request, StationStore stations, PrinterRegistry printers)
+    private static IResult CreateStation(CreateStationRequest request, StationStore stations, PrinterRegistry printers, EventLog events)
     {
         var id = request.Id?.Trim();
         if (!Ids.IsValid(id))
@@ -237,29 +266,33 @@ public static class AdminApi
 
         var token = Tokens.New();
         var station = stations.Create(id!, printer.Id, Tokens.Hash(token));
+        events.Admin(EventLog.Station(station.Id), $"Added station {station.Id}, releasing to {printer.Name}.");
         return Results.Ok(new StationTokenResponse(station.ToDto(), token));
     }
 
-    private static IResult UpdateStation(string id, UpdateStationRequest request, StationStore stations, PrinterRegistry printers)
+    private static IResult UpdateStation(string id, UpdateStationRequest request, StationStore stations, PrinterRegistry printers, EventLog events)
     {
         if (stations.Get(id) is null)
             return Results.NotFound(new ErrorResponse($"No station \"{id}\"."));
         if (printers.Find(request.PrinterId ?? "") is not { } printer)
             return Results.NotFound(new ErrorResponse($"Unknown printer \"{request.PrinterId}\". See `tapqueue-admin printers`."));
-        return Results.Ok(stations.SetPrinter(id, printer.Id)!.ToDto());
+        var station = stations.SetPrinter(id, printer.Id)!;
+        events.Admin(EventLog.Station(station.Id), $"Station {station.Id} now releases to {printer.Name}.");
+        return Results.Ok(station.ToDto());
     }
 
-    private static IResult ResetStationToken(string id, StationStore stations)
+    private static IResult ResetStationToken(string id, StationStore stations, EventLog events)
     {
         var station = stations.Get(id);
         if (station is null)
             return Results.NotFound(new ErrorResponse($"No station \"{id}\"."));
         var token = Tokens.New();
         stations.SetTokenHash(station.Id, Tokens.Hash(token));
+        events.Admin(EventLog.Station(station.Id), $"Made a new token for station {station.Id}; the old one stopped working.");
         return Results.Ok(new StationTokenResponse(station.ToDto(), token));
     }
 
-    private static IResult CreateUser(CreateUserRequest request, UserStore users)
+    private static IResult CreateUser(CreateUserRequest request, UserStore users, EventLog events)
     {
         var username = request.Username?.Trim();
         if (string.IsNullOrEmpty(username))
@@ -269,26 +302,33 @@ public static class AdminApi
 
         var token = Tokens.New();
         var user = users.Create(username, string.IsNullOrWhiteSpace(request.DisplayName) ? username : request.DisplayName.Trim(), Tokens.Hash(token));
+        events.Admin(EventLog.User(user.Username), $"Added user {user.Username} ({user.DisplayName}).");
         return Results.Ok(new UserTokenResponse(user.ToDto(), token));
     }
 
-    private static IResult UpdateUser(string username, UpdateUserRequest request, UserStore users, ILoggerFactory loggers)
+    private static IResult UpdateUser(string username, UpdateUserRequest request, UserStore users, EventLog events, ILoggerFactory loggers)
     {
         if (users.FindByUsername(username) is not { } user)
             return Results.NotFound(new ErrorResponse($"No user \"{username}\"."));
-        if (Clean(request.DisplayName) is { } displayName)
+        if (Clean(request.DisplayName) is { } displayName && displayName != user.DisplayName)
+        {
             user = users.SetDisplayName(user.Id, displayName)!;
+            events.Admin(EventLog.User(user.Username), $"Renamed {user.Username} to {displayName}.");
+        }
         if (request.Disabled is { } disabled && disabled != user.Disabled)
         {
             user = users.SetDisabled(user.Id, disabled)!;
             loggers.CreateLogger("TapQueue.Server.Api.AdminApi").LogInformation(
                 disabled ? "Admin disabled {User}; they're signed out and can't print or release" : "Admin re-enabled {User}", user.Username);
+            events.Admin(EventLog.User(user.Username), disabled
+                ? $"Disabled {user.Username}. They're signed out and can't print or release."
+                : $"Re-enabled {user.Username}.");
         }
         return Results.Ok(user.ToAdminDto());
     }
 
     /// <summary>Cancels the user's held jobs, then deletes them with their cards. Job history keeps their name.</summary>
-    private static IResult DeleteUser(string username, UserStore users, JobStore jobs, Spool spool, ILoggerFactory loggers)
+    private static IResult DeleteUser(string username, UserStore users, JobStore jobs, Spool spool, EventLog events, ILoggerFactory loggers)
     {
         if (users.FindByUsername(username) is not { } user)
             return Results.NotFound(new ErrorResponse($"No user \"{username}\"."));
@@ -302,16 +342,18 @@ public static class AdminApi
         users.Delete(user.Id);
         loggers.CreateLogger("TapQueue.Server.Api.AdminApi").LogInformation(
             "Admin deleted user {User} ({Canceled} held jobs canceled)", user.Username, canceled);
+        events.Admin(EventLog.User(user.Username), $"Deleted user {user.Username}" + (canceled > 0 ? $" and canceled their {canceled} held jobs." : "."));
         return Results.NoContent();
     }
 
-    private static IResult ResetToken(string username, UserStore users)
+    private static IResult ResetToken(string username, UserStore users, EventLog events)
     {
         var user = users.FindByUsername(username);
         if (user is null)
             return Results.NotFound(new ErrorResponse($"No user \"{username}\"."));
         var token = Tokens.New();
         users.SetTokenHash(user.Id, Tokens.Hash(token));
+        events.Admin(EventLog.User(user.Username), $"Reset {user.Username}'s client token; the old one stopped working.");
         return Results.Ok(new UserTokenResponse(user.ToDto(), token));
     }
 
@@ -324,7 +366,7 @@ public static class AdminApi
         var printer = printers.Find(request.PrinterId);
         if (printer is null)
             return Results.NotFound(new ErrorResponse($"Unknown printer \"{request.PrinterId}\"."));
-        return Results.Ok(await release.ReleaseAsync(user, printer, request.JobIds, ct));
+        return Results.Ok(await release.ReleaseAsync(user, printer, request.JobIds, EventLog.AdminActor, "from the admin console", ct));
     }
 
     private static async ValueTask<object?> RequireAdmin(EndpointFilterInvocationContext context, EndpointFilterDelegate next)

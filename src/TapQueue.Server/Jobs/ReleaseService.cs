@@ -6,12 +6,32 @@ using TapQueue.Shared.Api;
 namespace TapQueue.Server.Jobs;
 
 /// <summary>Sends a user's held jobs to a physical printer.</summary>
-public sealed class ReleaseService(JobStore jobs, Spool spool, PrinterRegistry printers, ILogger<ReleaseService> logger)
+public sealed class ReleaseService(JobStore jobs, Spool spool, PrinterRegistry printers, EventLog events, ILogger<ReleaseService> logger)
 {
     private static readonly TimeSpan BusyTimeout = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan BusyRetryDelay = TimeSpan.FromSeconds(3);
 
-    public async Task<ReleaseResponse> ReleaseAsync(UserRecord user, PrinterRecord printer, IReadOnlyList<long>? jobIds, CancellationToken ct)
+    /// <param name="actor">Who asked, for the activity log: the user, "admin" or "station:&lt;id&gt;".</param>
+    /// <param name="via">How, as it reads after the printer's name: "at station office", "from JAKE-PC"…</param>
+    public async Task<ReleaseResponse> ReleaseAsync(UserRecord user, PrinterRecord printer, IReadOnlyList<long>? jobIds,
+        string actor, string via, CancellationToken ct)
+    {
+        var response = await ReleaseJobsAsync(user, printer, jobIds, ct);
+        var sent = response.Results.Where(r => r.Success).ToList();
+        var failed = response.Results.Where(r => !r.Success).ToList();
+        if (sent.Count > 0)
+            events.Record(EventCategory.Job, actor, EventLog.User(user.Username),
+                $"{user.Username}'s {Jobs(sent)} released to {printer.Name} {via}.");
+        if (failed.Count > 0)
+            events.Record(EventCategory.Job, actor, EventLog.User(user.Username),
+                $"Couldn't release {user.Username}'s {Jobs(failed)} to {printer.Name} {via}: {failed[0].Error}");
+        return response;
+    }
+
+    private static string Jobs(List<ReleaseResult> results) =>
+        results.Count == 1 ? $"\"{results[0].JobName}\"" : $"{results.Count} jobs";
+
+    private async Task<ReleaseResponse> ReleaseJobsAsync(UserRecord user, PrinterRecord printer, IReadOnlyList<long>? jobIds, CancellationToken ct)
     {
         var held = jobs.ListForUser(user.Id, heldOnly: true);
         if (user.Disabled)

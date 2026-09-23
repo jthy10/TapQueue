@@ -184,6 +184,19 @@ public sealed class Database
             ALTER TABLE jobs ADD COLUMN former_owner TEXT;
             ALTER TABLE badges ADD COLUMN label TEXT NOT NULL DEFAULT '';
         """,
+
+        // 5: the activity log (EventLog).
+        """
+            CREATE TABLE events (
+                id        INTEGER PRIMARY KEY,
+                at        TEXT NOT NULL,
+                category  TEXT NOT NULL,
+                actor     TEXT NOT NULL,
+                subject   TEXT,
+                message   TEXT NOT NULL
+            );
+            CREATE INDEX ix_events_subject ON events(subject);
+        """,
     ];
 
     public void Migrate()

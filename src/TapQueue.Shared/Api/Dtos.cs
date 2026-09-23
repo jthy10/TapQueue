@@ -12,6 +12,12 @@ public sealed record ServerInfoDto(
     int SessionTimeoutMinutes,
     int HeldJobs);
 
+/// <summary>One line of the activity log.</summary>
+/// <param name="Category">admin, job, tap or signin.</param>
+/// <param name="Actor">Who did it: "admin", a username, "station:&lt;id&gt;" or "system".</param>
+/// <param name="Subject">What it's about, like "user:alice" or "printer:m404n".</param>
+public sealed record EventDto(long Id, DateTimeOffset At, string Category, string Actor, string? Subject, string Message);
+
 public sealed record UserDto(long Id, string Username, string DisplayName);
 
 /// <summary>What admins see of a user. A disabled user can't sign in, print or release.</summary>
