@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Installs or upgrades tapqueue-server on this machine (Ubuntu/Debian with systemd).
-# Run it from an extracted tapqueue-server-<version>-linux-x64.tar.gz:
+# Run it from an extracted TapQueue_server_<version>_linux-x64.tar.gz, or let install.sh fetch it:
 #
 #   sudo ./install-server.sh
 #
@@ -21,14 +21,16 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 for f in tapqueue-server tapqueue-admin libe_sqlite3.so server.example.toml tapqueue-server.service; do
     if [ ! -e "$here/$f" ]; then
-        echo "$here/$f is missing. Run this from an extracted tapqueue-server release archive." >&2
+        echo "$here/$f is missing. Run this from an extracted TapQueue server release archive." >&2
         exit 1
     fi
 done
 
 new_version=$("$here/tapqueue-server" --version)
 if [ -x "$prefix/tapqueue-server" ]; then
-    echo "Upgrading $("$prefix/tapqueue-server" --version) -> $new_version"
+    # Builds from before --version existed would start the service instead, so don't wait long.
+    old_version=$(timeout 5 "$prefix/tapqueue-server" --version 2>/dev/null) || old_version="an earlier version"
+    echo "Upgrading $old_version -> $new_version"
 else
     echo "Installing $new_version"
 fi
