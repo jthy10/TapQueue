@@ -17,6 +17,20 @@ const string Usage = """
       tapqueue-admin release <username> <printer-id> [job-id ...]
                                                      Send a user's held jobs (all, or just these) to a printer
 
+      tapqueue-admin badges [username]               List badges
+      tapqueue-admin badges add <username> <card>    Link a card number to a user
+      tapqueue-admin badges add <username> --last-tap
+                                                     Link the card most recently tapped at any station
+      tapqueue-admin badges unknown                  Cards tapped recently that nobody owns
+      tapqueue-admin badges remove <badge-id>        Unlink a badge
+
+      tapqueue-admin stations                        List release stations
+      tapqueue-admin stations add <station-id> <printer-id>
+                                                     Create a station and print its token
+      tapqueue-admin stations reset-token <station-id>
+                                                     Issue a new station token (the old one stops working)
+      tapqueue-admin stations remove <station-id>    Delete a station
+
     Connection (flag > environment > ~/.config/tapqueue/admin.toml):
       --server <url>    TAPQUEUE_SERVER       default http://localhost:8631
       --token <token>   TAPQUEUE_ADMIN_TOKEN  admin.token from server.toml
@@ -70,6 +84,16 @@ try
         ("jobs", null) => await ListJobs(options.GetValueOrDefault("--status")),
         ("printers", null) => await ListPrinters(options.ContainsKey("--refresh")),
         ("release", not null) when positional.Count >= 3 => await Release(positional[1], positional[2], positional.Skip(3).ToList()),
+        ("badges", null) => await ListBadges(null),
+        ("badges", "add") when positional.Count == 4 => await AddBadge(positional[2], positional[3]),
+        ("badges", "add") when positional.Count == 3 && options.ContainsKey("--last-tap") => await AddBadgeFromLastTap(positional[2]),
+        ("badges", "unknown") when positional.Count == 2 => await ListUnknownTaps(),
+        ("badges", "remove") when positional.Count == 3 => await RemoveBadge(long.Parse(positional[2])),
+        ("badges", not null) when positional.Count == 2 => await ListBadges(positional[1]),
+        ("stations", null) => await ListStations(),
+        ("stations", "add") when positional.Count == 4 => await AddStation(positional[2], positional[3]),
+        ("stations", "reset-token") when positional.Count == 3 => await ResetStationToken(positional[2]),
+        ("stations", "remove") when positional.Count == 3 => await RemoveStation(positional[2]),
         _ => BadUsage(),
     };
 }
@@ -80,7 +104,7 @@ catch (HttpRequestException ex)
 }
 catch (FormatException)
 {
-    Console.Error.WriteLine("Job ids must be numbers.");
+    Console.Error.WriteLine("Job and badge ids must be numbers.");
     return 2;
 }
 
@@ -148,6 +172,93 @@ async Task<int> Release(string username, string printerId, List<string> jobIds)
     return result.Results.All(r => r.Success) ? 0 : 1;
 }
 
+async Task<int> ListBadges(string? username)
+{
+    var badges = await Get<List<BadgeDto>>(username is null ? "badges" : $"badges?username={Uri.EscapeDataString(username)}");
+    if (badges is null) return 1;
+    Table(["ID", "USER", "CARD", "ADDED", "LAST USED"], badges.Select(b => new[]
+    {
+        b.Id.ToString(), b.Username, b.CardHint, b.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"),
+        b.LastUsedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "never",
+    }));
+    return 0;
+}
+
+async Task<int> AddBadge(string username, string card)
+{
+    var badge = await Send<BadgeDto>(HttpMethod.Post, "badges", new CreateBadgeRequest(username, card));
+    if (badge is null) return 1;
+    Console.WriteLine($"Linked card {badge.CardHint} to {badge.Username} (badge {badge.Id}).");
+    return 0;
+}
+
+async Task<int> AddBadgeFromLastTap(string username)
+{
+    var taps = await Get<List<UnknownTapDto>>("badges/unknown");
+    if (taps is null) return 1;
+    if (taps.Count == 0)
+    {
+        Console.Error.WriteLine("No unknown cards have been tapped in the last hour. Tap the card at a station, then try again.");
+        return 1;
+    }
+    var tap = taps[0];
+    Console.WriteLine($"Using card {tap.Card}, tapped at {tap.StationId} {Ago(tap.At)}.");
+    return await AddBadge(username, tap.Card);
+}
+
+async Task<int> ListUnknownTaps()
+{
+    var taps = await Get<List<UnknownTapDto>>("badges/unknown");
+    if (taps is null) return 1;
+    Table(["CARD", "STATION", "WHEN"], taps.Select(t => new[] { t.Card, t.StationId, Ago(t.At) }));
+    return 0;
+}
+
+async Task<int> RemoveBadge(long id) => await Delete($"badges/{id}", $"Removed badge {id}.");
+
+async Task<int> ListStations()
+{
+    var stations = await Get<List<StationDto>>("stations");
+    if (stations is null) return 1;
+    Table(["ID", "PRINTER", "LAST SEEN", "ADDRESS"], stations.Select(s => new[]
+    {
+        s.Id, s.PrinterId, s.LastSeenAt is { } seen ? Ago(seen) : "never", s.LastIp ?? "",
+    }));
+    return 0;
+}
+
+async Task<int> AddStation(string id, string printerId)
+{
+    var result = await Send<StationTokenResponse>(HttpMethod.Post, "stations", new CreateStationRequest(id, printerId));
+    if (result is null) return 1;
+    Console.WriteLine($"Created station {result.Station.Id}, releasing to printer {result.Station.PrinterId}.");
+    Console.WriteLine($"Station token: {result.Token}");
+    Console.WriteLine("Put it in the station's /etc/tapqueue/station.toml as `token = \"...\"`. It won't be shown again.");
+    return 0;
+}
+
+async Task<int> ResetStationToken(string id)
+{
+    var result = await Send<StationTokenResponse>(HttpMethod.Post, $"stations/{Uri.EscapeDataString(id)}/token", null);
+    if (result is null) return 1;
+    Console.WriteLine($"New token for station {result.Station.Id}: {result.Token}");
+    return 0;
+}
+
+async Task<int> RemoveStation(string id) => await Delete($"stations/{Uri.EscapeDataString(id)}", $"Removed station {id}.");
+
+async Task<int> Delete(string path, string doneMessage)
+{
+    using var response = await http.DeleteAsync(path);
+    if (!response.IsSuccessStatusCode)
+    {
+        await PrintError(response);
+        return 1;
+    }
+    Console.WriteLine(doneMessage);
+    return 0;
+}
+
 async Task<T?> Get<T>(string path) => await Send<T>(HttpMethod.Get, path, null);
 
 async Task<T?> Send<T>(HttpMethod method, string path, object? body)
@@ -158,19 +269,24 @@ async Task<T?> Send<T>(HttpMethod method, string path, object? body)
     using var response = await http.SendAsync(request);
     if (!response.IsSuccessStatusCode)
     {
-        string? error = null;
-        try
-        {
-            error = (await response.Content.ReadFromJsonAsync<ErrorResponse>(TapQueueJson.Options))?.Error;
-        }
-        catch (Exception ex) when (ex is System.Text.Json.JsonException or NotSupportedException)
-        {
-            // Not a TapQueue error body; fall back to the HTTP reason.
-        }
-        Console.Error.WriteLine($"Error ({(int)response.StatusCode}): {error ?? response.ReasonPhrase}");
+        await PrintError(response);
         return default;
     }
     return await response.Content.ReadFromJsonAsync<T>(TapQueueJson.Options);
+}
+
+static async Task PrintError(HttpResponseMessage response)
+{
+    string? error = null;
+    try
+    {
+        error = (await response.Content.ReadFromJsonAsync<ErrorResponse>(TapQueueJson.Options))?.Error;
+    }
+    catch (Exception ex) when (ex is System.Text.Json.JsonException or NotSupportedException)
+    {
+        // Not a TapQueue error body; fall back to the HTTP reason.
+    }
+    Console.Error.WriteLine($"Error ({(int)response.StatusCode}): {error ?? response.ReasonPhrase}");
 }
 
 int BadUsage()
@@ -191,6 +307,15 @@ static void Table(string[] headers, IEnumerable<string[]> rows)
     var widths = headers.Select((_, i) => all.Max(r => r[i].Length)).ToArray();
     foreach (var row in all)
         Console.WriteLine(string.Join("  ", row.Select((cell, i) => cell.PadRight(widths[i]))).TrimEnd());
+}
+
+static string Ago(DateTimeOffset at)
+{
+    var age = DateTimeOffset.UtcNow - at;
+    return age.TotalMinutes < 1 ? "just now"
+        : age.TotalHours < 1 ? $"{(int)age.TotalMinutes} min ago"
+        : age.TotalDays < 1 ? $"{(int)age.TotalHours} h ago"
+        : at.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
 }
 
 static string Truncate(string s, int max) => s.Length <= max ? s : s[..(max - 1)] + "…";
