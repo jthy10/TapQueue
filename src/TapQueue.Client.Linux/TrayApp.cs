@@ -85,6 +85,10 @@ public sealed class TrayApp : Application
 
     private async Task ConnectAsync()
     {
+        // Also checked here, not only on heartbeats, so a tray app that can't reach the server
+        // (or was signed out) still restarts into a newly installed build.
+        if (RestartIfUpdated())
+            return;
         _retryTimer.Stop();
         _signedOut = false;
         try
