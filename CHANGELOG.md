@@ -18,8 +18,19 @@ breaking changes; they're listed under **Changed** with what to do.
   problems under Needs attention, `tapqueue-admin printers` shows it, and every change is
   recorded in the activity log (new **Printers** filter). See
   [how-it-works.md](docs/how-it-works.md#printer-health).
+- Active Directory sync. Pick OUs, groups (members through nested groups too) and single users;
+  TapQueue adds those people, keeps their names and enabled state in line with AD daily at a set
+  time, and turns the picked groups into TapQueue groups whose permissions and page limits are
+  set here. AD-disabled, expired and out-of-scope users are disabled, never deleted. Card numbers
+  can come from an AD attribute. Every sync can be previewed first, and one that would disable
+  too many users stops. LDAPS only. Console page **Active Directory**, `tapqueue-admin
+  directory`, and [docs/active-directory.md](docs/active-directory.md).
 
 ### Changed
+- Users and groups synced from AD can't be renamed, re-enabled, given or stripped of AD group
+  members, or deleted in TapQueue (the API answers 409 with where to change it instead). Admins
+  can still disable them and set their cards, limits and TapQueue groups. CSV import skips AD
+  groups in the groups column.
 - Releasing to a printer that is unreachable, stopped or not accepting jobs is refused straight
   away with the reason, and the jobs stay held. The printer is checked again first, in case it
   was just fixed.

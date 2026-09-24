@@ -11,8 +11,8 @@ checklist; [admin-ui.md](admin-ui.md#roadmap) has the admin console's own phases
    held for another printer instead of disappearing into a stopped one.
 2. **Admin sign-in and roles.** Admin accounts (Admin, Operator, Viewer) and the console
    available with `auth.mode = "token"`. Phase 7 in [admin-ui.md](admin-ui.md#roadmap).
-3. **Directory sync.** Users and groups from Active Directory / LDAP / Entra ID. Users already
-   have `source` and `external_id` for this.
+3. **Directory sync.** *(Active Directory done in 0.6.0, see [active-directory.md](active-directory.md).)*
+   Users and groups from AD, by OU, group (nested) and single user, daily. Entra ID is still to do.
 4. **TLS everywhere.** IPP, the client API and the admin console over HTTPS, so print data and
    tokens aren't readable on the network.
 5. **Per-job identity instead of IP-based ownership.** Jobs are matched to a person by the PC's

@@ -32,6 +32,7 @@ A sidebar groups pages by what you're doing; each page is a list with a detail d
 | **People** | Users | Create, edit, enable/disable, reset token. A user's detail shows their cards, groups, jobs, sessions and quota. |
 | | Groups | Groups of users, which queues and printers they may use, and their quotas. |
 | | Cards | Every badge. Enroll by tapping at a station, reassign, label, remove. Unknown taps. |
+| | Active Directory | AD sync: connection, scope (OUs, groups, users), daily schedule, preview, sync now, history. See [active-directory.md](active-directory.md). |
 | **Fleet** | Printers | Add, edit, remove, test. Live status, supported formats. |
 | | Queues | The printers users see in Windows: name, defaults, who may print to them. |
 | | Stations | Release stations: status, printer, reader, settings, restart, update, token. |

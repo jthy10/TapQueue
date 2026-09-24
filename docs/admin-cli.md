@@ -51,6 +51,12 @@ tapqueue-admin crashes [<computer>]            Crash reports sent by clients, ne
 tapqueue-admin crashes show <id>               One report with its full error
 tapqueue-admin crashes clear [<computer>]      Delete crash reports (all, or one PC's)
 
+tapqueue-admin directory                       Active Directory sync: settings, scope, next and recent syncs
+tapqueue-admin directory sync [--dry-run] [--force]
+                                               Sync now, only show what would change, or go past the disable limit
+tapqueue-admin directory scope add <dn>        Sync the users under an OU, in a group, or one user
+tapqueue-admin directory scope remove <id>     Stop syncing a scope item
+
 tapqueue-admin server                          Settings, and whether each is set here or in server.toml
 tapqueue-admin server set hold-hours|session-timeout <number|default>
                                                Change a setting now, or go back to server.toml's
