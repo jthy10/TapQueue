@@ -9,6 +9,7 @@
     <Project Path="src/TapQueue.Station/TapQueue.Station.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/TapQueue.Client.Tests/TapQueue.Client.Tests.csproj" />
     <Project Path="tests/TapQueue.Server.Tests/TapQueue.Server.Tests.csproj" />
     <Project Path="tests/TapQueue.Station.Tests/TapQueue.Station.Tests.csproj" />
   </Folder>
