@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using TapQueue.Shared;
 
 namespace TapQueue.Client.Windows;
 
@@ -7,6 +8,7 @@ namespace TapQueue.Client.Windows;
 ///   (no arguments)       the tray app, started for each user at sign-in
 ///   --service            the TapQueue Windows service: printers and updates for the whole PC
 ///   --remove-printers    removes the printers the service added (run by the uninstaller)
+///   --discover FILE      finds TapQueue servers on the network and writes them to FILE (run by the installer)
 /// </summary>
 internal static class Program
 {
@@ -20,6 +22,8 @@ internal static class Program
             return MachineService.RunAsync(args.Where(a => a != "--service").ToArray()).GetAwaiter().GetResult();
         if (args.Contains("--remove-printers"))
             return PrinterSync.RemoveAllAsync().GetAwaiter().GetResult();
+        if (Array.IndexOf(args, "--discover") is var discover and >= 0 && discover + 1 < args.Length)
+            return DiscoverAsync(args[discover + 1]).GetAwaiter().GetResult();
 
         // Restarted after an update: let the old version exit (and release the mutex) first.
         var (appArgs, waitFor, updatedFrom) = SplitUpdateArgs(args);
@@ -45,6 +49,17 @@ internal static class Program
         }
 
         Application.Run(new TrayApp(config, appArgs, updatedFrom));
+        return 0;
+    }
+
+    /// <summary>
+    /// One server per line, "url|name|version", for the installer's server page. It's a GUI exe with
+    /// no console, so the list goes to a file.
+    /// </summary>
+    private static async Task<int> DiscoverAsync(string outputPath)
+    {
+        var servers = await ServerDiscovery.FindAsync(TimeSpan.FromSeconds(3));
+        await File.WriteAllLinesAsync(outputPath, servers.Select(s => $"{s.Url}|{s.Name}|{s.Version}"));
         return 0;
     }
 
