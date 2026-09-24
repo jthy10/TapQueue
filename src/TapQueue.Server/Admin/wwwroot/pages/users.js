@@ -119,7 +119,7 @@ export async function render(root, ctx) {
         ? "In dev mode, anyone who signs in with the client is added automatically."
         : "Add people here, then give them their client token.", button("Add user", { kind: "primary", onclick: addUser })),
       columns: [
-        { label: "Name", value: (u) => [h("span", { class: "cell-strong" }, u.displayName, " ", u.disabledAt && pill("Disabled", "bad")), h("span", { class: "sub" }, u.username)] },
+        { label: "Name", value: (u) => [h("span", { class: "cell-strong" }, u.displayName, " ", u.disabledAt && pill("Disabled", "bad"), " ", u.source === "ad" && pill("AD", "plain")), h("span", { class: "sub" }, u.username)] },
         { label: "Groups", value: (u) => u.groups.length ? u.groups.map(groupName).join(", ") : h("span", { class: "muted" }, "None (can use everything)") },
         { label: "Cards", value: (u) => count(data.badges.get(u.username), "card", "No card") },
         { label: "Pages", value: (u) => pagesLeft(data.quotas.get(u.username)) },
@@ -130,6 +130,12 @@ export async function render(root, ctx) {
         } },
       ],
     }));
+  }
+
+  function disabledWhy(user) {
+    if (user.disabledBy !== "directory") return "";
+    return { disabled: " because they're disabled in Active Directory", expired: " because their account expired in Active Directory",
+      missing: " because they're no longer in the Active Directory sync's scope" }[user.directoryState] ?? " by Active Directory";
   }
 
   const groupName = (id) => data.groups.find((g) => g.id.toLowerCase() === id.toLowerCase())?.name ?? id;
@@ -156,16 +162,23 @@ export async function render(root, ctx) {
     const theirJobs = jobs.filter((j) => j.owner === user.username).slice(0, 10);
     const sessions = data.clients.get(user.username) ?? [];
     const refresh = async () => { await load(); open(user.username); };
+    const fromAd = user.source === "ad";
+    // AD disabled them, so only AD can enable them; an AD user comes back at the next sync unless they left the scope.
+    const adDisabled = user.disabledBy === "directory";
+    const canDelete = !fromAd || user.directoryState === "missing";
 
     drawer({
       title: user.displayName,
       subtitle: `${user.username} · user #${user.id}`,
       onClose: () => ctx.setId(null),
       body: [
-        user.disabledAt && h("div", { class: "callout" }, `Disabled since ${dateTime(user.disabledAt)}. They can't sign in, print or release; their held jobs are kept until they expire.`),
+        user.disabledAt && h("div", { class: "callout" }, `Disabled since ${dateTime(user.disabledAt)}${disabledWhy(user)}. They can't sign in, print or release; their held jobs are kept until they expire.`),
+        fromAd && h("div", { class: "callout info" }, "Synced from Active Directory, which decides their name, whether they're enabled and their AD groups. ",
+          h("a", { href: "directory" }, "Sync settings")),
         props([
           ["Status", user.disabledAt ? pill("Disabled", "bad") : pill("Active", "ok")],
           ["Added", dateTime(user.createdAt)],
+          ["Comes from", fromAd ? "Active Directory" : "TapQueue"],
           ["Groups", h("div", null,
             user.groups.length
               ? h("div", { class: "chips" }, user.groups.map((g) => h("a", { class: "pill plain", href: `groups/${enc(g)}` }, groupName(g))))
@@ -210,28 +223,34 @@ export async function render(root, ctx) {
         activityList(events, { emptyText: "No activity yet." }),
       ],
       footer: [
-        h("div", { class: "left" }, button("Delete", { kind: "ghost danger", onclick: () => remove(user) })),
+        h("div", { class: "left" }, canDelete && button("Delete", { kind: "ghost danger", onclick: () => remove(user) })),
         user.disabledAt
-          ? button("Enable", { onclick: () => setDisabled(user, false) })
+          ? !adDisabled && button("Enable", { onclick: () => setDisabled(user, false) })
           : button("Disable", { kind: "danger", onclick: () => setDisabled(user, true) }),
         button("Reset token", { iconName: "key", onclick: () => resetToken(user) }),
-        button("Rename", { kind: "primary", onclick: () => rename(user) }),
+        !fromAd && button("Rename", { kind: "primary", onclick: () => rename(user) }),
       ],
     });
   }
 
   function changeGroups(user) {
-    if (data.groups.length === 0) {
-      formDialog({ title: "Change groups", body: h("p", { style: "margin:0" }, "There are no groups yet. Add one on the Groups page."), submitLabel: "OK", onSubmit: () => {} });
+    // Active Directory sets who is in its groups, so only TapQueue's own groups can be changed here.
+    const local = data.groups.filter((g) => g.source !== "ad");
+    const isLocal = (id) => local.some((g) => g.id.toLowerCase() === id.toLowerCase());
+    if (local.length === 0) {
+      formDialog({ title: "Change groups", body: h("p", { style: "margin:0" }, data.groups.length
+        ? "All groups come from Active Directory; change their members there, or add a TapQueue group on the Groups page."
+        : "There are no groups yet. Add one on the Groups page."), submitLabel: "OK", onSubmit: () => {} });
       return;
     }
     formDialog({
       title: `${user.displayName}'s groups`,
-      description: "They may use whatever any of their groups allows. With no groups, they can use everything.",
-      body: checkList("groups", data.groups.map((g) => [g.id, g.name, g.description]), user.groups),
+      description: "They may use whatever any of their groups allows. With no groups, they can use everything." +
+        (local.length < data.groups.length ? " Active Directory groups aren't listed: AD decides who is in them." : ""),
+      body: checkList("groups", local.map((g) => [g.id, g.name, g.description]), user.groups.filter(isLocal)),
       onSubmit: async ({ groups = [] }) => {
         const now = new Set(groups.map((g) => g.toLowerCase()));
-        const before = new Set(user.groups.map((g) => g.toLowerCase()));
+        const before = new Set(user.groups.filter(isLocal).map((g) => g.toLowerCase()));
         for (const g of now) if (!before.has(g)) await api.put(`groups/${enc(g)}/members/${enc(user.username)}`);
         for (const g of before) if (!now.has(g)) await api.del(`groups/${enc(g)}/members/${enc(user.username)}`);
         await load();

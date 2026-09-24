@@ -17,6 +17,8 @@ public static class AdminGroupsApi
         admin.MapDelete("/groups/{id}", Delete);
         admin.MapGet("/groups/{id}/members", (string id, GroupStore groups) =>
             groups.Get(id) is null ? NotFound(id) : Results.Ok(groups.Members(id)));
+        admin.MapGet("/groups/{id}/membership", (string id, GroupStore groups) =>
+            groups.Get(id) is null ? NotFound(id) : Results.Ok(groups.MembersWithVia(id).Select(m => new GroupMemberDto(m.Username, m.Via))));
         admin.MapPut("/groups/{id}/members/{username}", AddMember);
         admin.MapDelete("/groups/{id}/members/{username}", RemoveMember);
     }

@@ -147,6 +147,9 @@ public sealed record GroupDto(
     string Source = "local",
     QuotaDto? Quota = null);
 
+/// <param name="Via">For Active Directory groups, the nested group they're a member through; null if direct.</param>
+public sealed record GroupMemberDto(string Username, string? Via);
+
 /// <param name="AllQueues">Defaults to true, so a new group doesn't take anything away until it's restricted.</param>
 public sealed record CreateGroupRequest(
     string Id,

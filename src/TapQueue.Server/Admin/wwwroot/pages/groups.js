@@ -26,7 +26,7 @@ export async function render(root, ctx) {
       onRowClick: (g) => open(g.id),
       empty: empty("No groups yet", "Until there are, everyone can print everywhere.", button("Add group", { kind: "primary", onclick: () => edit() })),
       columns: [
-        { label: "Group", value: (g) => [h("span", { class: "cell-strong" }, g.name), h("span", { class: "sub" }, g.description || g.id)] },
+        { label: "Group", value: (g) => [h("span", { class: "cell-strong" }, g.name, " ", g.source === "ad" && pill("AD", "plain")), h("span", { class: "sub" }, g.description || g.id)] },
         { label: "Members", class: "num", value: (g) => g.memberCount },
         { label: "Prints to", value: (g) => allows(g.allQueues, g.queueIds, queueName, "queue") },
         { label: "Releases at", value: (g) => allows(g.allPrinters, g.printerIds, printerName, "printer") },
@@ -39,15 +39,19 @@ export async function render(root, ctx) {
     ctx.setId(id);
     const g = groups.find((x) => x.id.toLowerCase() === String(id).toLowerCase());
     if (!g) return ctx.setId(null);
-    const [members, events] = await Promise.all([api.get(`groups/${enc(g.id)}/members`), api.get(`events?subject=${enc(`group:${g.id}`)}&limit=10`)]);
+    const [membership, events] = await Promise.all([api.get(`groups/${enc(g.id)}/membership`), api.get(`events?subject=${enc(`group:${g.id}`)}&limit=10`)]);
+    const members = membership.map((m) => m.username);
     const refresh = async () => { await load(); open(g.id); };
     const others = users.filter((u) => !members.includes(u.username));
+    const fromAd = g.source === "ad";
 
     drawer({
       title: g.name,
       subtitle: g.id,
       onClose: () => ctx.setId(null),
       body: [
+        fromAd && h("div", { class: "callout info" }, "Synced from Active Directory, which decides its name and members (through nested groups too). What it may use and its page limit are set here. ",
+          h("a", { href: "directory" }, "Sync settings")),
         props([
           g.description && ["Description", g.description],
           ["Prints to", allows(g.allQueues, g.queueIds, queueName, "queue")],
@@ -56,19 +60,20 @@ export async function render(root, ctx) {
         ]),
         sectionTitle(`Members (${members.length})`),
         members.length
-          ? h("div", { class: "panel" }, table({ rows: members, columns: [
-            { label: "User", value: (m) => h("a", { href: `users/${enc(m)}` }, m) },
-            { label: "", class: "num", value: (m) => button("Remove", { small: true, kind: "ghost danger", onclick: async () => {
-              if (await attempt(() => api.del(`groups/${enc(g.id)}/members/${enc(m)}`), `Removed ${m}`) !== undefined) refresh();
+          ? h("div", { class: "panel" }, table({ rows: membership, columns: [
+            { label: "User", value: (m) => h("a", { href: `users/${enc(m.username)}` }, m.username) },
+            fromAd && { label: "Member through", value: (m) => m.via ?? h("span", { class: "muted" }, "Direct") },
+            !fromAd && { label: "", class: "num", value: (m) => button("Remove", { small: true, kind: "ghost danger", onclick: async () => {
+              if (await attempt(() => api.del(`groups/${enc(g.id)}/members/${enc(m.username)}`), `Removed ${m.username}`) !== undefined) refresh();
             } }) },
-          ] }))
+          ].filter(Boolean) }))
           : h("p", { class: "muted", style: "margin:0" }, "Nobody yet."),
-        others.length > 0 && h("div", { style: "margin-top:10px" }, button("Add members", { small: true, iconName: "plus", onclick: () => addMembers(g, others, refresh) })),
+        !fromAd && others.length > 0 && h("div", { style: "margin-top:10px" }, button("Add members", { small: true, iconName: "plus", onclick: () => addMembers(g, others, refresh) })),
         sectionTitle("Changes"),
         activityList(events, { emptyText: "No changes recorded." }),
       ],
       footer: [
-        button("Remove", { kind: "danger", onclick: () => remove(g) }),
+        !fromAd && button("Remove", { kind: "danger", onclick: () => remove(g) }),
         button("Edit", { kind: "primary", onclick: () => edit(g) }),
       ],
     });
@@ -102,8 +107,9 @@ export async function render(root, ctx) {
       submitLabel: adding ? "Add group" : "Save",
       body: [
         adding && field("ID", input("id", { required: true, placeholder: "e.g. staff" }), "Letters, numbers and dashes. Can't change later."),
-        field("Name", input("name", { required: true, value: g?.name ?? "", placeholder: "e.g. Staff" })),
-        field("Description", input("description", { value: g?.description ?? "", placeholder: "Optional" })),
+        field("Name", input("name", { required: true, value: g?.name ?? "", placeholder: "e.g. Staff", readOnly: g?.source === "ad" }),
+          g?.source === "ad" ? "From Active Directory." : null),
+        field("Description", input("description", { value: g?.description ?? "", placeholder: "Optional", readOnly: g?.source === "ad" })),
         sectionTitle("Printing"),
         checkField("Every queue", allQueues, "Including queues added later."),
         queueList,

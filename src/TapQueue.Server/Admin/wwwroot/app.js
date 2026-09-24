@@ -14,6 +14,7 @@ const nav = [
     { id: "users", label: "Users", icon: "users" },
     { id: "groups", label: "Groups", icon: "groups" },
     { id: "cards", label: "Cards", icon: "cards" },
+    { id: "directory", label: "Active Directory", icon: "directory" },
   ] },
   { group: "Fleet", items: [
     { id: "printers", label: "Printers", icon: "printers" },
