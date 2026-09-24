@@ -9,6 +9,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-23
+
 ### Added
 - "Check for updates" in the tray menu: the TapQueue service checks with the server straight
   away and installs the published client if it differs, and the tray app restarts into it or says
@@ -40,6 +42,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 First working version: a tray app configured by a file that signs in, adds the printer, and shows
 and releases held jobs.
 
-[Unreleased]: https://github.com/jthy10/TapQueue/compare/client-v0.2.0...HEAD
+[Unreleased]: https://github.com/jthy10/TapQueue/compare/client-v0.3.0...HEAD
+[0.3.0]: https://github.com/jthy10/TapQueue/compare/client-v0.2.0...client-v0.3.0
 [0.2.0]: https://github.com/jthy10/TapQueue/compare/v0.1.0...client-v0.2.0
 [0.1.0]: https://github.com/jthy10/TapQueue/releases/tag/v0.1.0
