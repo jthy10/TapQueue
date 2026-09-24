@@ -21,7 +21,7 @@ internal static class Program
         if (args.Contains("--service"))
             return MachineService.RunAsync(args.Where(a => a != "--service").ToArray()).GetAwaiter().GetResult();
         if (args.Contains("--remove-printers"))
-            return PrinterSync.RemoveAllAsync().GetAwaiter().GetResult();
+            return PrinterSync.RemoveAllAsync(new PrinterInstaller()).GetAwaiter().GetResult();
         if (Array.IndexOf(args, "--discover") is var discover and >= 0 && discover + 1 < args.Length)
             return DiscoverAsync(args[discover + 1]).GetAwaiter().GetResult();
 

@@ -8,7 +8,7 @@ namespace TapQueue.Client.Windows;
 /// Driver, so no driver has to be installed. The name users see is the queue name set on the server.
 /// Run by the TapQueue service, so the printers are added for every user of the PC.
 /// </summary>
-public static class PrinterInstaller
+public sealed class PrinterInstaller : IPrinterInstaller
 {
     // Values are passed in environment variables, never spliced into the script text.
     private const string InstallScript = """
@@ -42,7 +42,7 @@ public static class PrinterInstaller
         if (Get-Printer -Name $name -ErrorAction SilentlyContinue) { Remove-Printer -Name $name; 'removed' } else { 'not installed' }
         """;
 
-    public static Task<(bool Success, string Output)> EnsureInstalledAsync(string name, Uri ippUrl, bool reinstall) =>
+    public Task<(bool Success, string Output)> EnsureInstalledAsync(string name, Uri ippUrl, bool reinstall) =>
         RunAsync(InstallScript, new()
         {
             ["TQ_PRINTER_NAME"] = name,
@@ -50,7 +50,7 @@ public static class PrinterInstaller
             ["TQ_REINSTALL"] = reinstall ? "1" : "0",
         });
 
-    public static Task<(bool Success, string Output)> RemoveAsync(string name) =>
+    public Task<(bool Success, string Output)> RemoveAsync(string name) =>
         RunAsync(RemoveScript, new() { ["TQ_PRINTER_NAME"] = name });
 
     private static async Task<(bool Success, string Output)> RunAsync(string script, Dictionary<string, string> environment)

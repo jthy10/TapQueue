@@ -2,14 +2,14 @@ using Microsoft.Extensions.Logging;
 using System.Security.Cryptography;
 using TapQueue.Shared.Api;
 
-namespace TapQueue.Client.Windows;
+namespace TapQueue.Client;
 
 /// <summary>
-/// Installs the client build the server says every PC should run. Run by the TapQueue service,
-/// which can write to Program Files. If TapQueueClient.exe's SHA-256 differs from the server's
-/// build, it downloads the build next to it, verifies it and swaps the files (Windows allows
-/// renaming a running exe). Tray apps notice their exe changed and restart themselves
-/// (<see cref="TrayApp"/>); the service restarts itself.
+/// Installs the client build the server says every PC of this platform should run. Run by the
+/// TapQueue service, which can write to where the client is installed (Program Files, /opt). If
+/// the running program's SHA-256 differs from the server's build, it downloads the build next to
+/// it, verifies it and swaps the files (both Windows and Linux allow renaming a running program).
+/// Tray apps notice their program changed and restart themselves; the service restarts itself.
 /// </summary>
 public sealed class ClientUpdater(HttpClient http, ILogger logger)
 {
@@ -20,7 +20,7 @@ public sealed class ClientUpdater(HttpClient http, ILogger logger)
     /// <summary>Why installing the server's build failed, reported to the server until an install works.</summary>
     public string? LastError { get; private set; }
 
-    /// <summary>The SHA-256 of the running TapQueueClient.exe, so the server can tell whether this PC is up to date.</summary>
+    /// <summary>The SHA-256 of the running program, so the server can tell whether this PC is up to date.</summary>
     public async Task<string> OwnSha256Async(CancellationToken ct) => _ownSha256 ??= await HashFileAsync(_exePath, ct);
 
     /// <summary>An admin asked for an update now: try the build again even if it failed before.</summary>
@@ -69,6 +69,9 @@ public sealed class ClientUpdater(HttpClient http, ILogger logger)
             response.EnsureSuccessStatusCode();
             await response.Content.CopyToAsync(file, ct);
         }
+
+        if (!OperatingSystem.IsWindows())
+            File.SetUnixFileMode(NewExePath, File.GetUnixFileMode(_exePath));
 
         var sha256 = await HashFileAsync(NewExePath, ct);
         if (!string.Equals(sha256, build.Sha256, StringComparison.OrdinalIgnoreCase))

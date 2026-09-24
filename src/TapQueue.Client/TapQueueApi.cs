@@ -3,7 +3,7 @@ using System.Net.Http.Json;
 using TapQueue.Shared;
 using TapQueue.Shared.Api;
 
-namespace TapQueue.Client.Windows;
+namespace TapQueue.Client;
 
 /// <summary>Talks to the TapQueue server, signing in again automatically if the session lapses.</summary>
 public sealed class TapQueueApi(ClientConfig config) : IDisposable
@@ -23,7 +23,8 @@ public sealed class TapQueueApi(ClientConfig config) : IDisposable
             string.IsNullOrWhiteSpace(config.Token) ? null : config.Token.Trim(),
             Environment.UserName,
             Environment.MachineName,
-            TapQueueVersion.Current);
+            TapQueueVersion.Current,
+            ClientPlatform.Current);
 
         using var response = await _http.PostAsJsonAsync("api/v1/client/session", request, TapQueueJson.Options, ct);
         await EnsureSuccessAsync(response, ct);

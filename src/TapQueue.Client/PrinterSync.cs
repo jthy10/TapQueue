@@ -1,16 +1,28 @@
 using Microsoft.Extensions.Logging;
 using TapQueue.Shared.Api;
 
-namespace TapQueue.Client.Windows;
+namespace TapQueue.Client;
+
+/// <summary>
+/// Adds and removes the PC's printers: on Windows with PowerShell's printer cmdlets, on Linux with
+/// CUPS. <paramref name="name"/> is the queue name users see.
+/// </summary>
+public interface IPrinterInstaller
+{
+    /// <summary>Adds the printer, or with <paramref name="reinstall"/> replaces one of that name.</summary>
+    Task<(bool Success, string Output)> EnsureInstalledAsync(string name, Uri ippUrl, bool reinstall);
+
+    Task<(bool Success, string Output)> RemoveAsync(string name);
+}
 
 /// <summary>
 /// Keeps this PC's TapQueue printers matching the server's queues. Remembers what it added in
-/// %ProgramData%\TapQueue\printers.txt, so renamed or removed queues are cleaned up, and so the
-/// uninstaller can remove them (<c>TapQueueClient.exe --remove-printers</c>).
+/// printers.txt in <see cref="ClientConfig.StateDirectory"/>, so renamed or removed queues are
+/// cleaned up, and so the uninstaller can remove them (<c>--remove-printers</c>).
 /// </summary>
-public sealed class PrinterSync(ILogger logger)
+public sealed class PrinterSync(IPrinterInstaller installer, ILogger logger)
 {
-    private static readonly string StatePath = Path.Combine(ClientConfig.MachineDirectory, "printers.txt");
+    private static readonly string StatePath = Path.Combine(ClientConfig.StateDirectory, "printers.txt");
 
     private Dictionary<string, string>? _applied;
 
@@ -25,7 +37,7 @@ public sealed class PrinterSync(ILogger logger)
         var ok = true;
         foreach (var (name, _) in installed.Where(p => !wanted.ContainsKey(p.Key)).ToList())
         {
-            var (success, output) = await PrinterInstaller.RemoveAsync(name);
+            var (success, output) = await installer.RemoveAsync(name);
             Log(success, $"Removing printer \"{name}\"", output);
             if (success) installed.Remove(name);
             ok &= success;
@@ -33,7 +45,7 @@ public sealed class PrinterSync(ILogger logger)
         foreach (var (name, url) in wanted)
         {
             var moved = installed.TryGetValue(name, out var previous) && previous != url;
-            var (success, output) = await PrinterInstaller.EnsureInstalledAsync(name, new Uri(url), reinstall: moved);
+            var (success, output) = await installer.EnsureInstalledAsync(name, new Uri(url), reinstall: moved);
             Log(success, $"Adding printer \"{name}\" ({url})", output);
             if (success) installed[name] = url;
             ok &= success;
@@ -43,12 +55,12 @@ public sealed class PrinterSync(ILogger logger)
     }
 
     /// <summary>Removes every printer this PC's TapQueue service added. Used when uninstalling.</summary>
-    public static async Task<int> RemoveAllAsync()
+    public static async Task<int> RemoveAllAsync(IPrinterInstaller installer)
     {
         var failures = 0;
         foreach (var name in Load().Keys)
         {
-            var (success, _) = await PrinterInstaller.RemoveAsync(name);
+            var (success, _) = await installer.RemoveAsync(name);
             if (!success) failures++;
         }
         File.Delete(StatePath);
@@ -82,7 +94,7 @@ public sealed class PrinterSync(ILogger logger)
 
     private static void Save(Dictionary<string, string> printers)
     {
-        Directory.CreateDirectory(ClientConfig.MachineDirectory);
+        Directory.CreateDirectory(ClientConfig.StateDirectory);
         File.WriteAllLines(StatePath, printers.Select(p => $"{p.Key}\t{p.Value}"));
     }
 }

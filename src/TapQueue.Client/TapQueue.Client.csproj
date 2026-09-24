@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- What the Windows and Linux clients share: talking to the server, the check-in loop of the
+       machine service, installing updates and keeping printers in step. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Version>$(TapQueueClientVersion)</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TapQueue.Shared\TapQueue.Shared.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.12" />
+  </ItemGroup>
+
+</Project>
