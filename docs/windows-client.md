@@ -41,6 +41,18 @@ TapQueue_client_X.Y.Z.exe /VERYSILENT /SERVER=http://tapqueue-server:8631
 Without `/SERVER`, a first install uses the TapQueue server it finds on the network, and fails
 (nothing is installed) if it finds none or more than one. Upgrades keep the server already set.
 
+Or from PowerShell run as administrator, which downloads the newest release, checks its
+checksum and installs it silently:
+
+```powershell
+irm https://raw.githubusercontent.com/jthy10/TapQueue/main/install.ps1 | iex
+```
+
+Set `$env:TAPQUEUE_SERVER = "http://tapqueue-server:8631"` first to name the server. Run the same
+command to repair a PC that stopped checking in or is stuck on an old version: it first prints the
+service's state, the installed version, the server address and whether the server answers, then
+reinstalls over what's there and starts the service and tray again.
+
 To remove TapQueue, uninstall it from Settings → Apps. That also removes the printers and the
 service. `client.toml` is kept, so reinstalling remembers the server.
 

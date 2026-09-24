@@ -10,6 +10,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Added
+- `install.ps1`: install, upgrade or repair the Windows client from PowerShell
+  (`irm https://raw.githubusercontent.com/jthy10/TapQueue/main/install.ps1 | iex`), with a
+  report of what state the client was in first.
+
 ## [0.6.0] - 2026-09-24
 
 ### Added
