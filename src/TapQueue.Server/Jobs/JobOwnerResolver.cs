@@ -1,3 +1,4 @@
+using TapQueue.Server.ActiveDirectory;
 using TapQueue.Server.Config;
 using TapQueue.Server.Data;
 
@@ -9,9 +10,10 @@ namespace TapQueue.Server.Jobs;
 /// The requesting-user-name that Windows puts in an IPP job is just a string and can't be trusted,
 /// so the primary signal is a signed-in user client on the machine the job came from. The
 /// username is only used to pick between several sessions on one machine (e.g. a terminal
-/// server), or, in dev mode, as a fallback when no client is running.
+/// server), or, in dev mode, as a fallback when no client is running. Not with domain sign-in,
+/// where the PC's user name says nothing about who signed in to TapQueue.
 /// </summary>
-public sealed class JobOwnerResolver(SessionStore sessions, UserStore users, ServerConfig config, ServerSettings settings)
+public sealed class JobOwnerResolver(SessionStore sessions, UserStore users, ServerConfig config, ServerSettings settings, DirectoryStore directory)
 {
     public (long? UserId, string? OwnerHint) Resolve(string sourceIp, string? requestingUserName)
     {
@@ -29,7 +31,7 @@ public sealed class JobOwnerResolver(SessionStore sessions, UserStore users, Ser
                 return (match.UserId, windowsUser);
         }
 
-        if (config.Auth.Mode == "dev" && windowsUser is not null && users.FindByUsername(windowsUser) is { } user)
+        if (config.Auth.Mode == "dev" && windowsUser is not null && !directory.Config().DomainSignIn && users.FindByUsername(windowsUser) is { } user)
             return (user.Id, windowsUser);
 
         return (null, windowsUser);

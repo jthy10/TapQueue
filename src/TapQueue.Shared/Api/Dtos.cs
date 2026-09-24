@@ -272,24 +272,47 @@ public sealed record JobDto(
     string? FormerOwner = null,
     int? Pages = null);
 
+/// <summary>How people sign in to the tray app, set with the Active Directory settings.</summary>
+public static class ClientSignIn
+{
+    /// <summary>As the person signed in to the PC, without asking. The default.</summary>
+    public const string Pc = "pc";
+    /// <summary>With their domain account's name and password, from the tray's "Sign in as…". Remembered until they sign out.</summary>
+    public const string Domain = "domain";
+
+    public static readonly string[] All = [Pc, Domain];
+}
+
+/// <summary>What the tray app asks before signing in: whether it needs a domain account (<see cref="ClientSignIn"/>).</summary>
+public sealed record ClientSignInInfoDto(string Mode);
+
 /// <summary>Sent by the user client when it starts, and again whenever its session expires.</summary>
 /// <param name="WindowsUser">The user signed in to the PC (Windows or Linux).</param>
 /// <param name="Platform">A <see cref="ClientPlatform"/>; clients older than 0.5 don't send it (they're all Windows).</param>
+/// <param name="Password">With <see cref="ClientSignIn.Domain"/>: the domain account's password, checked against AD. Never stored.</param>
+/// <param name="RememberToken">With <see cref="ClientSignIn.Domain"/>: the token a password sign-in handed out, instead of the password.</param>
 public sealed record ClientSessionRequest(
     string Username,
     string? Token,
     string? WindowsUser,
     string? Hostname,
     string? ClientVersion,
-    string? Platform = null);
+    string? Platform = null,
+    string? Password = null,
+    string? RememberToken = null);
 
+/// <param name="RememberToken">After a password sign-in: keep this and sign in with it until the person signs out.</param>
 public sealed record ClientSessionResponse(
     string SessionToken,
     UserDto User,
     IReadOnlyList<QueueDto> Queues,
     IReadOnlyList<PrinterDto> Printers,
     int HeartbeatSeconds,
-    ClientBuildDto? ClientBuild = null);
+    ClientBuildDto? ClientBuild = null,
+    string? RememberToken = null);
+
+/// <summary>Signing out from the tray: ends the session and forgets <paramref name="RememberToken"/> on the server.</summary>
+public sealed record ClientSignOutRequest(string? RememberToken);
 
 /// <summary>
 /// The client build every PC of a <see cref="Platform"/> should be running. A PC whose own program
@@ -534,6 +557,7 @@ public static class CrashProgram
 /// <param name="BadgeAttribute">The user attribute with their card number (like employeeNumber); empty to manage cards in TapQueue.</param>
 /// <param name="SyncTime">When the daily sync runs, HH:mm in the server's time zone.</param>
 /// <param name="MaxDisablePercent">A sync that would disable more than this share of AD users stops instead, in case AD or the scope is wrong.</param>
+/// <param name="ClientSignIn">How people sign in to the tray app: <see cref="Api.ClientSignIn"/>.</param>
 public sealed record DirectoryConfigDto(
     bool Enabled,
     string Host,
@@ -543,7 +567,8 @@ public sealed record DirectoryConfigDto(
     string CaCertificate,
     string BadgeAttribute,
     string SyncTime,
-    int MaxDisablePercent);
+    int MaxDisablePercent,
+    string ClientSignIn = Api.ClientSignIn.Pc);
 
 /// <summary>Fields left null are unchanged. An empty password is ignored, so the console can leave it blank.</summary>
 public sealed record UpdateDirectoryConfigRequest(
@@ -555,7 +580,8 @@ public sealed record UpdateDirectoryConfigRequest(
     string? CaCertificate = null,
     string? BadgeAttribute = null,
     string? SyncTime = null,
-    int? MaxDisablePercent = null);
+    int? MaxDisablePercent = null,
+    string? ClientSignIn = null);
 
 /// <summary>What the sync pulls users from.</summary>
 public static class DirectoryScopeKind

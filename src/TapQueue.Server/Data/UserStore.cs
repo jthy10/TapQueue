@@ -63,14 +63,18 @@ public sealed class UserStore(Database database)
         database.QueryOne($"UPDATE users SET display_name = $d WHERE id = $id RETURNING {Columns}", Map, ("$d", displayName), ("$id", userId));
 
     /// <summary>
-    /// Disabling also signs the user out everywhere, so their PCs stop matching new jobs to them.
+    /// Disabling also signs the user out everywhere (and forgets remembered domain sign-ins), so their PCs
+    /// stop matching new jobs to them.
     /// <paramref name="by"/> is one of <see cref="DisabledBy"/>, and <paramref name="directoryState"/> why
     /// the directory disabled them; both are cleared when they're enabled.
     /// </summary>
     public UserRecord? SetDisabled(long userId, bool disabled, string by = Data.DisabledBy.Admin, string? directoryState = null)
     {
         if (disabled)
+        {
             database.Execute("DELETE FROM sessions WHERE user_id = $id", ("$id", userId));
+            database.Execute("DELETE FROM client_logins WHERE user_id = $id", ("$id", userId));
+        }
         return database.QueryOne($"""
             UPDATE users SET disabled_at = CASE WHEN $disabled THEN COALESCE(disabled_at, $now) END,
                              disabled_by = CASE WHEN $disabled THEN $by END,

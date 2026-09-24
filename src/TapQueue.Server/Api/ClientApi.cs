@@ -1,3 +1,4 @@
+using TapQueue.Server.ActiveDirectory;
 using TapQueue.Server.Config;
 using TapQueue.Server.Data;
 using TapQueue.Server.Jobs;
@@ -14,6 +15,8 @@ public static class ClientApi
 
     public static void MapClientApi(this IEndpointRouteBuilder app)
     {
+        // Whether the tray signs in as the PC's user or asks for a domain account.
+        app.MapGet("/api/v1/client/sign-in", (DirectoryStore directory) => new ClientSignInInfoDto(directory.Config().ClientSignIn));
         app.MapPost("/api/v1/client/session", CreateSession);
         // For the TapQueue service on each PC, which runs as the machine rather than a user.
         // Queue names and client builds are not secret: anyone who can reach the server can print to it.
@@ -33,45 +36,109 @@ public static class ClientApi
             printers.All.Where(p => access.CanReleaseAt(CurrentUser(http).Id, p.Id)).Select(printers.ToDto));
         me.MapGet("/me/jobs", (HttpContext http, JobStore jobs, bool? all) =>
             jobs.ListForUser(CurrentUser(http).Id, heldOnly: all != true).Select(j => j.ToDto()));
+        me.MapPost("/client/sign-out", SignOut);
         me.MapDelete("/me/jobs/{id:long}", CancelJob);
         me.MapPost("/me/release", Release);
     }
 
-    private static IResult CreateSession(ClientSessionRequest request, HttpContext http, ServerConfig config, EventLog events, AccessPolicy access,
-        UserStore users, SessionStore sessions, QueueStore queues, PrinterRegistry printers, ClientBuildStore builds, ILoggerFactory loggers)
+    private static async Task<IResult> CreateSession(ClientSessionRequest request, HttpContext http, ServerConfig config, EventLog events, AccessPolicy access,
+        UserStore users, SessionStore sessions, ClientLoginStore logins, DirectoryStore directory, IDirectorySourceFactory ad,
+        QueueStore queues, PrinterRegistry printers, ClientBuildStore builds, ILoggerFactory loggers)
     {
         var logger = loggers.CreateLogger("TapQueue.Server.Api.ClientApi");
         var username = request.Username?.Trim();
         if (string.IsNullOrEmpty(username))
             return Results.BadRequest(new ErrorResponse("username is required"));
+        var pc = request.Hostname ?? http.ClientIp();
 
-        var user = users.FindByUsername(username);
-        if (config.Auth.Mode == "dev")
+        UserRecord? user;
+        long? loginId = null;
+        var rememberAfterSignIn = false;
+        var how = "";
+        var domain = directory.Config();
+        if (domain.DomainSignIn)
         {
-            user ??= users.Create(username, username, tokenHash: null);
+            if (!string.IsNullOrEmpty(request.RememberToken))
+            {
+                var login = logins.Use(Tokens.Hash(request.RememberToken));
+                user = login is null ? null : users.FindById(login.UserId);
+                if (user is null)
+                    return Results.Json(new ErrorResponse("Your TapQueue sign-in has ended. Sign in again with your domain account."), statusCode: StatusCodes.Status401Unauthorized);
+                loginId = login!.Id;
+                how = " (remembered domain sign-in)";
+            }
+            else if (!string.IsNullOrEmpty(request.Password))
+            {
+                DirectoryEntry? entry;
+                try
+                {
+                    entry = await Task.Run(() => ad.Authenticate(domain, username, request.Password), http.RequestAborted);
+                }
+                catch (DirectoryException ex)
+                {
+                    logger.LogWarning("Couldn't check {User}'s domain password from {Host}: {Error}", username, pc, ex.Message);
+                    return Results.Json(new ErrorResponse("TapQueue can't reach your domain controller to check your password. Try again in a minute."),
+                        statusCode: StatusCodes.Status503ServiceUnavailable);
+                }
+                if (entry is null)
+                {
+                    logger.LogWarning("Rejected domain sign-in for \"{User}\" from {Ip}", username, http.ClientIp());
+                    events.Record(EventCategory.SignIn, username, null, $"Domain sign-in as {username} on {pc} rejected: wrong name or password, or the account is disabled in AD.");
+                    return Results.Json(new ErrorResponse("Wrong username or password."), statusCode: StatusCodes.Status401Unauthorized);
+                }
+                user = users.FindByExternalId(UserSource.ActiveDirectory, entry.Guid);
+                if (user is null)
+                {
+                    events.Record(EventCategory.SignIn, entry.SamAccountName ?? username, null,
+                        $"{entry.SamAccountName ?? username} signed in to the domain on {pc}, but isn't a TapQueue user (not in the Active Directory sync's scope).");
+                    return Results.Json(new ErrorResponse($"{entry.SamAccountName ?? username} isn't set up to print with TapQueue. Ask your IT team."),
+                        statusCode: StatusCodes.Status403Forbidden);
+                }
+                rememberAfterSignIn = true;
+                how = " with their domain password";
+            }
+            else
+            {
+                return Results.Json(new ErrorResponse("Sign in with your domain account."), statusCode: StatusCodes.Status401Unauthorized);
+            }
         }
-        else if (user?.TokenHash is null || string.IsNullOrEmpty(request.Token) ||
-                 !Tokens.FixedTimeEquals(user.TokenHash, Tokens.Hash(request.Token)))
+        else
         {
-            logger.LogWarning("Rejected sign-in for \"{User}\" from {Ip}", username, http.ClientIp());
-            events.Record(EventCategory.SignIn, username, EventLog.User(username), $"Sign-in as {username} from {request.Hostname ?? http.ClientIp()} rejected: unknown user or wrong token.");
-            return Results.Json(new ErrorResponse("Unknown user or wrong token."), statusCode: StatusCodes.Status401Unauthorized);
+            user = users.FindByUsername(username);
+            if (config.Auth.Mode == "dev")
+            {
+                user ??= users.Create(username, username, tokenHash: null);
+            }
+            else if (user?.TokenHash is null || string.IsNullOrEmpty(request.Token) ||
+                     !Tokens.FixedTimeEquals(user.TokenHash, Tokens.Hash(request.Token)))
+            {
+                logger.LogWarning("Rejected sign-in for \"{User}\" from {Ip}", username, http.ClientIp());
+                events.Record(EventCategory.SignIn, username, EventLog.User(username), $"Sign-in as {username} from {pc} rejected: unknown user or wrong token.");
+                return Results.Json(new ErrorResponse("Unknown user or wrong token."), statusCode: StatusCodes.Status401Unauthorized);
+            }
         }
 
         if (user.Disabled)
         {
             logger.LogWarning("Rejected sign-in for disabled user \"{User}\" from {Ip}", user.Username, http.ClientIp());
-            events.Record(EventCategory.SignIn, user.Username, EventLog.User(user.Username), $"{user.Username} tried to sign in on {request.Hostname ?? http.ClientIp()}, but their account is disabled.");
+            events.Record(EventCategory.SignIn, user.Username, EventLog.User(user.Username), $"{user.Username} tried to sign in on {pc}, but their account is disabled.");
             return Results.Json(new ErrorResponse("Your TapQueue account is disabled. Ask an admin."), statusCode: StatusCodes.Status403Forbidden);
+        }
+
+        string? rememberToken = null;
+        if (rememberAfterSignIn)
+        {
+            rememberToken = Tokens.New();
+            loginId = logins.Create(Tokens.Hash(rememberToken), user.Id, request.WindowsUser, request.Hostname);
         }
 
         var system = ClientPlatform.DisplayName(ClientPlatform.Parse(request.Platform) ?? ClientPlatform.Windows);
         var token = Tokens.New();
-        sessions.Create(Tokens.Hash(token), user.Id, request.WindowsUser, request.Hostname, http.ClientIp(), request.ClientVersion);
+        sessions.Create(Tokens.Hash(token), user.Id, request.WindowsUser, request.Hostname, http.ClientIp(), request.ClientVersion, loginId);
         events.Record(EventCategory.SignIn, user.Username, EventLog.User(user.Username),
-            $"{user.Username} signed in on {request.Hostname ?? "an unknown PC"} ({http.ClientIp()}) as {system} user {request.WindowsUser ?? "?"}.");
-        logger.LogInformation("{User} signed in from {Host} ({Ip}) as {System} user {PcUser}, client {Version}",
-            user.Username, request.Hostname, http.ClientIp(), system, request.WindowsUser, request.ClientVersion ?? "unknown");
+            $"{user.Username} signed in on {request.Hostname ?? "an unknown PC"} ({http.ClientIp()}) as {system} user {request.WindowsUser ?? "?"}{how}.");
+        logger.LogInformation("{User} signed in from {Host} ({Ip}) as {System} user {PcUser}{How}, client {Version}",
+            user.Username, request.Hostname, http.ClientIp(), system, request.WindowsUser, how, request.ClientVersion ?? "unknown");
 
         return Results.Ok(new ClientSessionResponse(
             token,
@@ -80,7 +147,22 @@ public static class ClientApi
             queues.List().Where(q => access.CanPrintTo(user.Id, q.Id)).Select(ToDto).ToList(),
             printers.All.Where(p => access.CanReleaseAt(user.Id, p.Id)).Select(printers.ToDto).ToList(),
             HeartbeatSeconds,
-            builds.Latest(ClientPlatform.Parse(request.Platform) ?? ClientPlatform.Windows)?.ToDto()));
+            builds.Latest(ClientPlatform.Parse(request.Platform) ?? ClientPlatform.Windows)?.ToDto(),
+            rememberToken));
+    }
+
+    /// <summary>"Sign out" in the tray: ends the session, and forgets the remembered domain sign-in so it needs the password again.</summary>
+    private static IResult SignOut(ClientSignOutRequest request, HttpContext http, SessionStore sessions, ClientLoginStore logins, EventLog events)
+    {
+        var user = CurrentUser(http);
+        var session = (SessionRecord)http.Items[nameof(SessionRecord)]!;
+        sessions.End(session.Id);
+        if (session.LoginId is { } loginId)
+            logins.Forget(loginId);
+        if (!string.IsNullOrEmpty(request.RememberToken))
+            logins.Forget(Tokens.Hash(request.RememberToken));
+        events.Record(EventCategory.SignIn, user.Username, EventLog.User(user.Username), $"{user.Username} signed out on {session.Hostname ?? http.ClientIp()}.");
+        return Results.NoContent();
     }
 
     private static IResult CheckIn(ClientSetupRequest request, HttpContext http, QueueStore queues, ClientBuildStore builds, WorkstationStore workstations)

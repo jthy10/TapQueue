@@ -3,7 +3,8 @@ using TapQueue.Shared.Api;
 
 namespace TapQueue.Server.Data;
 
-public sealed record SessionRecord(long Id, long UserId, string? WindowsUser, string? Hostname, string RemoteIp);
+/// <param name="LoginId">The remembered domain sign-in it came from (<see cref="ClientLoginStore"/>), if any.</param>
+public sealed record SessionRecord(long Id, long UserId, string? WindowsUser, string? Hostname, string RemoteIp, long? LoginId = null);
 
 /// <summary>
 /// A session is a signed-in user client. Sessions are how the server knows which TapQueue user
@@ -11,15 +12,16 @@ public sealed record SessionRecord(long Id, long UserId, string? WindowsUser, st
 /// </summary>
 public sealed class SessionStore(Database database)
 {
-    private const string Columns = "id, user_id, windows_user, hostname, remote_ip";
+    private const string Columns = "id, user_id, windows_user, hostname, remote_ip, login_id";
 
-    public void Create(string tokenHash, long userId, string? windowsUser, string? hostname, string remoteIp, string? clientVersion = null) =>
+    public void Create(string tokenHash, long userId, string? windowsUser, string? hostname, string remoteIp, string? clientVersion = null,
+        long? loginId = null) =>
         database.Execute("""
-            INSERT INTO sessions (token_hash, user_id, windows_user, hostname, remote_ip, client_version, created_at, last_seen_at)
-            VALUES ($t, $u, $w, $h, $ip, $v, $now, $now)
+            INSERT INTO sessions (token_hash, user_id, windows_user, hostname, remote_ip, client_version, created_at, last_seen_at, login_id)
+            VALUES ($t, $u, $w, $h, $ip, $v, $now, $now, $login)
             """,
             ("$t", tokenHash), ("$u", userId), ("$w", windowsUser), ("$h", hostname), ("$ip", remoteIp), ("$v", clientVersion),
-            ("$now", DateTimeOffset.UtcNow));
+            ("$now", DateTimeOffset.UtcNow), ("$login", loginId));
 
     /// <summary>Looks up a live session by token and marks it as seen from <paramref name="remoteIp"/>.</summary>
     public SessionRecord? Touch(string tokenHash, string remoteIp, TimeSpan timeout)
@@ -44,6 +46,9 @@ public sealed class SessionStore(Database database)
         database.QueryOne($"UPDATE sessions SET signed_out_at = $now WHERE id = $id AND signed_out_at IS NULL RETURNING {Columns}",
             Map, ("$now", DateTimeOffset.UtcNow), ("$id", id));
 
+    /// <summary>Removes a session the client itself signed out of.</summary>
+    public void End(long id) => database.Execute("DELETE FROM sessions WHERE id = $id", ("$id", id));
+
     public List<SessionRecord> ActiveForIp(string remoteIp, TimeSpan timeout) =>
         database.Query($"SELECT {Columns} FROM sessions WHERE remote_ip = $ip AND last_seen_at >= $cutoff AND signed_out_at IS NULL", Map,
             ("$ip", remoteIp), ("$cutoff", DateTimeOffset.UtcNow - timeout));
@@ -62,5 +67,5 @@ public sealed class SessionStore(Database database)
         database.Execute("DELETE FROM sessions WHERE last_seen_at < $cutoff", ("$cutoff", DateTimeOffset.UtcNow - timeout));
 
     private static SessionRecord Map(SqliteDataReader r) =>
-        new(r.GetInt64(0), r.GetInt64(1), r.GetStringOrNull(2), r.GetStringOrNull(3), r.GetString(4));
+        new(r.GetInt64(0), r.GetInt64(1), r.GetStringOrNull(2), r.GetStringOrNull(3), r.GetString(4), r.IsDBNull(5) ? null : r.GetInt64(5));
 }

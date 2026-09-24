@@ -52,6 +52,7 @@ public static class ServerApp
         builder.Services.AddSingleton<UserLifecycle>();
         builder.Services.AddSingleton<UserImport>();
         builder.Services.AddSingleton<SessionStore>();
+        builder.Services.AddSingleton<ClientLoginStore>();
         builder.Services.AddSingleton<BadgeStore>();
         builder.Services.AddSingleton<StationStore>();
         builder.Services.AddSingleton<WorkstationStore>();

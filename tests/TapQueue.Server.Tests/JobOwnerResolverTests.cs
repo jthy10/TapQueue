@@ -1,3 +1,4 @@
+using TapQueue.Server.ActiveDirectory;
 using TapQueue.Server.Config;
 using TapQueue.Server.Data;
 using TapQueue.Server.Jobs;
@@ -10,6 +11,7 @@ public sealed class JobOwnerResolverTests : IDisposable
     private readonly UserStore _users;
     private readonly SessionStore _sessions;
     private readonly ServerSettings _settings;
+    private readonly DirectoryStore _directory;
     private readonly ServerConfig _config = new();
 
     public JobOwnerResolverTests()
@@ -19,9 +21,10 @@ public sealed class JobOwnerResolverTests : IDisposable
         _users = new UserStore(db);
         _sessions = new SessionStore(db);
         _settings = new ServerSettings(db, _config);
+        _directory = new DirectoryStore(db);
     }
 
-    private JobOwnerResolver Resolver => new(_sessions, _users, _config, _settings);
+    private JobOwnerResolver Resolver => new(_sessions, _users, _config, _settings, _directory);
 
     [Theory]
     [InlineData(@"CORP\jake", "jake")]
@@ -70,6 +73,15 @@ public sealed class JobOwnerResolverTests : IDisposable
         _config.Auth.Mode = "dev";
         var jake = _users.Create("jake", "Jake", null);
         Assert.Equal(jake.Id, Resolver.Resolve("10.0.0.70", "JAKE").UserId);
+    }
+
+    [Fact]
+    public void DomainSignInHasNoIppUsernameFallback()
+    {
+        _config.Auth.Mode = "dev";
+        _directory.SaveConfig(new DirectoryConfig(ClientSignIn: Shared.Api.ClientSignIn.Domain));
+        _users.Create("jake", "Jake", null);
+        Assert.Null(Resolver.Resolve("10.0.0.70", "jake").UserId);
     }
 
     public void Dispose()

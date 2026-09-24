@@ -369,6 +369,23 @@ public sealed class Database
                 error        TEXT
             );
         """,
+
+        // 13: Domain sign-in on the tray (ClientSignIn.Domain). A password sign-in leaves a remembered
+        // login the tray signs in with until the person signs out; sessions say which login they came from
+        // so an admin signing a PC out also forgets its login.
+        """
+            CREATE TABLE client_logins (
+                id            INTEGER PRIMARY KEY,
+                token_hash    TEXT NOT NULL UNIQUE,
+                user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                windows_user  TEXT,
+                hostname      TEXT,
+                created_at    TEXT NOT NULL,
+                last_used_at  TEXT NOT NULL
+            );
+            CREATE INDEX ix_client_logins_user ON client_logins(user_id);
+            ALTER TABLE sessions ADD COLUMN login_id INTEGER REFERENCES client_logins(id) ON DELETE SET NULL;
+        """,
     ];
 
     public void Migrate()

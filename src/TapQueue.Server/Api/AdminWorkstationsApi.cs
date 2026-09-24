@@ -59,10 +59,13 @@ public static class AdminWorkstationsApi
         return Results.Accepted();
     }
 
-    private static IResult SignOut(long id, SessionStore sessions, UserStore users, EventLog events, ILoggerFactory loggers)
+    private static IResult SignOut(long id, SessionStore sessions, ClientLoginStore logins, UserStore users, EventLog events, ILoggerFactory loggers)
     {
         if (sessions.SignOut(id) is not { } session)
             return Results.NotFound(new ErrorResponse("That session has already ended."));
+        // A remembered domain sign-in would otherwise sign straight back in; they type their password again.
+        if (session.LoginId is { } loginId)
+            logins.Forget(loginId);
         var username = users.FindById(session.UserId)?.Username ?? "(deleted user)";
         var pc = session.Hostname ?? session.RemoteIp;
         loggers.CreateLogger("TapQueue.Server.Api.AdminWorkstationsApi").LogInformation("Admin signed {User} out on {Host}", username, pc);

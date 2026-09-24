@@ -34,6 +34,8 @@ public static class AdminDirectoryApi
             return Results.BadRequest(new ErrorResponse("maxDisablePercent must be 1 to 100."));
         if (request.BadgeAttribute is { } attribute && !attribute.Trim().All(c => char.IsAsciiLetterOrDigit(c) || c == '-'))
             return Results.BadRequest(new ErrorResponse("badgeAttribute must be an attribute name, like employeeNumber."));
+        if (request.ClientSignIn is { } signIn && !ClientSignIn.All.Contains(signIn))
+            return Results.BadRequest(new ErrorResponse($"clientSignIn must be one of: {string.Join(", ", ClientSignIn.All)}."));
         if (request.CaCertificate is { Length: > 0 } pem && !pem.Contains("-----BEGIN CERTIFICATE-----"))
             return Results.BadRequest(new ErrorResponse("caCertificate must be a PEM certificate (-----BEGIN CERTIFICATE-----)."));
 
@@ -49,9 +51,12 @@ public static class AdminDirectoryApi
             BadgeAttribute = request.BadgeAttribute?.Trim() ?? old.BadgeAttribute,
             SyncTime = request.SyncTime ?? old.SyncTime,
             MaxDisablePercent = request.MaxDisablePercent ?? old.MaxDisablePercent,
+            ClientSignIn = request.ClientSignIn ?? old.ClientSignIn,
         };
         if (config == old)
             return Results.Ok(Status(store, sync, schedule));
+        if (config.DomainSignIn && (config.Host.Length == 0 || config.BindDn.Length == 0 || config.Password.Length == 0))
+            return Results.BadRequest(new ErrorResponse("Set the domain controller and bind account before asking people to sign in with their domain account."));
 
         store.SaveConfig(config);
         schedule.Reschedule();
@@ -64,7 +69,9 @@ public static class AdminDirectoryApi
         if (config.CaCertificate != old.CaCertificate) changes.Add(config.CaCertificate.Length == 0 ? "trusts the server's CAs" : "new CA certificate");
         if (config.BadgeAttribute != old.BadgeAttribute) changes.Add(config.BadgeAttribute.Length == 0 ? "cards managed in TapQueue" : $"cards from {config.BadgeAttribute}");
         if (config.MaxDisablePercent != old.MaxDisablePercent) changes.Add($"stops before disabling more than {config.MaxDisablePercent}%");
-        events.Admin(null, $"Active Directory sync settings: {string.Join("; ", changes)}.");
+        if (config.ClientSignIn != old.ClientSignIn)
+            changes.Add(config.DomainSignIn ? "tray sign-in with a domain account" : "tray signs in as the PC's user");
+        events.Admin(null, $"Active Directory settings: {string.Join("; ", changes)}.");
         return Results.Ok(Status(store, sync, schedule));
     }
 

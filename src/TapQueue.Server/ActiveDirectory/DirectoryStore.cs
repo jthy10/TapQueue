@@ -16,6 +16,7 @@ namespace TapQueue.Server.ActiveDirectory;
 /// <param name="BadgeAttribute">The user attribute holding their card number (like employeeNumber); empty to leave cards to TapQueue.</param>
 /// <param name="SyncTime">When the daily sync runs, HH:mm in the server's time zone.</param>
 /// <param name="MaxDisablePercent">A sync that would disable more than this share of AD users stops instead.</param>
+/// <param name="ClientSignIn">How people sign in to the tray app (<see cref="Shared.Api.ClientSignIn"/>). Works whether or not the daily sync is on.</param>
 public sealed record DirectoryConfig(
     bool Enabled = false,
     string Host = "",
@@ -25,10 +26,14 @@ public sealed record DirectoryConfig(
     string CaCertificate = "",
     string BadgeAttribute = "",
     string SyncTime = "01:00",
-    int MaxDisablePercent = 20)
+    int MaxDisablePercent = 20,
+    string ClientSignIn = Shared.Api.ClientSignIn.Pc)
 {
     public DirectoryConfigDto ToDto() =>
-        new(Enabled, Host, Port, BindDn, Password.Length > 0, CaCertificate, BadgeAttribute, SyncTime, MaxDisablePercent);
+        new(Enabled, Host, Port, BindDn, Password.Length > 0, CaCertificate, BadgeAttribute, SyncTime, MaxDisablePercent, ClientSignIn);
+
+    /// <summary>People sign in to the tray with their domain account rather than as the PC's user.</summary>
+    public bool DomainSignIn => ClientSignIn == Shared.Api.ClientSignIn.Domain;
 
     public static bool IsValidTime(string? time) =>
         TimeOnly.TryParseExact(time, "HH:mm", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out _);
