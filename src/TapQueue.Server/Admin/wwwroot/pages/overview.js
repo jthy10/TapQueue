@@ -15,7 +15,8 @@ export async function render(root, ctx) {
     if (!ctx.current) return;
     const online = printers.filter((p) => p.printer.online).length;
     const latestBuild = builds[0];
-    const outdated = latestBuild ? clients.filter((c) => c.clientVersion !== latestBuild.version) : [];
+    const published = new Set(builds.filter((b) => b === builds.find((x) => x.platform === b.platform)).map((b) => b.version));
+    const outdated = latestBuild ? clients.filter((c) => !published.has(c.clientVersion)) : [];
 
     body.replaceChildren(
       h("div", { class: "grid stats" },
@@ -75,7 +76,7 @@ function attention({ printers, stations, unknown, queues, outdated, latestBuild,
     else if (!s.settings.enabled) add("warn", `Station ${name} is out of service`, s.settings.maintenanceMessage || null, `stations/${s.id}`);
   }
   if (unknown.length) add("warn", `${plural(unknown.length, "unknown card")} tapped recently`, "Link them to people on the Cards page.", "cards");
-  if (outdated.length) add("warn", `${plural(outdated.length, "workstation")} not on client ${latestBuild.version}`, "They update within a minute of their next heartbeat.", "workstations");
+  if (outdated.length) add("warn", `${plural(outdated.length, "workstation")} not on the published client`, "They update within a minute of their next heartbeat.", "workstations");
   if (server.authMode === "dev") add("warn", "Dev sign-in is on", "Clients can sign in as anyone without a token. Fine for testing only.", "server");
   if (items.length === 0) add("ok", "All clear", "Nothing needs you right now.");
   return h("ul", { class: "attention" }, items);

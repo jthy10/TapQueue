@@ -30,8 +30,11 @@ function status(pc) {
   return pill("Online", "ok");
 }
 
-function clientVersion(pc, latest) {
+const platformName = (p) => ({ "win-x64": "Windows", "linux-x64": "Linux" })[p] ?? p;
+
+function clientVersion(pc, latestByPlatform) {
   if (!pc.version) return h("span", { class: "muted" }, "—");
+  const latest = latestByPlatform[pc.platform ?? "win-x64"];
   const tag = !latest ? null
     : pc.service ? (pc.upToDate ? pill("Current", "ok") : pill(pc.updateError ? "Behind" : "Updating", "warn"))
     : pc.version === latest ? pill("Current", "ok") : pill("Behind", "warn");
@@ -39,7 +42,7 @@ function clientVersion(pc, latest) {
 }
 
 export async function render(root, ctx) {
-  let pcs = [], latest = null, timeout = 10;
+  let pcs = [], latest = {}, timeout = 10;
   const list = h("div", null, loading());
   root.append(pageHead("Workstations", "PCs with the TapQueue client. Jobs printed from one are matched to whoever is signed in there.",
     button("Refresh", { iconName: "refresh", onclick: () => load() })),
@@ -49,7 +52,8 @@ export async function render(root, ctx) {
     const [workstations, clients, builds, server] = await Promise.all([
       api.get("workstations"), api.get("clients"), api.get("client-builds"), api.get("server")]);
     if (!ctx.current) return;
-    latest = builds[0]?.version;
+    latest = {};
+    for (const b of builds) latest[b.platform] ??= b.version; // newest first
     timeout = server.sessionTimeoutMinutes;
     pcs = merge(workstations, clients);
     list.replaceChildren(table({
@@ -58,7 +62,8 @@ export async function render(root, ctx) {
       onRowClick: (pc) => open(pc.hostname),
       empty: empty("No workstations yet", "PCs show up here once the TapQueue client is installed and running on them."),
       columns: [
-        { label: "PC", value: (pc) => [h("span", { class: "cell-strong" }, pc.hostname), h("span", { class: "sub" }, pc.lastIp)] },
+        { label: "PC", value: (pc) => [h("span", { class: "cell-strong" }, pc.hostname),
+          h("span", { class: "sub" }, pc.platform ? `${platformName(pc.platform)} · ${pc.lastIp}` : pc.lastIp)] },
         { label: "Status", value: status },
         { label: "Signed in", value: (pc) => pc.sessions.length === 0 ? h("span", { class: "muted" }, "Nobody")
           : pc.sessions.map((s, i) => [i > 0 && ", ", h("a", { href: `users/${enc(s.username)}`, onclick: (e) => e.stopPropagation() }, s.username)]) },
@@ -82,6 +87,7 @@ export async function render(root, ctx) {
         pc.updateError && h("div", { class: "callout" }, `Its last update failed: ${pc.updateError}`),
         props([
           ["Status", status(pc)],
+          pc.platform && ["System", platformName(pc.platform)],
           ["Client", clientVersion(pc, latest)],
           ["Address", h("code", null, pc.lastIp)],
           ["Last seen", pc.lastSeenAt ? [time(pc.lastSeenAt), h("span", { class: "sub" }, dateTime(pc.lastSeenAt))] : "—"],
@@ -94,14 +100,14 @@ export async function render(root, ctx) {
           : h("div", { class: "row-list" }, pc.sessions.map((s) => h("div", { class: "row-item" },
             h("div", null,
               h("a", { class: "cell-strong", href: `users/${enc(s.username)}` }, s.username),
-              h("span", { class: "sub" }, `Windows user ${s.windowsUser ?? "?"} · client ${s.clientVersion ?? "unknown"} · seen `, time(s.lastSeenAt))),
+              h("span", { class: "sub" }, `${pc.platform === "linux-x64" ? "Linux" : "Windows"} user ${s.windowsUser ?? "?"} · client ${s.clientVersion ?? "unknown"} · seen `, time(s.lastSeenAt))),
             button("Sign out", { small: true, onclick: () => signOut(pc, s) })))),
         h("p", { class: "muted", style: "margin:12px 0 0; font-size:12.5px" },
           `A client that stops checking in is signed out after ${timeout} minutes.`),
       ],
       footer: [
         pc.service && h("div", { class: "left" }, button("Forget", { kind: "ghost danger", onclick: () => forget(pc) })),
-        pc.service && button("Update now", { iconName: "updates", onclick: () => updateNow(pc), disabled: !latest }),
+        pc.service && button("Update now", { iconName: "updates", onclick: () => updateNow(pc), disabled: !latest[pc.platform] }),
       ],
     });
   }
@@ -118,7 +124,7 @@ export async function render(root, ctx) {
   }
 
   async function updateNow(pc) {
-    const message = pc.online ? `${pc.hostname} will install client ${latest} within a minute` : `${pc.hostname} is offline; it'll update when it's back`;
+    const message = pc.online ? `${pc.hostname} will install client ${latest[pc.platform]} within a minute` : `${pc.hostname} is offline; it'll update when it's back`;
     if (await attempt(() => api.post(`workstations/${enc(pc.hostname)}/update`), message) === undefined) return;
     await load();
     open(pc.hostname);

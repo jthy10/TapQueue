@@ -1,5 +1,8 @@
 import { api } from "../api.js";
-import { h, pageHead, panel, button, pill, time, dateTime, bytes, table, empty, field, input, formDialog, loading, plural } from "../ui.js";
+import { h, pageHead, panel, button, pill, time, dateTime, bytes, table, empty, field, input, select, formDialog, loading, plural } from "../ui.js";
+
+const platforms = [["win-x64", "Windows"], ["linux-x64", "Linux"]];
+const platformName = (p) => platforms.find(([v]) => v === p)?.[1] ?? p;
 
 export async function render(root, ctx) {
   const list = h("div", null, loading());
@@ -7,13 +10,14 @@ export async function render(root, ctx) {
   root.append(pageHead("Updates", "Builds the server hands out. Clients and stations compare themselves to the newest one and install it on their own.",
     button("Publish station build", { iconName: "updates", onclick: publishStation }),
     button("Publish client build", { kind: "primary", iconName: "updates", onclick: publish })),
-  panel({ title: "Windows client", description: "The newest build is the one every client installs, within about a minute. Publishing an older build again rolls clients back.", flush: true, body: list }),
+  panel({ title: "Clients", description: "Each PC installs the newest build for its platform, within about a minute. Publishing an older build again rolls PCs back.", flush: true, body: list }),
   panel({ title: "Release stations", description: "Stations install the newest build within 15 seconds and restart. Installing an archive by hand on a station takes over from this.", flush: true, body: stationList }));
 
   async function load() {
-    const [builds, clients, stationBuilds, stations] = await Promise.all([
-      api.get("client-builds"), api.get("clients"), api.get("station-builds"), api.get("stations"),
+    const [builds, workstations, stationBuilds, stations] = await Promise.all([
+      api.get("client-builds"), api.get("workstations"), api.get("station-builds"), api.get("stations"),
     ]);
+    const current = new Set(platforms.map(([p]) => builds.find((b) => b.platform === p)).filter(Boolean));
     if (!ctx.current) return;
     stationList.replaceChildren(table({
       rows: stationBuilds,
@@ -32,8 +36,9 @@ export async function render(root, ctx) {
       empty: empty("No client builds published", "Until one is, clients keep whatever version they were installed with.",
         button("Publish client build", { kind: "primary", onclick: publish })),
       columns: [
-        { label: "Version", value: (b) => [h("span", { class: "mono cell-strong" }, b.version), " ", b === builds[0] && pill("Current", "accent")] },
-        { label: "Running it", value: (b) => plural(clients.filter((c) => c.clientVersion === b.version).length, "workstation") },
+        { label: "Version", value: (b) => [h("span", { class: "mono cell-strong" }, b.version), " ", current.has(b) && pill("Current", "accent")] },
+        { label: "Platform", value: (b) => platformName(b.platform) },
+        { label: "Running it", value: (b) => plural(workstations.filter((w) => w.platform === b.platform && w.version === b.version).length, "workstation") },
         { label: "Size", class: "num", value: (b) => bytes(b.sizeBytes) },
         { label: "SHA-256", value: (b) => h("code", { title: b.sha256 }, b.sha256.slice(0, 12) + "…") },
         { label: "Published", value: (b) => h("span", { title: dateTime(b.publishedAt) }, time(b.publishedAt)) },
@@ -44,15 +49,17 @@ export async function render(root, ctx) {
   function publish() {
     formDialog({
       title: "Publish a client build",
-      description: "Every signed-in client downloads and installs it on its next heartbeat.",
+      description: "Every PC of that platform downloads and installs it when it next checks in.",
       submitLabel: "Publish",
       body: [
-        field("TapQueueClient.exe", input("file", { type: "file", accept: ".exe", required: true }), "From the client archive (TapQueue_client_<version>_win-x64.zip)."),
-        field("Version", input("version", { required: true, placeholder: "e.g. 0.3.0+1a2b3c4" }), "As in the archive's version.txt. Shown on this page and in each client's tray menu."),
+        field("Platform", select("platform", platforms, "win-x64")),
+        field("Program", input("file", { type: "file", required: true }),
+          "Windows: TapQueueClient.exe from TapQueue_client_<version>_win-x64.zip. Linux: tapqueue-client from TapQueue_client_<version>_linux-x64.tar.gz."),
+        field("Version", input("version", { required: true, placeholder: "e.g. 0.5.0+1a2b3c4" }), "As in the archive's version.txt. Shown on this page and in each client's tray menu."),
       ],
-      onSubmit: async ({ file, version }) => {
-        if (!file) throw new Error("Choose TapQueueClient.exe.");
-        await api.upload(`client-builds?version=${encodeURIComponent(version)}`, file);
+      onSubmit: async ({ platform, file, version }) => {
+        if (!file) throw new Error("Choose the client program.");
+        await api.upload(`client-builds?version=${encodeURIComponent(version)}&platform=${encodeURIComponent(platform)}`, file);
         await load();
       },
     });
