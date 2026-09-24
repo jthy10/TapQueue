@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=TapQueue
+GenericName=Secure printing
+Comment=Sign in to TapQueue and release your held print jobs
+Exec=/opt/tapqueue-client/tapqueue-client
+Icon=printer
+Terminal=false
+Categories=Utility;Printing;
+# Installed to /etc/xdg/autostart (starts the tray app when anyone signs in to the desktop) and
+# /usr/share/applications (so it can be started again from the app menu after Exit).
+X-GNOME-Autostart-enabled=true

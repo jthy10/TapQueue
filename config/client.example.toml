@@ -1,10 +1,11 @@
-# TapQueue Windows client configuration.
-# C:\ProgramData\TapQueue\client.toml. The installer writes it; only admins can change it.
+# TapQueue client configuration, for the whole PC. The installer writes it; only admins can change it.
+#   Windows: C:\ProgramData\TapQueue\client.toml
+#   Linux:   /etc/tapqueue/client.toml
 
 # The TapQueue server.
 server_url = "http://tapqueue-server:8631"
 
-# Your TapQueue username. Leave empty to use your Windows username.
+# Your TapQueue username. Leave empty to use the name you sign in to the PC with.
 username = ""
 
 # Your client token from `tapqueue-admin users add <username>`.

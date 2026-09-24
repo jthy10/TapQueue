@@ -1,0 +1,35 @@
+[Unit]
+Description=TapQueue client service (printers and updates for this PC)
+Documentation=https://github.com/jthy10/TapQueue
+After=network-online.target cups.service
+Wants=network-online.target
+
+[Service]
+# Root, like the Windows client's service: it adds printers with lpadmin and replaces the program
+# in /opt/tapqueue-client when the server publishes a new Linux client build.
+Type=notify
+ExecStart=/opt/tapqueue-client/tapqueue-client --service --config /etc/tapqueue/client.toml
+# After installing an update it exits with status 1 so systemd starts the new program.
+Restart=on-failure
+RestartSec=5
+
+# /run/tapqueue-client/update.sock: tray apps ask for "Check for updates" here.
+RuntimeDirectory=tapqueue-client
+RuntimeDirectoryMode=0755
+# printers.txt: the printers it added, so they can be removed again.
+StateDirectory=tapqueue-client
+# The single-file program unpacks its native libraries here instead of root's home.
+CacheDirectory=tapqueue-client
+Environment=DOTNET_BUNDLE_EXTRACT_BASE_DIR=/var/cache/tapqueue-client
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/tapqueue-client
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

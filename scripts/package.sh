@@ -6,10 +6,12 @@
 #                                                   systemd units, install-server.sh
 #     TapQueue_station_<version>_linux-x64.tar.gz   tapqueue-station, example config, systemd unit, udev rule,
 #                                                   install-station.sh
-#   scripts/package.sh client    the Windows client (<TapQueueClientVersion>):
+#   scripts/package.sh client    the Windows and Linux clients (<TapQueueClientVersion>):
 #     TapQueue_client_<version>_win-x64.zip         TapQueueClient.exe and version.txt, for `tapqueue-admin clients publish`
 #                                                   (the installer, TapQueue_client_<version>.exe, is built on Windows by
 #                                                   scripts/package-client-installer.ps1)
+#     TapQueue_client_<version>_linux-x64.tar.gz    tapqueue-client, version.txt, example config, systemd unit, desktop
+#                                                   entry, install-client.sh; also what `clients publish` takes
 #   scripts/package.sh           both
 #
 # Each run writes SHA256SUMS for what it built. Used by CI on every push and by the release workflow on tags.
@@ -57,6 +59,11 @@ if [ "$what" != server ]; then
     # `tapqueue-admin clients publish` reads this; it matches what the client reports (TapQueueVersion.Current).
     echo "$client_version+$(git rev-parse --short=7 HEAD)" > "$out/client/version.txt"
     (cd "$out/client" && zip -q "../../$dist/TapQueue_client_${client_version}_win-x64.zip" TapQueueClient.exe version.txt)
+
+    publish TapQueue.Client.Linux linux-x64 client-linux -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true
+    cp "$out/client/version.txt" config/client.example.toml deploy/systemd/tapqueue-client.service \
+        deploy/linux/tapqueue-client.desktop deploy/install-client.sh "$out/client-linux/"
+    tarball client-linux "TapQueue_client_${client_version}_linux-x64"
 fi
 
 (cd "$dist" && sha256sum -- * > SHA256SUMS)
