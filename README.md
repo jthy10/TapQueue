@@ -8,7 +8,7 @@ Nothing sits in the output tray for someone else to pick up.
 > printer, from the tray app or by tapping a badge at a release station. Expect breaking changes.
 
 ```
- Windows 11 PC                     TapQueue server (Linux)                 At the printer
+ Windows 11 / Linux PC             TapQueue server (Linux)                 At the printer
 ┌─────────────────────┐   IPP    ┌─────────────────────────────┐        ┌──────────────────┐
 │ "TapQueue Secure    │ ───────▶ │ Holds jobs per user         │ badge  │ Release station  │
 │  Print" printer     │          │ Users, sessions, printers   │ ◀───── │ (card reader)    │
@@ -25,20 +25,20 @@ Nothing sits in the output tray for someone else to pick up.
 | **tapqueue-server** | Linux | IPP hold queue, REST API, releases jobs to printers |
 | **tapqueue-admin** | Linux | Command-line admin tool |
 | **tapqueue-station** | Linux | Release station: a USB badge reader next to a printer; a tap releases your jobs |
-| **TapQueue client** | Windows 11 | Installer, tray app (signs you in, shows held jobs) and a service that adds the printer and installs updates pushed from the server |
+| **TapQueue client** | Windows 11, Linux desktops | Tray app (signs you in, shows held jobs) and a service that adds the printer and installs updates pushed from the server |
 
 Download them from [Releases](https://github.com/jthy10/TapQueue/releases): `TapQueue_client_X.Y.Z.exe`
-for PCs (`client-v` releases), and the server and station (`server-v` releases), which install
-with one command:
+for Windows PCs (`client-v` releases); the server, station and Linux client install with one command:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/jthy10/TapQueue/main/install.sh | sudo bash -s server    # or: station
+curl -fsSL https://raw.githubusercontent.com/jthy10/TapQueue/main/install.sh | sudo bash -s server    # or: station, client
 ```
 
 ## How it works
 
 1. **The server looks like an ordinary network printer.** Windows 11 prints to it with its
-   built-in IPP driver, so there's nothing to install on the PC but the TapQueue client.
+   built-in IPP driver and Linux with CUPS's driverless IPP Everywhere support, so there's nothing
+   to install on the PC but the TapQueue client.
 2. **Jobs are held, not printed.** The server keeps the document and the print options chosen.
 3. **The job is matched to a person** through the tray app, which is signed in on the PC the
    job came from. The username inside a print job is easy to fake, so it isn't trusted on its own.
@@ -52,11 +52,11 @@ IP address can't handle.
 ## Getting started
 
 1. [Install the server](docs/install-server.md), then add a queue, your printers and users.
-2. [Install the Windows client](docs/windows-client.md) on each PC.
+2. Install the client on each PC: [Windows](docs/windows-client.md) or [Linux](docs/linux-client.md).
 3. [Set up a release station](docs/release-station.md) next to each printer and enroll badges.
 
 Reference: [admin console](docs/admin-ui.md) · [admin CLI](docs/admin-cli.md) · changelogs: [server and station](CHANGELOG.md),
-[Windows client](CHANGELOG-client.md) ·
+[clients](CHANGELOG-client.md) ·
 [development](docs/development.md) · [releasing](docs/releasing.md)
 
 ## Roadmap

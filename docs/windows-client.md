@@ -8,7 +8,8 @@ The TapQueue client for Windows 11 has two parts, both in `TapQueueClient.exe`:
 - **The TapQueue service**, one per PC, running in the background as the system. It adds the
   TapQueue printers for every user and installs updates pushed from the server.
 
-Windows prints with its built-in IPP driver, so there's no printer driver to install.
+Windows prints with its built-in IPP driver, so there's no printer driver to install. For Linux
+desktops, see the [Linux client](linux-client.md).
 
 ## Install
 

@@ -35,7 +35,7 @@ A sidebar groups pages by what you're doing; each page is a list with a detail d
 | **Fleet** | Printers | Add, edit, remove, test. Live status, supported formats. |
 | | Queues | The printers users see in Windows: name, defaults, who may print to them. |
 | | Stations | Release stations: status, printer, reader, settings, restart, update, token. |
-| | Workstations | Windows PCs running the client: who's signed in, client version, update now, sign out. |
+| | Workstations | Windows and Linux PCs running the client: who's signed in, client version, update now, sign out. |
 | **System** | Updates | Client and station builds: publish, see who runs what, roll back. |
 | | Server | Version, uptime, settings, live log, restart. |
 | | Admins | Admin accounts and roles (for when sign-in exists). |

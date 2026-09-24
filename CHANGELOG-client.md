@@ -1,6 +1,7 @@
-# Changelog: Windows client
+# Changelog: clients
 
-All notable changes to the TapQueue Windows client (`TapQueue_client_X.Y.Z.exe`) are recorded here.
+All notable changes to the TapQueue Windows client (`TapQueue_client_X.Y.Z.exe`) and, from 0.5.0,
+the Linux client (`TapQueue_client_X.Y.Z_linux-x64.tar.gz`) are recorded here.
 It has its own version, released with tags `client-vX.Y.Z`; the server and station have
 [their own changelog](CHANGELOG.md). Up to 0.1.0 everything shared one version.
 
@@ -8,6 +9,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+
+### Added
+- Linux client, for desktops such as Ubuntu with GNOME: the same tray app (held jobs, release,
+  cancel, notifications, Check for updates) and a root systemd service that adds the queues to CUPS
+  as driverless printers and installs builds pushed from the server. Install it with
+  `curl -fsSL https://raw.githubusercontent.com/jthy10/TapQueue/main/install.sh | sudo bash -s client`.
+  See [docs/linux-client.md](docs/linux-client.md).
+
+### Changed
+- The Windows client tells the server it's a Windows PC when it checks in and signs in, so it gets
+  the Windows build now that the server publishes one per platform. Needs server 0.5.0 or later
+  to tell platforms apart; older servers ignore it.
 
 ## [0.4.0] - 2026-09-24
 

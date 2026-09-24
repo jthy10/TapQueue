@@ -1,8 +1,8 @@
 # Changelog: server and station
 
 All notable changes to the TapQueue server, release station and `tapqueue-admin` are recorded
-here; they share a version and are released together with tags `server-vX.Y.Z`. The Windows
-client has its own version and [changelog](CHANGELOG-client.md). Up to 0.1.0 everything shared one version.
+here; they share a version and are released together with tags `server-vX.Y.Z`. The Windows and
+Linux clients have their own version and [changelog](CHANGELOG-client.md). Up to 0.1.0 everything shared one version.
 
 The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
@@ -10,6 +10,12 @@ The format follows
 breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
+
+### Added
+- Linux clients. Client builds are published per platform (Windows or Linux) and each PC is
+  offered its own platform's newest build; `tapqueue-admin clients publish` takes the Linux
+  tarball too and tells the platform from the program. Workstations and client builds show their
+  platform in the CLI and the console. Database schema 10 (applied on start).
 
 ## [0.4.0] - 2026-09-24
 
