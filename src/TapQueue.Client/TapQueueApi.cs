@@ -16,16 +16,100 @@ public sealed class TapQueueApi(ClientConfig config) : IDisposable
 
     public ClientSessionResponse? Session { get; private set; }
 
+    /// <summary>How the server wants the tray to sign in (<see cref="ClientSignIn"/>), as of the last sign-in.</summary>
+    public string SignInMode { get; private set; } = ClientSignIn.Pc;
+
+    /// <summary>With <see cref="ClientSignIn.Domain"/>: the domain account this PC user signed in with, if any.</summary>
+    public SavedSignIn? Remembered { get; private set; } = SavedSignIn.Load(config.ServerUrl);
+
+    /// <summary>
+    /// Signs in the way the server asks: as the PC's user, or with the remembered domain sign-in.
+    /// Throws <see cref="SignInRequiredException"/> if it wants a domain account and there's none (or
+    /// the server forgot it).
+    /// </summary>
     public async Task<ClientSessionResponse> SignInAsync(CancellationToken ct = default)
     {
-        var request = new ClientSessionRequest(
-            config.EffectiveUsername,
-            string.IsNullOrWhiteSpace(config.Token) ? null : config.Token.Trim(),
-            Environment.UserName,
-            Environment.MachineName,
-            TapQueueVersion.Current,
-            ClientPlatform.Current);
+        SignInMode = await GetSignInModeAsync(ct);
+        if (SignInMode != ClientSignIn.Domain)
+            return await CreateSessionAsync(new ClientSessionRequest(
+                config.EffectiveUsername,
+                string.IsNullOrWhiteSpace(config.Token) ? null : config.Token.Trim(),
+                Environment.UserName,
+                Environment.MachineName,
+                TapQueueVersion.Current,
+                ClientPlatform.Current), ct);
 
+        if (Remembered is null)
+            throw new SignInRequiredException("Sign in with your domain account.");
+        try
+        {
+            return await CreateSessionAsync(Request(Remembered.Username, rememberToken: Remembered.RememberToken), ct);
+        }
+        catch (TapQueueApiException ex) when (ex.Status == HttpStatusCode.Unauthorized)
+        {
+            Forget();
+            throw new SignInRequiredException(ex.Message);
+        }
+    }
+
+    /// <summary>"Sign in as…": checks the domain account's password and remembers the sign-in (not the password).</summary>
+    public async Task<ClientSessionResponse> SignInWithPasswordAsync(string username, string password, CancellationToken ct = default)
+    {
+        var session = await CreateSessionAsync(Request(username.Trim(), password: password), ct);
+        SignInMode = ClientSignIn.Domain;
+        if (session.RememberToken is { } token)
+        {
+            Remembered = new SavedSignIn(config.ServerUrl, session.User.Username, token);
+            Remembered.Save();
+        }
+        return session;
+    }
+
+    /// <summary>Ends the session and forgets the remembered sign-in, here and on the server (if it can be reached).</summary>
+    public async Task SignOutAsync(CancellationToken ct = default)
+    {
+        var remembered = Remembered;
+        Forget();
+        if (Session is { } session)
+        {
+            Session = null;
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/client/sign-out")
+                {
+                    Content = JsonContent.Create(new ClientSignOutRequest(remembered?.RememberToken), options: TapQueueJson.Options),
+                };
+                request.Headers.Authorization = new("Bearer", session.SessionToken);
+                using var response = await _http.SendAsync(request, ct);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+            {
+                // Signed out here either way; the server drops the session when its heartbeats stop.
+            }
+        }
+    }
+
+    private void Forget()
+    {
+        Remembered = null;
+        SavedSignIn.Delete();
+    }
+
+    /// <summary>Servers older than 0.6 don't say, and only know the PC's user.</summary>
+    private async Task<string> GetSignInModeAsync(CancellationToken ct)
+    {
+        using var response = await _http.GetAsync("api/v1/client/sign-in", ct);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return ClientSignIn.Pc;
+        await EnsureSuccessAsync(response, ct);
+        return (await response.Content.ReadFromJsonAsync<ClientSignInInfoDto>(TapQueueJson.Options, ct))?.Mode ?? ClientSignIn.Pc;
+    }
+
+    private static ClientSessionRequest Request(string username, string? password = null, string? rememberToken = null) =>
+        new(username, null, Environment.UserName, Environment.MachineName, TapQueueVersion.Current, ClientPlatform.Current, password, rememberToken);
+
+    private async Task<ClientSessionResponse> CreateSessionAsync(ClientSessionRequest request, CancellationToken ct)
+    {
         using var response = await _http.PostAsJsonAsync("api/v1/client/session", request, TapQueueJson.Options, ct);
         await EnsureSuccessAsync(response, ct);
         Session = (await response.Content.ReadFromJsonAsync<ClientSessionResponse>(TapQueueJson.Options, ct))!;
@@ -88,7 +172,10 @@ public sealed class TapQueueApi(ClientConfig config) : IDisposable
     public void Dispose() => _http.Dispose();
 }
 
-public sealed class TapQueueApiException(HttpStatusCode status, string message) : Exception(message)
+public class TapQueueApiException(HttpStatusCode status, string message) : Exception(message)
 {
     public HttpStatusCode Status { get; } = status;
 }
+
+/// <summary>The server wants a domain account (<see cref="ClientSignIn.Domain"/>) and none is remembered: use "Sign in as…".</summary>
+public sealed class SignInRequiredException(string message) : TapQueueApiException(HttpStatusCode.Unauthorized, message);
