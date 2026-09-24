@@ -16,6 +16,9 @@ breaking changes; they're listed under **Changed** with what to do.
   offered its own platform's newest build; `tapqueue-admin clients publish` takes the Linux
   tarball too and tells the platform from the program. Workstations and client builds show their
   platform in the CLI and the console. Database schema 10 (applied on start).
+- Crash reports from clients: the console shows them on Workstations (a PC with a recent crash
+  shows as Crashed) and the Overview, and `tapqueue-admin crashes` lists and shows them. The
+  newest 500 are kept. Database schema 11.
 
 ## [0.4.0] - 2026-09-24
 

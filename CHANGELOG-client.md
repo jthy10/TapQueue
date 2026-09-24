@@ -16,6 +16,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   as driverless printers and installs builds pushed from the server. Install it with
   `curl -fsSL https://raw.githubusercontent.com/jthy10/TapQueue/main/install.sh | sudo bash -s client`.
   See [docs/linux-client.md](docs/linux-client.md).
+- Crash reports: when the TapQueue service or tray app crashes it sends the error to the server,
+  where admins read it on the console (Workstations) or with `tapqueue-admin crashes`. Needs
+  server 0.5.0; until then reports wait on the PC.
+
+### Fixed
+- The Windows service now really restarts after installing a pushed update. It stopped with the
+  wrong kind of exit code, so Windows left it stopped, and "Check for updates" then said the service
+  wasn't running. PCs on 0.4 or older still stop once when they install 0.5: start the TapQueue
+  service (or restart the PC) after that one update.
+- A client no longer installs a build for another platform (a server older than 0.5 offers its
+  Windows build to every PC).
+- Tray apps that can't reach the server still restart into a newly installed build.
 
 ### Changed
 - The Windows client tells the server it's a Windows PC when it checks in and signs in, so it gets

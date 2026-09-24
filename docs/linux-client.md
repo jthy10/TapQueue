@@ -86,6 +86,18 @@ the file under a running tray app would crash it. Instead each build is kept in 
 `/opt/tapqueue-client/builds/`, and an update points the `tapqueue-client` symlink at the new one.
 The service deletes a build once no process runs it.
 
+## Crash reports
+
+If the TapQueue service or the tray app crashes, it sends the error with its full stack trace to
+the server, so you don't have to go to the PC to find out why. A PC with a crash in the last day
+shows as **Crashed** on the console's Workstations page (open it to read the report) and under
+**Needs attention** on the Overview; each crash is also in the activity log. From the CLI:
+`sudo tapqueue-admin crashes`, then `sudo tapqueue-admin crashes show <id>`.
+
+A report that can't be sent straight away (the server is unreachable, or the crash was reading
+`client.toml`) is kept on the PC and sent the next time the program starts. The server keeps the
+newest 500.
+
 ## Known limits
 
 - `client.toml` is for the whole PC and readable by every user (each user's tray app reads it),

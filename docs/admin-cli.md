@@ -47,6 +47,9 @@ tapqueue-admin clients sign-out <session>      Sign a client out; jobs from that
 tapqueue-admin workstations                    PCs with the TapQueue service: client, update errors, who's signed in
 tapqueue-admin workstations update <computer>  Install the published client now (retries a failed update)
 tapqueue-admin workstations forget <computer>  Drop a PC that's gone
+tapqueue-admin crashes [<computer>]            Crash reports sent by clients, newest first
+tapqueue-admin crashes show <id>               One report with its full error
+tapqueue-admin crashes clear [<computer>]      Delete crash reports (all, or one PC's)
 
 tapqueue-admin server                          Settings, and whether each is set here or in server.toml
 tapqueue-admin server set hold-hours|session-timeout <number|default>

@@ -72,6 +72,18 @@ retries a build that failed to install before. If the service isn't running, it 
 The download is checked against the hash the server sends, which catches damaged downloads but
 not a tampered server or network. Signed builds and HTTPS are planned before production use.
 
+## Crash reports
+
+If the TapQueue service or the tray app crashes, it sends the error with its full stack trace to
+the server, so you don't have to go to the PC to find out why. A PC with a crash in the last day
+shows as **Crashed** on the console's Workstations page (open it to read the report) and under
+**Needs attention** on the Overview; each crash is also in the activity log. From the CLI:
+`sudo tapqueue-admin crashes`, then `sudo tapqueue-admin crashes show <id>`.
+
+A report that can't be sent straight away (the server is unreachable, or the crash was reading
+`client.toml`) is kept on the PC and sent the next time the program starts. The server keeps the
+newest 500.
+
 ## Known limits
 
 - `client.toml` is for the whole PC, so on a shared PC with the server in `token` mode every user
