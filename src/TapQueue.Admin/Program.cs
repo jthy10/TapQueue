@@ -54,11 +54,12 @@ const string Usage = """
                                                      Issue a new station token (the old one stops working)
       tapqueue-admin stations remove <station-id>    Delete a station
 
-      tapqueue-admin clients                         Signed-in Windows clients and the version each runs
-      tapqueue-admin clients publish <tapqueue-client-X.Y.Z-win-x64.zip | TapQueueClient.exe> [--version-name ...]
-                                                     Push a client build out; every client installs it
-                                                     on its next heartbeat (about a minute)
-      tapqueue-admin clients builds                  Published client builds, newest (the one clients run) first
+      tapqueue-admin clients                         Signed-in clients and the version each runs
+      tapqueue-admin clients publish <TapQueue_client_X.Y.Z_win-x64.zip | TapQueue_client_X.Y.Z_linux-x64.tar.gz
+                                      | TapQueueClient.exe | tapqueue-client> [--platform win-x64|linux-x64] [--version-name ...]
+                                                     Push a client build out; every PC of that platform
+                                                     installs it when it next checks in (about a minute)
+      tapqueue-admin clients builds                  Published client builds, newest (the one PCs run) first
       tapqueue-admin clients sign-out <session>      Sign a client out (session number from `clients`); jobs
                                                      from that PC stop going to that user
 
@@ -96,7 +97,7 @@ for (var i = 0; i < args.Length; i++)
     }
     if (args[i].StartsWith("--"))
     {
-        var takesValue = args[i] is "--server" or "--token" or "--name" or "--status" or "--uri" or "--location" or "--description" or "--media" or "--version-name";
+        var takesValue = args[i] is "--server" or "--token" or "--name" or "--status" or "--uri" or "--location" or "--description" or "--media" or "--version-name" or "--platform";
         var switchWithValue = args[i] is "--tls-skip-verify" or "--color" or "--duplex" && i + 1 < args.Length && ParseSwitch(args[i + 1]) is not null;
         options[args[i]] = (takesValue || switchWithValue) && i + 1 < args.Length ? args[++i] : null;
     }
@@ -159,7 +160,7 @@ try
         ("stations", "reset-token") when positional.Count == 3 => await ResetStationToken(positional[2]),
         ("stations", "remove") when positional.Count == 3 => await RemoveStation(positional[2]),
         ("clients", null) => await ListClients(),
-        ("clients", "publish") when positional.Count == 3 => await PublishClient(positional[2], options.GetValueOrDefault("--version-name")),
+        ("clients", "publish") when positional.Count == 3 => await PublishClient(positional[2], options.GetValueOrDefault("--version-name"), options.GetValueOrDefault("--platform")),
         ("clients", "builds") when positional.Count == 2 => await ListClientBuilds(),
         ("clients", "sign-out") when positional.Count == 3 => await Delete($"clients/{long.Parse(positional[2])}", $"Signed out session {positional[2]}."),
         ("workstations", null) => await ListWorkstations(),
@@ -485,14 +486,14 @@ async Task<int> ListClients()
     var clients = await Get<List<ClientSessionDto>>("clients");
     var builds = await Get<List<ClientBuildDto>>("client-builds");
     if (clients is null || builds is null) return 1;
-    var latest = builds.FirstOrDefault();
-    Console.WriteLine(latest is null
+    var latest = builds.GroupBy(b => b.Platform).Select(g => g.First()).ToList(); // newest first
+    Console.WriteLine(latest.Count == 0
         ? "No client build published; clients keep whatever they run."
-        : $"Published client: {latest.Version} ({Ago(latest.PublishedAt)})");
-    Table(["SESSION", "USER", "COMPUTER", "WINDOWS USER", "VERSION", "ADDRESS", "LAST SEEN"], clients.Select(c => new[]
+        : string.Join("\n", latest.Select(b => $"Published {ClientPlatform.DisplayName(b.Platform)} client: {b.Version} ({Ago(b.PublishedAt)})")));
+    Table(["SESSION", "USER", "COMPUTER", "PC USER", "VERSION", "ADDRESS", "LAST SEEN"], clients.Select(c => new[]
     {
         c.Id.ToString(), c.Username, c.Hostname ?? "", c.WindowsUser ?? "",
-        (c.ClientVersion ?? "unknown") + (latest is not null && c.ClientVersion != latest.Version ? " (updating)" : ""),
+        (c.ClientVersion ?? "unknown") + (latest.Count > 0 && latest.All(b => b.Version != c.ClientVersion) ? " (updating)" : ""),
         c.RemoteIp, Ago(c.LastSeenAt),
     }));
     return 0;
@@ -502,9 +503,9 @@ async Task<int> ListWorkstations()
 {
     var workstations = await Get<List<WorkstationDto>>("workstations");
     if (workstations is null) return 1;
-    Table(["COMPUTER", "STATUS", "CLIENT", "SIGNED IN", "ADDRESS", "LAST SEEN"], workstations.Select(w => new[]
+    Table(["COMPUTER", "OS", "STATUS", "CLIENT", "SIGNED IN", "ADDRESS", "LAST SEEN"], workstations.Select(w => new[]
     {
-        w.Hostname,
+        w.Hostname, ClientPlatform.DisplayName(w.Platform),
         !w.Online ? "offline" : w.UpdateError is not null ? "update failed" : "online",
         (w.Version ?? "unknown") + (w.UpToDate ? "" : " (behind)"),
         string.Join(", ", w.Sessions.Select(s => s.Username)),
@@ -616,53 +617,80 @@ async Task<int> ListClientBuilds()
 {
     var builds = await Get<List<ClientBuildDto>>("client-builds");
     if (builds is null) return 1;
-    Table(["VERSION", "PUBLISHED", "SIZE", "SHA-256"], builds.Select(b => new[]
+    Table(["PLATFORM", "VERSION", "PUBLISHED", "SIZE", "SHA-256"], builds.Select(b => new[]
     {
-        b.Version, Ago(b.PublishedAt), FormatSize(b.SizeBytes), b.Sha256[..16] + "…",
+        b.Platform, b.Version, Ago(b.PublishedAt), FormatSize(b.SizeBytes), b.Sha256[..16] + "…",
     }));
     return 0;
 }
 
-// Takes the release zip from scripts/package.sh (TapQueueClient.exe + version.txt) or a bare exe.
-async Task<int> PublishClient(string path, string? version)
+// Takes a release package from scripts/package.sh (the Windows zip or the Linux tarball: the client
+// program plus version.txt) or a bare program. The platform comes from the program itself.
+async Task<int> PublishClient(string path, string? version, string? platform)
 {
     if (!File.Exists(path))
     {
         Console.Error.WriteLine($"{path} not found.");
         return 2;
     }
-
-    using var zip = path.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ? System.IO.Compression.ZipFile.OpenRead(path) : null;
-    var exeEntry = zip?.GetEntry("TapQueueClient.exe");
-    if (zip is not null && exeEntry is null)
+    if (platform is not null && ClientPlatform.Parse(platform) is null)
     {
-        Console.Error.WriteLine($"{path} has no TapQueueClient.exe in it.");
-        return 2;
-    }
-    if (version is null && zip?.GetEntry("version.txt") is { } versionEntry)
-    {
-        using var reader = new StreamReader(versionEntry.Open());
-        version = (await reader.ReadToEndAsync()).Trim();
-    }
-    if (string.IsNullOrEmpty(version))
-    {
-        Console.Error.WriteLine("Can't tell which version this is. Pass --version-name, e.g. --version-name 0.2.0+1a2b3c4.");
+        Console.Error.WriteLine($"Unknown platform \"{platform}\". Use one of: {string.Join(", ", ClientPlatform.All)}.");
         return 2;
     }
 
-    await using var exe = exeEntry?.Open() ?? File.OpenRead(path);
-    using var content = new StreamContent(exe);
-    content.Headers.ContentType = new("application/octet-stream");
-    using var response = await http.PostAsync($"client-builds?version={Uri.EscapeDataString(version)}", content);
-    if (!response.IsSuccessStatusCode)
+    // The program is copied out of the package so its first bytes can be checked before uploading.
+    var program = Path.GetTempFileName();
+    try
     {
-        await PrintError(response);
-        return 1;
+        string? packagedVersion;
+        try
+        {
+            packagedVersion = await ClientPackage.ExtractAsync(path, program);
+        }
+        catch (InvalidDataException ex)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 2;
+        }
+        version ??= packagedVersion;
+        if (string.IsNullOrEmpty(version))
+        {
+            Console.Error.WriteLine("Can't tell which version this is. Pass --version-name, e.g. --version-name 0.2.0+1a2b3c4.");
+            return 2;
+        }
+        var detected = ClientPackage.PlatformOf(program);
+        platform = ClientPlatform.Parse(platform ?? detected);
+        if (platform is null)
+        {
+            Console.Error.WriteLine($"{path} isn't a Windows or Linux program. Pass --platform if it really is a TapQueue client.");
+            return 2;
+        }
+        if (detected is not null && detected != platform)
+        {
+            Console.Error.WriteLine($"{path} is a {ClientPlatform.DisplayName(detected)} program, not {ClientPlatform.DisplayName(platform)}.");
+            return 2;
+        }
+
+        await using var upload = File.OpenRead(program);
+        using var content = new StreamContent(upload);
+        content.Headers.ContentType = new("application/octet-stream");
+        using var response = await http.PostAsync(
+            $"client-builds?version={Uri.EscapeDataString(version)}&platform={platform}", content);
+        if (!response.IsSuccessStatusCode)
+        {
+            await PrintError(response);
+            return 1;
+        }
+        var build = (await response.Content.ReadFromJsonAsync<ClientBuildDto>(TapQueueJson.Options))!;
+        Console.WriteLine($"Published {ClientPlatform.DisplayName(build.Platform)} client {build.Version} ({FormatSize(build.SizeBytes)}).");
+        Console.WriteLine("PCs install it when they next check in, within about a minute. Watch with: tapqueue-admin workstations");
+        return 0;
     }
-    var build = (await response.Content.ReadFromJsonAsync<ClientBuildDto>(TapQueueJson.Options))!;
-    Console.WriteLine($"Published Windows client {build.Version} ({FormatSize(build.SizeBytes)}).");
-    Console.WriteLine("Clients install it on their next heartbeat, within about a minute. Watch with: tapqueue-admin clients");
-    return 0;
+    finally
+    {
+        File.Delete(program);
+    }
 }
 
 async Task<int> Delete(string path, string doneMessage)
