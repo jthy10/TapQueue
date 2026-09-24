@@ -31,7 +31,6 @@ public sealed class ClientService(
         };
         var printers = new PrinterSync(installer, logger);
         var updater = new ClientUpdater(http, logger);
-        updater.CleanUp();
 
         var checks = Channel.CreateUnbounded<UpdateCheck.Request>();
         using var stopListening = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
@@ -40,6 +39,8 @@ public sealed class ClientService(
         string? lastError = null;
         while (!stoppingToken.IsCancellationRequested)
         {
+            updater.CleanUp(); // tray apps still on an older build have restarted by now
+
             // Checks asked for from the tray menu since the last check-in: this check-in answers them.
             var asked = new List<UpdateCheck.Request>();
             while (checks.Reader.TryRead(out var request))

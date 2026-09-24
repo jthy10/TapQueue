@@ -8,12 +8,14 @@ namespace TapQueue.Client;
 /// Installs the client build the server says every PC of this platform should run. Run by the
 /// TapQueue service, which can write to where the client is installed (Program Files, /opt). If
 /// the running program's SHA-256 differs from the server's build, it downloads the build next to
-/// it, verifies it and swaps the files (both Windows and Linux allow renaming a running program).
+/// it, verifies it and swaps the files (Windows allows renaming a running exe). An installed Linux
+/// client instead adds the build next to the others and repoints the launcher (<see cref="LinuxBuilds"/>).
 /// Tray apps notice their program changed and restart themselves; the service restarts itself.
 /// </summary>
 public sealed class ClientUpdater(HttpClient http, ILogger logger)
 {
     private readonly string _exePath = Environment.ProcessPath!;
+    private readonly string? _linuxLauncher = LinuxBuilds.LauncherFor(Environment.ProcessPath!);
     private string? _ownSha256;
     private string? _failedSha256;
 
@@ -80,6 +82,14 @@ public sealed class ClientUpdater(HttpClient http, ILogger logger)
             throw new InvalidDataException("The download was damaged (checksum mismatch).");
         }
 
+        if (_linuxLauncher is not null)
+        {
+            var installed = Path.Combine(Path.GetDirectoryName(_exePath)!, LinuxBuilds.BuildFileName(sha256));
+            File.Move(NewExePath, installed, overwrite: true);
+            LinuxBuilds.Repoint(_linuxLauncher, installed);
+            return;
+        }
+
         File.Delete(OldExePath);
         File.Move(_exePath, OldExePath);
         try
@@ -93,9 +103,22 @@ public sealed class ClientUpdater(HttpClient http, ILogger logger)
         }
     }
 
-    /// <summary>Removes the exe replaced by the last update, once nothing is running it.</summary>
+    /// <summary>Removes the program replaced by the last update, once nothing is running it.</summary>
     public void CleanUp()
     {
+        if (_linuxLauncher is not null)
+        {
+            try
+            {
+                foreach (var build in LinuxBuilds.DeleteUnused(_linuxLauncher))
+                    logger.LogInformation("Removed client build {Build}, which nothing runs any more", build);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                logger.LogWarning("Couldn't remove old client builds: {Error}", ex.Message);
+            }
+            return;
+        }
         try
         {
             File.Delete(OldExePath);

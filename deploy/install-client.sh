@@ -10,7 +10,8 @@
 # config is left alone.
 #
 # What goes where:
-#   /opt/tapqueue-client/tapqueue-client        the program
+#   /opt/tapqueue-client/tapqueue-client        the program: a symlink to the current build in builds/, so
+#                                               updates never replace a file a running tray app uses
 #   /etc/tapqueue/client.toml                   settings for the PC
 #   tapqueue-client.service                     adds the printers (CUPS) and installs updates, as root
 #   /etc/xdg/autostart/tapqueue-client.desktop  starts the tray app when anyone signs in to the desktop
@@ -106,9 +107,13 @@ else
 fi
 
 systemctl stop tapqueue-client 2>/dev/null || true
-install -d -m 755 "$prefix"
-install -m 755 "$here/tapqueue-client" "$prefix/"
-rm -f "$prefix/tapqueue-client.old" "$prefix/tapqueue-client.new"
+install -d -m 755 "$prefix" "$prefix/builds"
+build=tapqueue-client-$(sha256sum "$here/tapqueue-client" | cut -c1-16)
+install -m 755 "$here/tapqueue-client" "$prefix/builds/$build"
+ln -sfn "builds/$build" "$prefix/tapqueue-client.new"
+mv -Tf "$prefix/tapqueue-client.new" "$prefix/tapqueue-client" # replaces the program file of a 0.5 pre-release too
+rm -f "$prefix/tapqueue-client.old"
+# Older builds are deleted by the service once no tray app runs them.
 install -m 644 "$here/tapqueue-client.service" "$unit"
 install -m 644 "$here/$desktop" /etc/xdg/autostart/
 install -m 644 "$here/$desktop" /usr/share/applications/

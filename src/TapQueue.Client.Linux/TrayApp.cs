@@ -34,6 +34,7 @@ public sealed class TrayApp : Application
     private readonly DispatcherTimer _heartbeatTimer = new();
     private readonly DispatcherTimer _retryTimer = new() { Interval = RetryDelay };
     private readonly DateTime _exeWrittenAt = File.GetLastWriteTimeUtc(Environment.ProcessPath!);
+    private readonly string? _launcher = LinuxBuilds.LauncherFor(Environment.ProcessPath!);
 
     private List<JobDto> _heldJobs = [];
     private HashSet<long>? _knownJobIds;
@@ -237,14 +238,25 @@ public sealed class TrayApp : Application
     }
 
     /// <summary>
-    /// The TapQueue service replaces tapqueue-client when an update is published. Start the new
-    /// program (it waits for this one to exit) and exit.
+    /// The TapQueue service installs a new build when one is published, pointing the tapqueue-client
+    /// launcher at it (<see cref="LinuxBuilds"/>). Start the new program (it waits for this one to
+    /// exit) and exit. A development build run from elsewhere restarts when its file is rebuilt.
     /// </summary>
     private bool RestartIfUpdated()
     {
-        var exe = Environment.ProcessPath!;
-        if (!File.Exists(exe) || File.GetLastWriteTimeUtc(exe) == _exeWrittenAt)
-            return false;
+        string exe;
+        if (_launcher is not null)
+        {
+            if (LinuxBuilds.CurrentBuild(_launcher) is not { } current || current == Environment.ProcessPath)
+                return false;
+            exe = _launcher;
+        }
+        else
+        {
+            exe = Environment.ProcessPath!;
+            if (!File.Exists(exe) || File.GetLastWriteTimeUtc(exe) == _exeWrittenAt)
+                return false;
+        }
         try
         {
             var start = new ProcessStartInfo(exe) { UseShellExecute = false };
