@@ -58,6 +58,12 @@ log shows each PC doing so), checks its SHA-256, replaces the exe and restarts. 
 notice within a minute, restart into the new version and say "TapQueue updated". Publishing an
 older build rolls PCs back the same way.
 
+To update a PC without waiting, choose **Check for updates** in the tray menu. The tray app asks
+the TapQueue service (over the local pipe `\\.\pipe\TapQueue`) to check with the server now; the
+service installs the published build if it differs and the tray app restarts into it. Otherwise it
+says the PC is up to date, that the server publishes no client, or why the update failed. It also
+retries a build that failed to install before. If the service isn't running, it says so.
+
 The download is checked against the hash the server sends, which catches damaged downloads but
 not a tampered server or network. Signed builds and HTTPS are planned before production use.
 

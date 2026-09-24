@@ -10,6 +10,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ## [Unreleased]
 
 ### Added
+- "Check for updates" in the tray menu: the TapQueue service checks with the server straight
+  away and installs the published client if it differs, and the tray app restarts into it or says
+  it's up to date, that the server has no client published, or why the update failed.
 - The TapQueue service tells the server which PC it's on, which client it runs and why its last
   update failed, so the PC shows on the console's Workstations page. It installs the published
   client straight away when an admin asks for an update, even one that failed before.
