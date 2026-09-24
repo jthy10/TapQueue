@@ -46,6 +46,13 @@ public sealed class SessionStore(Database database)
         database.QueryOne($"UPDATE sessions SET signed_out_at = $now WHERE id = $id AND signed_out_at IS NULL RETURNING {Columns}",
             Map, ("$now", DateTimeOffset.UtcNow), ("$id", id));
 
+    /// <summary>
+    /// When the tray sign-in mode changes: ends the sessions made the other way (with a remembered
+    /// domain sign-in, or without), so those clients sign in again the new way. Returns how many.
+    /// </summary>
+    public int EndAll(bool withDomainSignIn) =>
+        database.Execute(withDomainSignIn ? "DELETE FROM sessions WHERE login_id IS NOT NULL" : "DELETE FROM sessions WHERE login_id IS NULL");
+
     /// <summary>Removes a session the client itself signed out of.</summary>
     public void End(long id) => database.Execute("DELETE FROM sessions WHERE id = $id", ("$id", id));
 

@@ -24,7 +24,8 @@ public static class AdminDirectoryApi
     private static DirectoryStatusDto Status(DirectoryStore store, DirectorySync sync, DirectorySyncService schedule) =>
         new(store.Config().ToDto(), store.Scope().Select(s => s.ToDto()).ToList(), store.Runs(), schedule.NextRunAt(), sync.Running);
 
-    private static IResult UpdateConfig(UpdateDirectoryConfigRequest request, DirectoryStore store, DirectorySync sync, DirectorySyncService schedule, EventLog events)
+    private static IResult UpdateConfig(UpdateDirectoryConfigRequest request, DirectoryStore store, DirectorySync sync, DirectorySyncService schedule, EventLog events,
+        SessionStore sessions)
     {
         if (request.Port is < 1 or > 65535)
             return Results.BadRequest(new ErrorResponse("port must be 1 to 65535 (LDAPS is 636)."));
@@ -70,7 +71,12 @@ public static class AdminDirectoryApi
         if (config.BadgeAttribute != old.BadgeAttribute) changes.Add(config.BadgeAttribute.Length == 0 ? "cards managed in TapQueue" : $"cards from {config.BadgeAttribute}");
         if (config.MaxDisablePercent != old.MaxDisablePercent) changes.Add($"stops before disabling more than {config.MaxDisablePercent}%");
         if (config.ClientSignIn != old.ClientSignIn)
-            changes.Add(config.DomainSignIn ? "tray sign-in with a domain account" : "tray signs in as the PC's user");
+        {
+            // Trays signed in the old way sign in again, and so find out.
+            var ended = sessions.EndAll(withDomainSignIn: !config.DomainSignIn);
+            changes.Add((config.DomainSignIn ? "tray sign-in with a domain account" : "tray signs in as the PC's user") +
+                (ended > 0 ? $" ({ended} PC{(ended == 1 ? "" : "s")} signed in the old way will sign in again)" : ""));
+        }
         events.Admin(null, $"Active Directory settings: {string.Join("; ", changes)}.");
         return Results.Ok(Status(store, sync, schedule));
     }

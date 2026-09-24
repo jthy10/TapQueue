@@ -116,6 +116,30 @@ public sealed class DomainSignInTests
     }
 
     [Fact]
+    public async Task SwitchingModesEndsSessionsMadeTheOtherWay()
+    {
+        await using var server = await StartAsync(ClientSignIn.Pc);
+        var created = await TestServer.ReadAsync<UserTokenResponse>(await server.Admin.PostAsJsonAsync("/api/v1/admin/users",
+            new CreateUserRequest("bob", null), TapQueueJson.Options));
+        var pcSession = await TestServer.ReadAsync<ClientSessionResponse>(await (server.NewClient()).PostAsJsonAsync("/api/v1/client/session",
+            new ClientSessionRequest("bob", created.Token, "bob", "PC-1", "test"), TapQueueJson.Options));
+        using var pcTray = server.NewClient(pcSession.SessionToken);
+
+        await Patch(server, new UpdateDirectoryConfigRequest(ClientSignIn: ClientSignIn.Domain));
+        var pcAfterDomain = await pcTray.GetAsync("/api/v1/me/jobs");
+        var domain = await TestServer.ReadAsync<ClientSessionResponse>(await SignIn(server, "alice", "alice-pw"));
+        using var domainTray = server.NewClient(domain.SessionToken);
+        var domainBefore = await domainTray.GetAsync("/api/v1/me/jobs");
+        await Patch(server, new UpdateDirectoryConfigRequest(ClientSignIn: ClientSignIn.Pc));
+        var domainAfterPc = await domainTray.GetAsync("/api/v1/me/jobs");
+
+        // 401, not 403: the client signs straight back in, the new way.
+        Assert.Equal(HttpStatusCode.Unauthorized, pcAfterDomain.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, domainBefore.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, domainAfterPc.StatusCode);
+    }
+
+    [Fact]
     public async Task UnreachableDomainControllerIsNotAWrongPassword()
     {
         await using var server = await StartAsync();

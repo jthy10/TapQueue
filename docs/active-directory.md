@@ -145,6 +145,9 @@ With a domain account:
 - Jobs printed on a PC where nobody has signed in yet aren't anyone's, even in dev mode (there's
   no falling back to the PC's user name).
 
+Changing the setting signs out the PCs signed in the old way; their trays sign in again the new
+way (with a domain account, that means asking the person).
+
 Wrong passwords count toward AD's lockout policy like any other sign-in.
 
 ## Troubleshooting
