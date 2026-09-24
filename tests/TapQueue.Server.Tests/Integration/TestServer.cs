@@ -36,13 +36,13 @@ public sealed class TestServer : IAsyncDisposable
         Admin = NewClient(AdminToken);
     }
 
-    public static async Task<TestServer> StartAsync(string authMode = "token")
+    public static async Task<TestServer> StartAsync(string authMode = "token", int discoveryPort = 0)
     {
         var printer = await FakePrinter.StartAsync();
         var dataDir = Directory.CreateTempSubdirectory("tapqueue-it").FullName;
         var config = new ServerConfig
         {
-            Server = { Listen = "127.0.0.1:0", DataDir = dataDir },
+            Server = { Listen = "127.0.0.1:0", DataDir = dataDir, DiscoveryPort = discoveryPort },
             Auth = { Mode = authMode },
             Admin = { Token = AdminToken },
         };

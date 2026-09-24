@@ -6,6 +6,9 @@
 listen = "0.0.0.0:8631"
 # Database and held jobs. Must be writable by the server.
 data_dir = "/var/lib/tapqueue"
+# UDP port for answering "is there a TapQueue server here?", so the Windows installer finds this
+# server by itself. 0 = don't answer (people type the address instead).
+discovery_port = 8631
 
 [auth]
 # "dev":   the client config only needs a username; unknown users are created automatically.

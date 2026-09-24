@@ -3,6 +3,7 @@ using TapQueue.Server.Admin;
 using TapQueue.Server.Api;
 using TapQueue.Server.Config;
 using TapQueue.Server.Data;
+using TapQueue.Server.Discovery;
 using TapQueue.Server.Ipp;
 using TapQueue.Server.Jobs;
 using TapQueue.Server.Logging;
@@ -62,6 +63,7 @@ public static class ServerApp
         builder.Services.AddSingleton<IppPrinterEndpoint>();
         builder.Services.AddHostedService<PrinterMonitor>();
         builder.Services.AddHostedService<JobCleanupService>();
+        builder.Services.AddHostedService<DiscoveryResponder>();
 
         var app = builder.Build();
 

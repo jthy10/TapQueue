@@ -27,6 +27,8 @@ public sealed class ServerConfig
     {
         if (!System.Net.IPEndPoint.TryParse(Server.Listen, out var listen) || listen.Port == 0)
             throw new InvalidDataException($"server.listen \"{Server.Listen}\" must look like 0.0.0.0:8631.");
+        if (Server.DiscoveryPort is < 0 or > 65535)
+            throw new InvalidDataException($"server.discovery_port must be a port number, or 0 to turn discovery off.");
         if (Auth.Mode is not ("dev" or "token"))
             throw new InvalidDataException($"auth.mode must be \"dev\" or \"token\", not \"{Auth.Mode}\".");
         if (string.IsNullOrWhiteSpace(Admin.Token) || Admin.Token == "change-me")
@@ -41,6 +43,9 @@ public sealed class ServerSection
 
     /// <summary>Where the database and spooled jobs live.</summary>
     public string DataDir { get; set; } = "/var/lib/tapqueue";
+
+    /// <summary>UDP port to answer "is there a TapQueue server here?" broadcasts on (the Windows installer asks). 0 = don't answer.</summary>
+    public int DiscoveryPort { get; set; } = TapQueue.Shared.ServerDiscovery.DefaultPort;
 }
 
 public sealed class AuthSection
