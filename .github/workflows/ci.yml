@@ -69,3 +69,23 @@ jobs:
         with:
           name: tapqueue-client-installer-${{ github.sha }}
           path: dist/
+
+  # install.ps1 as someone would run it on a PC: Windows PowerShell 5.1, the newest GitHub release.
+  install-script:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install with install.ps1
+        shell: powershell
+        env:
+          TAPQUEUE_SERVER: http://127.0.0.1:9
+        run: |
+          Get-Content -Raw ./install.ps1 | Invoke-Expression
+          $service = Get-Service TapQueue
+          if ($service.Status -ne "Running") { throw "The TapQueue service is $($service.Status)." }
+          if (-not (Select-String -Quiet -Path "$env:ProgramData\TapQueue\client.toml" -Pattern '127\.0\.0\.1:9')) { throw "client.toml doesn't have the server." }
+
+      - name: Run it again (upgrade or repair)
+        shell: powershell
+        run: Get-Content -Raw ./install.ps1 | Invoke-Expression
