@@ -11,6 +11,8 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-23
+
 ### Added
 - Admin console at `http://<server>:8631/admin`: an overview of what needs attention, jobs
   (release or cancel any held job), users, cards (enroll one by tapping it at a station),
@@ -109,6 +111,7 @@ First working version.
   readers. A tap releases the user's held jobs to the station's printer.
 - Badge enrollment by an admin (`badges add --last-tap`).
 
-[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.2.0...HEAD
+[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.3.0...HEAD
+[0.3.0]: https://github.com/jthy10/TapQueue/compare/server-v0.2.0...server-v0.3.0
 [0.2.0]: https://github.com/jthy10/TapQueue/compare/v0.1.0...server-v0.2.0
 [0.1.0]: https://github.com/jthy10/TapQueue/releases/tag/v0.1.0
