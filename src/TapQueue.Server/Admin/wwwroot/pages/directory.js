@@ -29,6 +29,7 @@ export async function render(root, ctx) {
 
   const connection = h("div");
   const schedule = h("div");
+  const signIn = h("div");
   const scope = h("div");
   const runs = h("div");
   const previewButton = button("Preview", { iconName: "search", onclick: () => run(true) });
@@ -40,6 +41,8 @@ export async function render(root, ctx) {
     h("div", { class: "grid two" },
       panel({ title: "Connection", actions: [button("Test", { small: true, onclick: test }), button("Edit", { small: true, onclick: editConnection })], body: connection }),
       panel({ title: "Daily sync", actions: button("Edit", { small: true, onclick: editSchedule }), body: schedule })),
+    panel({ title: "Tray sign-in", description: "Who the TapQueue tray app on each PC signs in as.",
+      actions: button("Edit", { small: true, onclick: editSignIn }), body: signIn }),
     panel({
       title: "Scope",
       description: "Who is synced. Users in none of these aren't in TapQueue, or are disabled if they were.",
@@ -75,6 +78,12 @@ export async function render(root, ctx) {
       ["Next", s.nextRunAt ? [dateTime(s.nextRunAt), !last && h("span", { class: "sub" }, "Only after the first sync is run here.")] : "—"],
       ["Last sync", last ? [pill(last.outcome, outcomeTone[last.outcome]), " ", time(last.startedAt), h("span", { class: "sub" }, last.error ?? last.summary)] : "Never"],
       ["Safety limit", `Stops before disabling more than ${c.maxDisablePercent}% of AD users`],
+    ]));
+
+    signIn.replaceChildren(props([
+      ["Signs in as", c.clientSignIn === "domain"
+        ? [pill("Domain account", "accent"), h("span", { class: "sub" }, "People choose Sign in as… in the tray and enter their AD name and password. It's remembered on that PC until they sign out.")]
+        : [pill("The PC's user", "plain"), h("span", { class: "sub" }, "The person signed in to the PC, without asking. Sign in as… is greyed out.")]],
     ]));
 
     scope.replaceChildren(table({
@@ -143,6 +152,21 @@ export async function render(root, ctx) {
       ],
       onSubmit: async (v) => {
         s = await api.patch("directory/config", { enabled: v.enabled, syncTime: v.syncTime, maxDisablePercent: Number(v.maxDisablePercent) });
+        draw();
+        toast("Saved");
+      },
+    });
+  }
+
+  function editSignIn() {
+    formDialog({
+      title: "Tray sign-in",
+      body: [
+        field("Sign in as", select("clientSignIn", [["pc", "The person signed in to the PC"], ["domain", "A domain account, entered in the tray"]], s.config.clientSignIn),
+          "With a domain account, only users synced from AD can sign in, and jobs printed before someone signs in on a PC aren't anyone's. Passwords are checked against AD and never stored."),
+      ],
+      onSubmit: async (v) => {
+        s = await api.patch("directory/config", { clientSignIn: v.clientSignIn });
         draw();
         toast("Saved");
       },
