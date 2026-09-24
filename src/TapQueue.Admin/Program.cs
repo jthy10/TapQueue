@@ -71,6 +71,14 @@ const string Usage = """
       tapqueue-admin crashes show <id>               One report with its full error
       tapqueue-admin crashes clear [<computer>]      Delete crash reports (all, or one PC's)
 
+      tapqueue-admin directory                       Active Directory sync: settings, scope, next and recent syncs
+      tapqueue-admin directory sync [--dry-run] [--force]
+                                                     Sync now (--dry-run: only show what would change;
+                                                     --force: go ahead even past the disable limit)
+      tapqueue-admin directory scope add <dn>        Sync the users under an OU, in a group (with nested
+                                                     groups) or one user. Set up the connection in the console
+      tapqueue-admin directory scope remove <id>     Stop syncing a scope item (id from `directory`)
+
       tapqueue-admin server                          Settings (and whether each is set here or in server.toml)
       tapqueue-admin server set hold-hours|session-timeout <number|default>
                                                      Change a setting now, or go back to server.toml's
@@ -173,6 +181,11 @@ try
         ("crashes", "show") when positional.Count == 3 && long.TryParse(positional[2], out var crashId) => await ShowCrash(crashId),
         ("crashes", "clear") when positional.Count <= 3 => await ClearCrashes(positional.ElementAtOrDefault(2)),
         ("crashes", _) when positional.Count <= 2 => await ListCrashes(positional.ElementAtOrDefault(1)),
+        ("directory", null) => await ShowDirectory(),
+        ("directory", "sync") when positional.Count == 2 => await SyncDirectory(options.ContainsKey("--dry-run"), options.ContainsKey("--force")),
+        ("directory", "scope") when positional.Count == 4 && positional[2] == "add" => await AddDirectoryScope(positional[3]),
+        ("directory", "scope") when positional.Count == 4 && positional[2] == "remove" =>
+            await Delete($"directory/scope/{long.Parse(positional[3])}", $"Removed scope item {positional[3]}; the next sync disables users only it brought in."),
         ("server", null) => await ShowServer(),
         ("server", "set") when positional.Count == 4 => await SetServerSetting(positional[2], positional[3]),
         ("server", "log") when positional.Count == 2 => await ServerLog(options.ContainsKey("--follow")),
@@ -245,6 +258,65 @@ async Task<int> ListJobs(string? status)
         (j.Pages?.ToString() ?? "?") + (j.Copies > 1 ? $" x{j.Copies}" : ""), FormatSize(j.SizeBytes),
         j.SubmittedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"), j.ReleasedPrinterId ?? "",
     }));
+    return 0;
+}
+
+async Task<int> ShowDirectory()
+{
+    var d = await Get<DirectoryStatusDto>("directory");
+    if (d is null) return 1;
+    var c = d.Config;
+    Console.WriteLine(c.Host.Length == 0
+        ? "Not set up: set the connection on the console's Active Directory page."
+        : $"Domain controller {c.Host}:{c.Port} (LDAPS), bind as {c.BindDn}{(c.HasPassword ? "" : " (no password saved)")}" +
+          $"{(c.CaCertificate.Length > 0 ? ", trusting its own CA" : "")}.");
+    Console.WriteLine(c.BadgeAttribute.Length > 0 ? $"Cards come from {c.BadgeAttribute}." : "Cards are managed in TapQueue.");
+    Console.WriteLine(c.Enabled
+        ? $"Daily sync at {c.SyncTime}{(d.NextRunAt is { } next ? $", next {next.ToLocalTime():yyyy-MM-dd HH:mm}" : "")}; stops before disabling more than {c.MaxDisablePercent}%."
+        : "Daily sync is off.");
+    Console.WriteLine();
+    if (d.Scope.Count == 0)
+        Console.WriteLine("Nothing in the scope yet: tapqueue-admin directory scope add <dn>");
+    else
+        Table(["ID", "KIND", "NAME", "DN"], d.Scope.Select(s => new[] { s.Id.ToString(), s.Kind, s.Name, s.Dn }));
+    if (d.Runs.Count > 0)
+    {
+        Console.WriteLine();
+        Table(["WHEN", "BY", "OUTCOME", "RESULT"], d.Runs.Take(5).Select(r => new[]
+        {
+            Ago(r.StartedAt), r.Trigger, r.Outcome + (r.DryRun ? " (preview)" : ""), Truncate(r.Error ?? r.Summary, 90),
+        }));
+    }
+    return 0;
+}
+
+async Task<int> SyncDirectory(bool dryRun, bool force)
+{
+    var r = await Send<DirectorySyncResultDto>(HttpMethod.Post, "directory/sync", new DirectorySyncRequest(dryRun, force));
+    if (r is null) return 1;
+    if (r.Outcome == DirectoryRunOutcome.Failed)
+    {
+        Console.Error.WriteLine($"Sync failed, nothing changed: {r.Error}");
+        return 1;
+    }
+    Console.WriteLine($"{Plural(r.Users, "user")} and {Plural(r.Groups, "group")} in the scope. {(dryRun ? "Would do: " : "")}{r.Summary}");
+    foreach (var change in r.Changes)
+        Console.WriteLine($"  {change.Description}");
+    foreach (var warning in r.Warnings)
+        Console.WriteLine($"  warning: {warning}");
+    if (r.Outcome == DirectoryRunOutcome.Stopped)
+    {
+        Console.Error.WriteLine(r.Error);
+        return 1;
+    }
+    return 0;
+}
+
+async Task<int> AddDirectoryScope(string dn)
+{
+    var item = await Send<DirectoryScopeDto>(HttpMethod.Post, "directory/scope", new AddDirectoryScopeRequest(Dn: dn));
+    if (item is null) return 1;
+    Console.WriteLine($"Added {item.Kind} {item.Name} to the scope (id {item.Id}). Preview with: tapqueue-admin directory sync --dry-run");
     return 0;
 }
 
