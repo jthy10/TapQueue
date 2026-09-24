@@ -32,6 +32,7 @@ jobs:
   # The Windows installer needs Inno Setup, so it's built on Windows.
   client-installer:
     runs-on: windows-latest
+    needs: build
     steps:
       - uses: actions/checkout@v4
 
@@ -42,6 +43,22 @@ jobs:
       - name: Build installer
         shell: pwsh
         run: ./scripts/package-client-installer.ps1
+
+      - name: Smoke test the Windows service (built on Windows)
+        shell: pwsh
+        run: ./scripts/smoke-test-windows-service.ps1 out/client/TapQueueClient.exe
+
+      # scripts/package.sh builds the Windows client on Linux too; that's the zip published to servers.
+      - uses: actions/download-artifact@v4
+        with:
+          name: tapqueue-${{ github.sha }}
+          path: linux-built
+
+      - name: Smoke test the Windows service (built on Linux)
+        shell: pwsh
+        run: |
+          Expand-Archive (Get-ChildItem linux-built/TapQueue_client_*_win-x64.zip).FullName linux-built/client
+          ./scripts/smoke-test-windows-service.ps1 linux-built/client/TapQueueClient.exe
 
       - uses: actions/upload-artifact@v4
         with:
