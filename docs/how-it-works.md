@@ -15,7 +15,7 @@
 ```
 receiving ──▶ held ──▶ releasing ──▶ released
     │           │          │
-    │           │          └─(printer refused / unreachable)──▶ held, with the error
+    │           │          └─(printer refused, unreachable or stopped)──▶ held, with the error
     │           ├─(user deletes it)──▶ canceled
     │           └─(hold_hours pass)──▶ expired
     └─(client cancels, or still arriving after an hour)──▶ canceled
@@ -28,6 +28,32 @@ receiving ──▶ held ──▶ releasing ──▶ released
 - Releasing sends jobs oldest first. If a printer answers "busy", the server retries for up to two
   minutes. A job that can't be sent goes back to **held**, so the user can try another printer.
 - The document is deleted from disk when the job is released, canceled or expires.
+
+## Printer health
+
+The server asks every printer for its status over IPP (Get-Printer-Attributes) when it starts
+and every 30 seconds after that, and again whenever someone presses **Check now** or releases to
+a printer last seen down. From the answer it works out:
+
+| Health | Means | Releases |
+|---|---|---|
+| **ok** | Ready or printing, nothing reported | Go ahead |
+| **warning** | Something to see to soon: toner or paper low, an unfamiliar status | Go ahead |
+| **error** | A real problem: paper jam, out of paper, door open, a supply empty | Go ahead unless the printer has stopped |
+| **offline** | Didn't answer | Held back |
+
+A printer that has **stopped** (`printer-state` is stopped) or says it isn't accepting jobs
+counts as unable to print. Releasing to it, from a station, the tray app or the console, refuses
+straight away with the reason ("Office printer can't print right now (paper jam). Your jobs are
+still held.") instead of sending jobs it won't print. Before refusing, the server checks the
+printer once more in case it was just fixed.
+
+Supply levels come from the printer's `marker-*` attributes (toner or ink name, colour, level
+and its own "low" mark). Printers that don't report them just show no supplies.
+
+Every change in a printer's problems (it goes offline, jams, runs low, is ready again) is
+recorded in the activity log under **Printers**, logged by the server, and listed under
+**Needs attention** on the console's Overview. `tapqueue-admin printers` shows the same.
 
 ## How a job is matched to a person
 

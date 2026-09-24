@@ -11,6 +11,20 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+### Added
+- Printer health monitoring. Printers are checked every 30 seconds (was every 2 minutes) for
+  their state, what's wrong (paper jam, out of paper, door open…) and toner or ink levels. Each
+  printer is ok, warning, error or offline; the console shows it with supply level bars and lists
+  problems under Needs attention, `tapqueue-admin printers` shows it, and every change is
+  recorded in the activity log (new **Printers** filter). See
+  [how-it-works.md](docs/how-it-works.md#printer-health).
+
+### Changed
+- Releasing to a printer that is unreachable, stopped or not accepting jobs is refused straight
+  away with the reason, and the jobs stay held. The printer is checked again first, in case it
+  was just fixed.
+- A printer that answers Get-Printer-Attributes with an IPP error now counts as offline.
+
 ## [0.5.0] - 2026-09-24
 
 ### Added

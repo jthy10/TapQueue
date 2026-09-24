@@ -5,7 +5,7 @@ checklist; [admin-ui.md](admin-ui.md#roadmap) has the admin console's own phases
 
 ## Before a real deployment
 
-1. **Printer health monitoring.** Poll every printer over IPP for its state, what's wrong
+1. **Printer health monitoring.** *(Done in 0.6.0, see [how-it-works.md](how-it-works.md#printer-health).)* Poll every printer over IPP for its state, what's wrong
    (jammed, out of paper, door open) and supply levels. Show it in the console and CLI, record
    problems in the activity log, and don't release to a printer that can't print, so jobs stay
    held for another printer instead of disappearing into a stopped one.

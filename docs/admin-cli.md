@@ -17,7 +17,7 @@ tapqueue-admin queues add <id> --name <name> [--description] [--location] [--col
 tapqueue-admin queues edit <id> [--name] [--description] [--location] [--color on|off] [--duplex on|off] [--media]
 tapqueue-admin queues remove <id>
 
-tapqueue-admin printers [--refresh]            Printers and whether they're reachable
+tapqueue-admin printers [--refresh]            Printers with their health and toner levels
 tapqueue-admin printers add <id> <uri> [--name] [--location] [--tls-skip-verify]
 tapqueue-admin printers edit <id> [--uri] [--name] [--location] [--tls-skip-verify on|off]
 tapqueue-admin printers remove <id>
