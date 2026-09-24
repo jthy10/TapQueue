@@ -16,6 +16,8 @@ namespace TapQueue.Server.Users;
 ///   card           a card number to link to them
 ///   disabled       true/false
 /// card_hints and created_at (from an export) are ignored, so an export can be edited and imported back.
+/// Active Directory groups in the groups column are ignored too (AD sets their members), and a row
+/// can't rename or enable a user AD owns (<see cref="UserLifecycle"/>).
 /// </summary>
 public sealed class UserImport(UserStore users, GroupStore groups, BadgeStore badges, UnknownTaps unknownTaps, UserLifecycle lifecycle, EventLog events)
 {
@@ -97,6 +99,8 @@ public sealed class UserImport(UserStore users, GroupStore groups, BadgeStore ba
         }
         else if (!string.IsNullOrEmpty(displayName) && displayName != existing.DisplayName)
         {
+            if (existing.FromDirectory)
+                return Error($"{username}'s name comes from Active Directory; change it there.");
             changes.Add($"rename to {displayName}");
             steps.Add(u => lifecycle.Rename(u!, displayName));
         }
@@ -105,6 +109,8 @@ public sealed class UserImport(UserStore users, GroupStore groups, BadgeStore ba
         {
             if (ParseBool(disabledText) is not { } disabled)
                 return Error($"disabled must be true or false, not \"{disabledText}\".");
+            if (!disabled && existing?.DisabledBy == DisabledBy.Directory)
+                return Error($"{username} is disabled by Active Directory; enable them there.");
             if (disabled != (existing?.Disabled ?? false))
             {
                 changes.Add(disabled ? "disable" : "enable");
@@ -117,7 +123,9 @@ public sealed class UserImport(UserStore users, GroupStore groups, BadgeStore ba
             var wanted = groupsText.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             if (wanted.FirstOrDefault(g => !allGroups.ContainsKey(g)) is { } unknown)
                 return Error($"No group \"{unknown}\".");
-            var current = existing is null ? [] : memberships.GetValueOrDefault(existing.Id) ?? [];
+            wanted = wanted.Where(g => !allGroups[g].FromDirectory).ToArray();
+            var current = (existing is null ? [] : memberships.GetValueOrDefault(existing.Id) ?? [])
+                .Where(g => !allGroups.TryGetValue(g, out var group) || !group.FromDirectory).ToList();
             var add = wanted.Where(g => !current.Contains(g, StringComparer.OrdinalIgnoreCase)).Select(g => allGroups[g]).ToList();
             var remove = current.Where(g => !wanted.Contains(g, StringComparer.OrdinalIgnoreCase)).Select(g => allGroups[g]).ToList();
             changes.AddRange(add.Select(g => $"add to {g.Name}"));

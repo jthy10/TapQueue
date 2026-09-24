@@ -328,10 +328,17 @@ public static class AdminApi
     {
         if (users.FindByUsername(username) is not { } user)
             return Results.NotFound(new ErrorResponse($"No user \"{username}\"."));
-        if (Clean(request.DisplayName) is { } displayName)
-            user = lifecycle.Rename(user, displayName);
-        if (request.Disabled is { } disabled)
-            user = lifecycle.SetDisabled(user, disabled);
+        try
+        {
+            if (Clean(request.DisplayName) is { } displayName)
+                user = lifecycle.Rename(user, displayName);
+            if (request.Disabled is { } disabled)
+                user = lifecycle.SetDisabled(user, disabled);
+        }
+        catch (DirectoryOwnedException ex)
+        {
+            return Results.Conflict(new ErrorResponse(ex.Message));
+        }
         return Results.Ok(user.ToAdminDto(groups.Memberships().GetValueOrDefault(user.Id) ?? []));
     }
 
@@ -339,7 +346,14 @@ public static class AdminApi
     {
         if (users.FindByUsername(username) is not { } user)
             return Results.NotFound(new ErrorResponse($"No user \"{username}\"."));
-        lifecycle.Delete(user);
+        try
+        {
+            lifecycle.Delete(user);
+        }
+        catch (DirectoryOwnedException ex)
+        {
+            return Results.Conflict(new ErrorResponse(ex.Message));
+        }
         return Results.NoContent();
     }
 

@@ -53,13 +53,21 @@ public static class AdminUsersBulkApi
                 errors.Add($"No user \"{username}\".");
                 continue;
             }
-            switch (request.Action)
+            try
             {
-                case BulkUserAction.Disable: lifecycle.SetDisabled(user, true); break;
-                case BulkUserAction.Enable: lifecycle.SetDisabled(user, false); break;
-                case BulkUserAction.Delete: lifecycle.Delete(user); break;
-                case BulkUserAction.AddToGroup: lifecycle.AddToGroup(user, group!); break;
-                case BulkUserAction.RemoveFromGroup: lifecycle.RemoveFromGroup(user, group!); break;
+                switch (request.Action)
+                {
+                    case BulkUserAction.Disable: lifecycle.SetDisabled(user, true); break;
+                    case BulkUserAction.Enable: lifecycle.SetDisabled(user, false); break;
+                    case BulkUserAction.Delete: lifecycle.Delete(user); break;
+                    case BulkUserAction.AddToGroup: lifecycle.AddToGroup(user, group!); break;
+                    case BulkUserAction.RemoveFromGroup: lifecycle.RemoveFromGroup(user, group!); break;
+                }
+            }
+            catch (DirectoryOwnedException ex)
+            {
+                errors.Add(ex.Message);
+                continue;
             }
             changed++;
         }

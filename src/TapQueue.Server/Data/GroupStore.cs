@@ -16,8 +16,12 @@ public sealed record GroupRecord(
     IReadOnlyList<string> PrinterIds,
     int MemberCount,
     string Source,
-    QuotaDto? Quota)
+    QuotaDto? Quota,
+    string? ExternalId = null)
 {
+    /// <summary>Synced from Active Directory, which owns its name, description and members.</summary>
+    public bool FromDirectory => Source == UserSource.ActiveDirectory;
+
     public GroupDto ToDto() => new(Id, Name, Description, AllQueues, QueueIds, AllPrinters, PrinterIds, MemberCount, Source, Quota);
 }
 
@@ -30,11 +34,14 @@ public sealed class GroupStore(Database database)
                g.all_printers,
                (SELECT json_group_array(printer_id) FROM group_printers WHERE group_id = g.id),
                (SELECT COUNT(*) FROM group_members WHERE group_id = g.id),
-               g.source, g.quota_pages, g.quota_period
+               g.source, g.quota_pages, g.quota_period, g.external_id
         FROM groups g
         """;
 
     public GroupRecord? Get(string id) => database.QueryOne(Select + " WHERE g.id = $id", Map, ("$id", id));
+
+    public GroupRecord? FindByExternalId(string source, string externalId) =>
+        database.QueryOne(Select + " WHERE g.source = $s AND g.external_id = $x COLLATE NOCASE", Map, ("$s", source), ("$x", externalId));
 
     public List<GroupRecord> List() => database.Query(Select + " ORDER BY g.name COLLATE NOCASE", Map);
 
@@ -44,6 +51,28 @@ public sealed class GroupStore(Database database)
             ("$id", id), ("$n", name), ("$d", description), ("$now", DateTimeOffset.UtcNow));
         return Get(id)!;
     }
+
+    /// <summary>Hands the group to a directory, which then owns its name, description and members.</summary>
+    public void SetSource(string id, string source, string? externalId) =>
+        database.Execute("UPDATE groups SET source = $s, external_id = $x WHERE id = $id", ("$s", source), ("$x", externalId), ("$id", id));
+
+    /// <summary>
+    /// Replaces the group's members in one go. via is the nested group a member came through, null if
+    /// they're a direct member.
+    /// </summary>
+    public void SetMembers(string id, IEnumerable<(long UserId, string? Via)> members) =>
+        database.ExecuteAtomically("""
+            DELETE FROM group_members WHERE group_id = $id;
+            INSERT INTO group_members (group_id, user_id, via)
+            SELECT $id, json_extract(value, '$[0]'), json_extract(value, '$[1]') FROM json_each($members);
+            """, ("$id", id), ("$members", JsonSerializer.Serialize(members.DistinctBy(m => m.UserId).Select(m => new object?[] { m.UserId, m.Via }))));
+
+    /// <summary>Members with the nested group each came through (null for direct members).</summary>
+    public List<(string Username, string? Via)> MembersWithVia(string groupId) =>
+        database.Query("""
+            SELECT u.username, m.via FROM group_members m JOIN users u ON u.id = m.user_id
+            WHERE m.group_id = $g ORDER BY u.username
+            """, r => (r.GetString(0), r.GetStringOrNull(1)), ("$g", groupId));
 
     /// <summary>Sets the page limit for members, or with null removes it.</summary>
     public void SetQuota(string id, QuotaDto? quota) =>
@@ -95,7 +124,8 @@ public sealed class GroupStore(Database database)
         r.GetBoolean(3), Ids(r.GetString(4)),
         r.GetBoolean(5), Ids(r.GetString(6)),
         r.GetInt32(7), r.GetString(8),
-        r.IsDBNull(9) ? null : new QuotaDto(r.GetInt32(9), r.GetString(10)));
+        r.IsDBNull(9) ? null : new QuotaDto(r.GetInt32(9), r.GetString(10)),
+        r.GetStringOrNull(11));
 
     private static List<string> Ids(string json) => JsonSerializer.Deserialize<List<string>>(json) ?? [];
 }

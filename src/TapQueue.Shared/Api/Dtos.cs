@@ -63,8 +63,10 @@ public sealed record UserDto(long Id, string Username, string DisplayName);
 
 /// <summary>What admins see of a user. A disabled user can't sign in, print or release.</summary>
 /// <param name="Groups">Ids of the groups they're in.</param>
-/// <param name="Source">"local" for users managed in TapQueue; later, the directory that syncs them.</param>
+/// <param name="Source">"local" for users managed in TapQueue, "ad" for users synced from Active Directory.</param>
 /// <param name="Quota">Their own page limit, which overrides their groups'.</param>
+/// <param name="DisabledBy">"admin" or "directory" when they're disabled.</param>
+/// <param name="DirectoryState">Why AD sync disabled them: "disabled", "expired" or "missing" (out of the sync's scope).</param>
 public sealed record UserAdminDto(
     long Id,
     string Username,
@@ -73,7 +75,9 @@ public sealed record UserAdminDto(
     DateTimeOffset? DisabledAt,
     IReadOnlyList<string> Groups,
     string Source = "local",
-    QuotaDto? Quota = null);
+    QuotaDto? Quota = null,
+    string? DisabledBy = null,
+    string? DirectoryState = null);
 
 /// <summary>A page limit: at most <paramref name="Pages"/> pages per <paramref name="Period"/> (one of <see cref="QuotaPeriod"/>).</summary>
 public sealed record QuotaDto(int Pages, string Period);
@@ -358,7 +362,9 @@ public sealed record ErrorResponse(string Error);
 
 /// <param name="CardHint">The last few characters of the card number. The full number isn't stored.</param>
 /// <param name="Label">The admin's note to tell cards apart, e.g. "spare" or "blue fob".</param>
-public sealed record BadgeDto(long Id, string Username, string CardHint, DateTimeOffset CreatedAt, DateTimeOffset? LastUsedAt, string Label = "");
+/// <param name="Source">"local" if an admin linked the card, "ad" if the directory sync did.</param>
+public sealed record BadgeDto(long Id, string Username, string CardHint, DateTimeOffset CreatedAt, DateTimeOffset? LastUsedAt, string Label = "",
+    string Source = "local");
 
 public sealed record CreateBadgeRequest(string Username, string Card, string? Label = null);
 

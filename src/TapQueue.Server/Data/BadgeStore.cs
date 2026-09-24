@@ -3,9 +3,11 @@ using TapQueue.Shared.Api;
 
 namespace TapQueue.Server.Data;
 
-public sealed record BadgeRecord(long Id, long UserId, string Username, string CardHint, DateTimeOffset CreatedAt, DateTimeOffset? LastUsedAt, string Label)
+/// <param name="Source">"local" if an admin linked it, "ad" if the directory sync did (from the user's badge attribute).</param>
+public sealed record BadgeRecord(long Id, long UserId, string Username, string CardHint, DateTimeOffset CreatedAt, DateTimeOffset? LastUsedAt, string Label,
+    string Source = UserSource.Local, string CardHash = "")
 {
-    public BadgeDto ToDto() => new(Id, Username, CardHint, CreatedAt, LastUsedAt, Label);
+    public BadgeDto ToDto() => new(Id, Username, CardHint, CreatedAt, LastUsedAt, Label, Source);
 }
 
 /// <summary>
@@ -15,7 +17,7 @@ public sealed record BadgeRecord(long Id, long UserId, string Username, string C
 public sealed class BadgeStore(Database database)
 {
     private const string SelectColumns = """
-        SELECT b.id, b.user_id, u.username, b.card_hint, b.created_at, b.last_used_at, b.label
+        SELECT b.id, b.user_id, u.username, b.card_hint, b.created_at, b.last_used_at, b.label, b.source, b.card_hash
         FROM badges b JOIN users u ON u.id = b.user_id
         """;
 
@@ -46,16 +48,24 @@ public sealed class BadgeStore(Database database)
         database.Query(SelectColumns + (userId is null ? "" : " WHERE b.user_id = $u") + " ORDER BY u.username, b.id", Map, ("$u", userId));
 
     /// <summary>Links a card to a user. The caller checks that the card isn't already someone's.</summary>
-    public BadgeRecord Add(long userId, string card, string label = "")
+    public BadgeRecord Add(long userId, string card, string label = "", string source = UserSource.Local)
     {
         var normalized = Normalize(card);
         var id = (long)database.Scalar("""
-            INSERT INTO badges (card_hash, card_hint, user_id, created_at, label)
-            VALUES ($h, $hint, $u, $now, $label)
+            INSERT INTO badges (card_hash, card_hint, user_id, created_at, label, source)
+            VALUES ($h, $hint, $u, $now, $label, $source)
             RETURNING id
-            """, ("$h", Tokens.Hash(normalized)), ("$hint", Hint(normalized)), ("$u", userId), ("$now", DateTimeOffset.UtcNow), ("$label", label))!;
+            """, ("$h", Tokens.Hash(normalized)), ("$hint", Hint(normalized)), ("$u", userId), ("$now", DateTimeOffset.UtcNow), ("$label", label),
+            ("$source", source))!;
         return Get(id)!;
     }
+
+    /// <summary>The hash a card is stored under, for comparing a card number with <see cref="BadgeRecord.CardHash"/>.</summary>
+    public static string HashOf(string card) => Tokens.Hash(Normalize(card));
+
+    /// <summary>Moves a badge to <paramref name="userId"/> and records who owns the link now.</summary>
+    public void Assign(long id, long userId, string source) =>
+        database.Execute("UPDATE badges SET user_id = $u, source = $s WHERE id = $id", ("$u", userId), ("$s", source), ("$id", id));
 
     public BadgeRecord? Update(long id, long userId, string label)
     {
@@ -67,5 +77,5 @@ public sealed class BadgeStore(Database database)
         database.Execute("DELETE FROM badges WHERE id = $id", ("$id", id)) == 1;
 
     private static BadgeRecord Map(SqliteDataReader r) =>
-        new(r.GetInt64(0), r.GetInt64(1), r.GetString(2), r.GetString(3), r.GetTime(4), r.GetTimeOrNull(5), r.GetString(6));
+        new(r.GetInt64(0), r.GetInt64(1), r.GetString(2), r.GetString(3), r.GetTime(4), r.GetTimeOrNull(5), r.GetString(6), r.GetString(7), r.GetString(8));
 }

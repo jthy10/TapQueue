@@ -49,6 +49,10 @@ public static class AdminGroupsApi
             return NotFound(id);
         if (UnknownIds(request.QueueIds, request.PrinterIds, queues, printers) is { } unknown)
             return unknown;
+        // What an AD group may use and its limits are TapQueue's; its name and description are AD's.
+        if (group.FromDirectory && ((AdminApi.Clean(request.Name) is { } n && n != group.Name)
+                || (request.Description is { } d && d.Trim() != group.Description)))
+            return Results.Conflict(new ErrorResponse($"\"{group.Name}\" is an Active Directory group; rename it in AD."));
 
         groups.Update(group.Id, AdminApi.Clean(request.Name) ?? group.Name, request.Description?.Trim() ?? group.Description);
         if (request.AllQueues is not null || request.QueueIds is not null)
@@ -62,7 +66,12 @@ public static class AdminGroupsApi
 
     private static IResult Delete(string id, GroupStore groups, EventLog events)
     {
-        if (groups.Get(id) is not { } group || !groups.Delete(id))
+        if (groups.Get(id) is not { } group)
+            return NotFound(id);
+        if (group.FromDirectory)
+            return Results.Conflict(new ErrorResponse(
+                $"\"{group.Name}\" is an Active Directory group and would be back at the next sync; remove it from the sync's scope instead."));
+        if (!groups.Delete(id))
             return NotFound(id);
         events.Admin(EventLog.Group(group.Id), $"Removed group \"{group.Name}\" ({group.Id}) and its {group.MemberCount} memberships.");
         return Results.NoContent();
@@ -74,7 +83,14 @@ public static class AdminGroupsApi
             return NotFound(id);
         if (users.FindByUsername(username) is not { } user)
             return Results.NotFound(new ErrorResponse($"No user \"{username}\"."));
-        lifecycle.AddToGroup(user, group);
+        try
+        {
+            lifecycle.AddToGroup(user, group);
+        }
+        catch (DirectoryOwnedException ex)
+        {
+            return Results.Conflict(new ErrorResponse(ex.Message));
+        }
         return Results.NoContent();
     }
 
@@ -84,7 +100,14 @@ public static class AdminGroupsApi
             return NotFound(id);
         if (users.FindByUsername(username) is not { } user)
             return Results.NotFound(new ErrorResponse($"No user \"{username}\"."));
-        lifecycle.RemoveFromGroup(user, group);
+        try
+        {
+            lifecycle.RemoveFromGroup(user, group);
+        }
+        catch (DirectoryOwnedException ex)
+        {
+            return Results.Conflict(new ErrorResponse(ex.Message));
+        }
         return Results.NoContent();
     }
 

@@ -4,25 +4,42 @@ using TapQueue.Shared.Api;
 namespace TapQueue.Server.Data;
 
 /// <param name="Quota">Their own page limit, which overrides their groups'; null if they have none.</param>
+/// <param name="DisabledBy">Who disabled them (<see cref="DisabledBy"/>), null if they're enabled.</param>
+/// <param name="DirectoryState">Why the directory disabled them (<see cref="DirectoryState"/>), if it did.</param>
+/// <param name="ExternalId">Their id in the directory that syncs them (AD's objectGUID).</param>
 public sealed record UserRecord(long Id, string Username, string DisplayName, string? TokenHash, DateTimeOffset CreatedAt, DateTimeOffset? DisabledAt, string Source,
-    QuotaDto? Quota = null)
+    QuotaDto? Quota = null, string? DisabledBy = null, string? DirectoryState = null, string? ExternalId = null)
 {
     public bool Disabled => DisabledAt is not null;
 
+    /// <summary>Synced from Active Directory, which owns their name, enabled state and AD group memberships.</summary>
+    public bool FromDirectory => Source == UserSource.ActiveDirectory;
+
     public UserDto ToDto() => new(Id, Username, DisplayName);
 
-    public UserAdminDto ToAdminDto(IReadOnlyList<string> groups) => new(Id, Username, DisplayName, CreatedAt, DisabledAt, groups, Source, Quota);
+    public UserAdminDto ToAdminDto(IReadOnlyList<string> groups) =>
+        new(Id, Username, DisplayName, CreatedAt, DisabledAt, groups, Source, Quota, DisabledBy, DirectoryState);
+}
+
+public static class UserSource
+{
+    public const string Local = "local";
+    public const string ActiveDirectory = "ad";
 }
 
 public sealed class UserStore(Database database)
 {
-    private const string Columns = "id, username, display_name, token_hash, created_at, disabled_at, source, quota_pages, quota_period";
+    private const string Columns =
+        "id, username, display_name, token_hash, created_at, disabled_at, source, quota_pages, quota_period, disabled_by, directory_state, external_id";
 
     public UserRecord? FindByUsername(string username) =>
         database.QueryOne($"SELECT {Columns} FROM users WHERE username = $u", Map, ("$u", username));
 
     public UserRecord? FindById(long id) =>
         database.QueryOne($"SELECT {Columns} FROM users WHERE id = $id", Map, ("$id", id));
+
+    public UserRecord? FindByExternalId(string source, string externalId) =>
+        database.QueryOne($"SELECT {Columns} FROM users WHERE source = $s AND external_id = $x COLLATE NOCASE", Map, ("$s", source), ("$x", externalId));
 
     public List<UserRecord> List() =>
         database.Query($"SELECT {Columns} FROM users ORDER BY username", Map);
@@ -45,16 +62,35 @@ public sealed class UserStore(Database database)
     public UserRecord? SetDisplayName(long userId, string displayName) =>
         database.QueryOne($"UPDATE users SET display_name = $d WHERE id = $id RETURNING {Columns}", Map, ("$d", displayName), ("$id", userId));
 
-    /// <summary>Disabling also signs the user out everywhere, so their PCs stop matching new jobs to them.</summary>
-    public UserRecord? SetDisabled(long userId, bool disabled)
+    /// <summary>
+    /// Disabling also signs the user out everywhere, so their PCs stop matching new jobs to them.
+    /// <paramref name="by"/> is one of <see cref="DisabledBy"/>, and <paramref name="directoryState"/> why
+    /// the directory disabled them; both are cleared when they're enabled.
+    /// </summary>
+    public UserRecord? SetDisabled(long userId, bool disabled, string by = Data.DisabledBy.Admin, string? directoryState = null)
     {
         if (disabled)
             database.Execute("DELETE FROM sessions WHERE user_id = $id", ("$id", userId));
         return database.QueryOne($"""
-            UPDATE users SET disabled_at = CASE WHEN $disabled THEN COALESCE(disabled_at, $now) END WHERE id = $id
+            UPDATE users SET disabled_at = CASE WHEN $disabled THEN COALESCE(disabled_at, $now) END,
+                             disabled_by = CASE WHEN $disabled THEN $by END,
+                             directory_state = CASE WHEN $disabled THEN $state END
+            WHERE id = $id
             RETURNING {Columns}
-            """, Map, ("$disabled", disabled), ("$now", DateTimeOffset.UtcNow), ("$id", userId));
+            """, Map, ("$disabled", disabled), ("$now", DateTimeOffset.UtcNow), ("$by", by), ("$state", directoryState), ("$id", userId));
     }
+
+    /// <summary>Hands the user to a directory (or back to TapQueue, with <see cref="UserSource.Local"/> and null).</summary>
+    public void SetSource(long userId, string source, string? externalId) =>
+        database.Execute("UPDATE users SET source = $s, external_id = $x WHERE id = $id", ("$s", source), ("$x", externalId), ("$id", userId));
+
+    /// <summary>For renames in the directory. The caller checks the new name is free.</summary>
+    public void SetUsername(long userId, string username) =>
+        database.Execute("UPDATE users SET username = $u WHERE id = $id", ("$u", username), ("$id", userId));
+
+    /// <summary>Changes why the directory disabled a user it already disabled.</summary>
+    public void SetDirectoryState(long userId, string state) =>
+        database.Execute("UPDATE users SET directory_state = $s WHERE id = $id", ("$s", state), ("$id", userId));
 
     /// <summary>
     /// Deletes the user with their cards and sessions. Their jobs stay for history, with the username kept
@@ -70,5 +106,25 @@ public sealed class UserStore(Database database)
 
     private static UserRecord Map(SqliteDataReader r) =>
         new(r.GetInt64(0), r.GetString(1), r.GetString(2), r.GetStringOrNull(3), r.GetTime(4), r.GetTimeOrNull(5), r.GetString(6),
-            r.IsDBNull(7) ? null : new QuotaDto(r.GetInt32(7), r.GetString(8)));
+            r.IsDBNull(7) ? null : new QuotaDto(r.GetInt32(7), r.GetString(8)),
+            r.GetStringOrNull(9), r.GetStringOrNull(10), r.GetStringOrNull(11));
+}
+
+public static class DisabledBy
+{
+    /// <summary>An admin, in the console, the CLI or a CSV import.</summary>
+    public const string Admin = "admin";
+    /// <summary>The directory sync, because AD says so (<see cref="DirectoryState"/>).</summary>
+    public const string Directory = "directory";
+}
+
+/// <summary>Why the directory sync disabled someone.</summary>
+public static class DirectoryState
+{
+    /// <summary>Their account is disabled in AD.</summary>
+    public const string Disabled = "disabled";
+    /// <summary>Their account expired in AD (accountExpires is in the past).</summary>
+    public const string Expired = "expired";
+    /// <summary>They're no longer in the sync's scope: deleted in AD, moved out of the OUs, or out of the groups.</summary>
+    public const string Missing = "missing";
 }

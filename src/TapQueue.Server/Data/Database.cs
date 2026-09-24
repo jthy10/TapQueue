@@ -333,6 +333,42 @@ public sealed class Database
             );
             CREATE INDEX ix_crash_reports_computer ON crash_reports(computer, id);
         """,
+
+        // 12: Active Directory sync (DirectorySync). Users and groups it owns have source 'ad' and their
+        // objectGUID in external_id. disabled_by says who disabled a user ('admin' or 'directory'), so a
+        // sync only re-enables users it disabled; directory_state says why AD did (disabled, expired,
+        // missing). via is the nested AD group a member of an AD group came through. The scope is what to
+        // pull users from: OUs, groups and single users, by objectGUID.
+        """
+            ALTER TABLE users ADD COLUMN disabled_by TEXT;
+            ALTER TABLE users ADD COLUMN directory_state TEXT;
+            UPDATE users SET disabled_by = 'admin' WHERE disabled_at IS NOT NULL;
+            CREATE UNIQUE INDEX ix_users_external ON users(source, external_id) WHERE external_id IS NOT NULL;
+            CREATE UNIQUE INDEX ix_groups_external ON groups(source, external_id) WHERE external_id IS NOT NULL;
+
+            ALTER TABLE group_members ADD COLUMN via TEXT;
+            ALTER TABLE badges ADD COLUMN source TEXT NOT NULL DEFAULT 'local';
+
+            CREATE TABLE directory_scope (
+                id        INTEGER PRIMARY KEY,
+                kind      TEXT NOT NULL,
+                guid      TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                dn        TEXT NOT NULL,
+                name      TEXT NOT NULL,
+                added_at  TEXT NOT NULL
+            );
+
+            CREATE TABLE directory_runs (
+                id           INTEGER PRIMARY KEY,
+                started_at   TEXT NOT NULL,
+                finished_at  TEXT,
+                trigger      TEXT NOT NULL,
+                dry_run      INTEGER NOT NULL,
+                outcome      TEXT NOT NULL,
+                summary      TEXT NOT NULL DEFAULT '',
+                error        TEXT
+            );
+        """,
     ];
 
     public void Migrate()
