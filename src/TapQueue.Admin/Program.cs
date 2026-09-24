@@ -22,7 +22,7 @@ const string Usage = """
       tapqueue-admin quotas                          Everyone with a page limit and how much of it they've used
       tapqueue-admin jobs [--status held|released|expired|canceled]
                                                      List recent jobs
-      tapqueue-admin printers [--refresh]            List printers and whether they're reachable
+      tapqueue-admin printers [--refresh]            List printers with their health and toner levels
       tapqueue-admin printers add <printer-id> <uri> [--name "Office printer"] [--location ...] [--tls-skip-verify]
                                                      Add a printer, e.g. uri ipp://192.0.2.10/ipp/print
       tapqueue-admin printers edit <printer-id> [--uri ...] [--name ...] [--location ...] [--tls-skip-verify on|off]
@@ -309,12 +309,23 @@ async Task<int> ListPrinters(bool refresh)
         Console.WriteLine("No printers yet. Add one with: tapqueue-admin printers add <printer-id> ipp://<printer-ip>/ipp/print");
         return 0;
     }
-    Table(["ID", "NAME", "URI", "ONLINE", "MODEL", "STATUS"], printers.Select(p => new[]
+    Table(["ID", "NAME", "URI", "HEALTH", "SUPPLIES", "STATUS"], printers.Select(p => new[]
     {
-        p.Printer.Id, p.Printer.Name, p.Uri, p.Printer.Online ? "yes" : "no", p.Printer.MakeAndModel ?? "", p.Printer.StateMessage ?? "",
+        p.Printer.Id, p.Printer.Name, p.Uri, Health(p), Supplies(p.Health?.Supplies ?? []),
+        p.Health is { Problems.Count: > 0 } h ? string.Join(", ", h.Problems) : p.Printer.StateMessage ?? "",
     }));
     return 0;
 }
+
+// "error (held)" means releases to it are held back until it's fixed.
+static string Health(PrinterAdminDto p) => p.Health is null ? "checking"
+    : p.Health.Level == PrinterHealthLevel.Offline ? "offline"
+    : p.Health.Level + (p.Health.CanPrint ? "" : " (held)");
+
+// "black 60%, cyan 6% low"
+static string Supplies(IReadOnlyList<PrinterSupplyDto> supplies) =>
+    string.Join(", ", supplies.Select(s => $"{s.Name.Replace(" cartridge", "", StringComparison.OrdinalIgnoreCase).ToLowerInvariant()} " +
+        (s.Level is { } level ? $"{level}%" : "?") + (s.Low ? " low" : "")));
 
 async Task<int> AddPrinter(string id, string uri)
 {
