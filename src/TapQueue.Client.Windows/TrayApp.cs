@@ -27,11 +27,13 @@ public sealed class TrayApp : ApplicationContext
     private HashSet<long>? _knownJobIds;
     private bool _connected;
     private bool _signedOut;
+    private bool _needsSignIn;
     private readonly DateTime _exeWrittenAt = File.GetLastWriteTimeUtc(Environment.ProcessPath!);
     private bool _polling;
     private bool _checkingForUpdates;
     private string? _lastError;
     private JobsForm? _jobsForm;
+    private SignInForm? _signInForm;
 
     /// <param name="args">Command line to start the next version with after an update.</param>
     /// <param name="updatedFrom">The version this one replaced, when it was just started by an update.</param>
@@ -51,7 +53,15 @@ public sealed class TrayApp : ApplicationContext
             BuildMenu();
             e.Cancel = false;
         };
-        _tray.DoubleClick += (_, _) => ShowJobsForm();
+        _tray.DoubleClick += (_, _) =>
+        {
+            if (_needsSignIn) ShowSignInForm();
+            else ShowJobsForm();
+        };
+        _tray.BalloonTipClicked += (_, _) =>
+        {
+            if (_needsSignIn) ShowSignInForm();
+        };
 
         _pollTimer.Tick += async (_, _) => await PollAsync();
         _heartbeatTimer.Tick += async (_, _) => await HeartbeatAsync();
@@ -77,18 +87,78 @@ public sealed class TrayApp : ApplicationContext
         _signedOut = false;
         try
         {
-            var session = await _api.SignInAsync();
-            SetConnected(true, null);
-            _heartbeatTimer.Interval = Math.Max(10, session.HeartbeatSeconds) * 1000;
-            _heartbeatTimer.Start();
-            _pollTimer.Start();
-            await PollAsync();
+            await OnSignedInAsync(await _api.SignInAsync());
+        }
+        catch (SignInRequiredException ex)
+        {
+            if (!_connected) // unless "Sign in as…" finished first
+                NeedSignIn(ex.Message);
         }
         catch (Exception ex) when (ex is HttpRequestException or TapQueueApiException or TaskCanceledException)
         {
             SetConnected(false, ex.Message);
             _retryTimer.Start();
         }
+    }
+
+    private async Task OnSignedInAsync(ClientSessionResponse session)
+    {
+        _needsSignIn = false;
+        _knownJobIds = null;
+        SetConnected(true, null);
+        _heartbeatTimer.Interval = Math.Max(10, session.HeartbeatSeconds) * 1000;
+        _heartbeatTimer.Start();
+        _pollTimer.Start();
+        await PollAsync();
+    }
+
+    /// <summary>
+    /// The server wants a domain account and none is remembered. Keep checking now and then, in case
+    /// an admin switches back to signing in as the PC's user.
+    /// </summary>
+    private void NeedSignIn(string message)
+    {
+        _pollTimer.Stop();
+        _heartbeatTimer.Stop();
+        _heldJobs = [];
+        if (!_needsSignIn)
+            Notify("Sign in to TapQueue", "Click here, or right-click the TapQueue icon and choose Sign in as…, to print with your domain account.");
+        _needsSignIn = true;
+        SetConnected(false, message);
+        _retryTimer.Start();
+    }
+
+    /// <summary>"Sign in as…". Returns why it didn't work, or null if it did.</summary>
+    private async Task<string?> SignInAsAsync(string username, string password)
+    {
+        _retryTimer.Stop();
+        try
+        {
+            var session = await _api.SignInWithPasswordAsync(username, password);
+            _signedOut = false;
+            await OnSignedInAsync(session);
+            Notify("Signed in", $"Print jobs from this PC now go to {session.User.DisplayName}.");
+            return null;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TapQueueApiException or TaskCanceledException)
+        {
+            if (!_connected)
+                _retryTimer.Start();
+            return ex is HttpRequestException or TaskCanceledException ? $"Can't reach the TapQueue server: {ex.Message}" : ex.Message;
+        }
+    }
+
+    private async Task SignOutAsync()
+    {
+        _pollTimer.Stop();
+        _heartbeatTimer.Stop();
+        _retryTimer.Stop();
+        await _api.SignOutAsync();
+        _needsSignIn = true; // no notification: they just did this
+        _heldJobs = [];
+        SetConnected(false, null);
+        _jobsForm?.RefreshJobs();
+        _retryTimer.Start();
     }
 
     private async Task PollAsync()
@@ -250,6 +320,12 @@ public sealed class TrayApp : ApplicationContext
     {
         _pollTimer.Stop();
         _heartbeatTimer.Stop();
+        if (ex is SignInRequiredException)
+        {
+            // The session lapsed and the server no longer knows the remembered domain sign-in.
+            NeedSignIn(ex.Message);
+            return;
+        }
         if (ex is TapQueueApiException { Status: System.Net.HttpStatusCode.Forbidden })
         {
             // An admin signed this session out. Stay out (jobs printed here no longer go to this
@@ -274,6 +350,7 @@ public sealed class TrayApp : ApplicationContext
     private void UpdateTooltip()
     {
         var text = _connected ? $"TapQueue — {_heldJobs.Count} held job{(_heldJobs.Count == 1 ? "" : "s")}"
+            : _needsSignIn ? "TapQueue — not signed in"
             : _signedOut ? "TapQueue — signed out"
             : "TapQueue — can't reach server";
         _tray.Text = text.Length > 63 ? text[..63] : text; // NotifyIcon limit
@@ -285,6 +362,7 @@ public sealed class TrayApp : ApplicationContext
         menu.Items.Clear();
 
         var status = _connected ? $"Signed in as {_api.Session?.User.DisplayName}"
+            : _needsSignIn ? "Not signed in"
             : _signedOut ? "Signed out by an admin"
             : $"Not connected{(_lastError is null ? "" : $": {Shorten(_lastError, 60)}")}";
         menu.Items.Add(new ToolStripMenuItem(status) { Enabled = false });
@@ -299,13 +377,35 @@ public sealed class TrayApp : ApplicationContext
         }
         menu.Items.Add(releaseAll);
         menu.Items.Add("Held jobs…", null, (_, _) => ShowJobsForm());
-        if (!_connected)
+        if (!_connected && !_needsSignIn)
             menu.Items.Add(_signedOut ? "Sign in again" : "Retry connection", null, async (_, _) => await ConnectAsync());
+        menu.Items.Add(new ToolStripSeparator());
+        // Only when the server asks for a domain account; otherwise TapQueue signs in as the PC's user.
+        var domain = _api.SignInMode == ClientSignIn.Domain;
+        menu.Items.Add(new ToolStripMenuItem("Sign in as…", null, (_, _) => ShowSignInForm())
+        {
+            Enabled = domain,
+            ToolTipText = domain ? null : "Your IT team has TapQueue sign you in as the person signed in to this PC.",
+        });
+        if (domain && _api.Remembered is not null)
+            menu.Items.Add("Sign out", null, async (_, _) => await SignOutAsync());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(new ToolStripMenuItem($"TapQueue {TapQueueVersion.Current}") { Enabled = false });
         menu.Items.Add(new ToolStripMenuItem(_checkingForUpdates ? "Checking for updates…" : "Check for updates", null,
             async (_, _) => await CheckForUpdatesAsync()) { Enabled = !_checkingForUpdates });
         menu.Items.Add("Exit", null, (_, _) => ExitThread());
+    }
+
+    private void ShowSignInForm()
+    {
+        if (_signInForm is { IsDisposed: false })
+        {
+            _signInForm.Activate();
+            return;
+        }
+        _signInForm = new SignInForm(SignInAsAsync, _api.Remembered?.Username);
+        _signInForm.Show();
+        _signInForm.Activate();
     }
 
     private void ShowJobsForm()
