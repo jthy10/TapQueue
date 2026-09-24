@@ -11,6 +11,13 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-09-24
+
+### Fixed
+- Active Directory: a CA certificate set in the console is now trusted on servers whose LDAP
+  library uses OpenSSL (Ubuntu 26.04), not only GnuTLS (Ubuntu 24.04). The server couldn't
+  connect over LDAPS there ("Couldn't connect … over LDAPS").
+
 ## [0.6.0] - 2026-09-24
 
 ### Added
@@ -161,7 +168,8 @@ First working version.
   readers. A tap releases the user's held jobs to the station's printer.
 - Badge enrollment by an admin (`badges add --last-tap`).
 
-[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.6.0...HEAD
+[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.6.1...HEAD
+[0.6.1]: https://github.com/jthy10/TapQueue/compare/server-v0.6.0...server-v0.6.1
 [0.6.0]: https://github.com/jthy10/TapQueue/compare/server-v0.5.0...server-v0.6.0
 [0.5.0]: https://github.com/jthy10/TapQueue/compare/server-v0.4.0...server-v0.5.0
 [0.4.0]: https://github.com/jthy10/TapQueue/compare/server-v0.3.0...server-v0.4.0

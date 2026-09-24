@@ -4,7 +4,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <!-- Server, station and admin CLI; released together with tags server-vX.Y.Z. -->
-    <Version>0.7.0</Version>
+    <Version>0.6.1</Version>
     <!-- Windows client; released on its own with tags client-vX.Y.Z. -->
     <TapQueueClientVersion>0.7.0</TapQueueClientVersion>
     <Authors>TapQueue contributors</Authors>
