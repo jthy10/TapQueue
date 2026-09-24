@@ -1,4 +1,5 @@
 using System.Net;
+using TapQueue.Server.ActiveDirectory;
 using TapQueue.Server.Admin;
 using TapQueue.Server.Api;
 using TapQueue.Server.Config;
@@ -16,7 +17,8 @@ namespace TapQueue.Server;
 /// <summary>Wires up the server from a loaded config. Program.cs runs it; tests start it on a random port.</summary>
 public static class ServerApp
 {
-    public static WebApplication Build(ServerConfig config, string[]? args = null)
+    /// <param name="configureServices">Lets tests swap services, like the directory for a fake one.</param>
+    public static WebApplication Build(ServerConfig config, string[]? args = null, Action<IServiceCollection>? configureServices = null)
     {
         Directory.CreateDirectory(config.Server.DataDir);
         var database = new Database(Path.Combine(config.Server.DataDir, "tapqueue.db"));
@@ -65,6 +67,12 @@ public static class ServerApp
         builder.Services.AddHostedService<PrinterMonitor>();
         builder.Services.AddHostedService<JobCleanupService>();
         builder.Services.AddHostedService<DiscoveryResponder>();
+        builder.Services.AddSingleton<DirectoryStore>();
+        builder.Services.AddSingleton<IDirectorySourceFactory, LdapDirectorySourceFactory>();
+        builder.Services.AddSingleton<DirectorySync>();
+        builder.Services.AddSingleton<DirectorySyncService>();
+        builder.Services.AddHostedService(services => services.GetRequiredService<DirectorySyncService>());
+        configureServices?.Invoke(builder.Services);
 
         var app = builder.Build();
 

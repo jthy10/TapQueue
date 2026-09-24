@@ -36,7 +36,7 @@ public sealed class TestServer : IAsyncDisposable
         Admin = NewClient(AdminToken);
     }
 
-    public static async Task<TestServer> StartAsync(string authMode = "token", int discoveryPort = 0)
+    public static async Task<TestServer> StartAsync(string authMode = "token", int discoveryPort = 0, Action<IServiceCollection>? configureServices = null)
     {
         var printer = await FakePrinter.StartAsync();
         var dataDir = Directory.CreateTempSubdirectory("tapqueue-it").FullName;
@@ -46,7 +46,7 @@ public sealed class TestServer : IAsyncDisposable
             Auth = { Mode = authMode },
             Admin = { Token = AdminToken },
         };
-        var app = ServerApp.Build(config);
+        var app = ServerApp.Build(config, configureServices: configureServices);
         await app.StartAsync();
         var server = new TestServer(app, dataDir, printer);
         await ReadAsync<QueueAdminDto>(await server.Admin.PostAsJsonAsync("/api/v1/admin/queues",

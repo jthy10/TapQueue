@@ -115,3 +115,23 @@ public sealed class DirectoryReaderTests
     public void EscapesLdapFilterValues(string value, string escaped) =>
         Assert.Equal(escaped, LdapDirectorySource.Escape(value));
 }
+
+public sealed class DirectorySyncScheduleTests
+{
+    private static readonly TimeZoneInfo NewYork = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+
+    [Fact]
+    public void RunsLaterTodayOrTomorrow()
+    {
+        var at = new TimeOnly(1, 0);
+        Assert.Equal(new DateTimeOffset(2026, 9, 25, 1, 0, 0, TimeSpan.FromHours(-4)),
+            DirectorySyncService.NextRun(at, new DateTimeOffset(2026, 9, 24, 9, 0, 0, TimeSpan.FromHours(-4)), NewYork));
+        Assert.Equal(new DateTimeOffset(2026, 9, 24, 1, 0, 0, TimeSpan.FromHours(-4)),
+            DirectorySyncService.NextRun(at, new DateTimeOffset(2026, 9, 24, 0, 30, 0, TimeSpan.FromHours(-4)), NewYork));
+    }
+
+    [Fact]
+    public void ATimeSkippedByDaylightSavingRunsAnHourLater() =>
+        Assert.Equal(new DateTimeOffset(2027, 3, 14, 3, 30, 0, TimeSpan.FromHours(-4)),
+            DirectorySyncService.NextRun(new TimeOnly(2, 30), new DateTimeOffset(2027, 3, 14, 0, 0, 0, TimeSpan.FromHours(-5)), NewYork));
+}
