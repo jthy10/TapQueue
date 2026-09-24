@@ -13,10 +13,13 @@ public static class ClientPlatform
 
     public static IReadOnlyList<string> All { get; } = [Windows, Linux];
 
-    /// <summary>The platform this process runs on.</summary>
+    /// <summary>
+    /// The platform of the running build. Uses the process's architecture, not the OS's, so an x64
+    /// build running under emulation on an Arm PC keeps getting x64 builds.
+    /// </summary>
     public static string Current =>
         (OperatingSystem.IsWindows() ? "win" : OperatingSystem.IsLinux() ? "linux" : "unknown") + "-" +
-        RuntimeInformation.OSArchitecture.ToString().ToLowerInvariant();
+        RuntimeInformation.ProcessArchitecture.ToString().ToLowerInvariant();
 
     /// <summary>
     /// A platform sent by a client or admin, or null if it isn't one TapQueue has a client for.

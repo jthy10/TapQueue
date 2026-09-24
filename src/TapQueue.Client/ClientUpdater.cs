@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using System.Security.Cryptography;
+using TapQueue.Shared;
 using TapQueue.Shared.Api;
 
 namespace TapQueue.Client;
@@ -41,6 +42,15 @@ public sealed class ClientUpdater(HttpClient http, ILogger logger)
             return UpdateOutcome.NoBuild;
         if (build.Sha256 == _failedSha256)
             return UpdateOutcome.Failed;
+        if (!string.Equals(build.Platform, ClientPlatform.Current, StringComparison.OrdinalIgnoreCase))
+        {
+            // A server older than 0.5 only has Windows builds and offers them to everyone.
+            _failedSha256 = build.Sha256;
+            LastError = $"The server offered a {ClientPlatform.DisplayName(build.Platform)} build ({build.Version}) to this " +
+                        $"{ClientPlatform.DisplayName(ClientPlatform.Current)} PC; it needs TapQueue server 0.5 or later to publish one per platform.";
+            logger.LogError("Not installing client {Version}: {Error}", build.Version, LastError);
+            return UpdateOutcome.Failed;
+        }
         if (string.Equals(build.Sha256, await OwnSha256Async(ct), StringComparison.OrdinalIgnoreCase))
         {
             LastError = null;
@@ -80,6 +90,11 @@ public sealed class ClientUpdater(HttpClient http, ILogger logger)
         {
             File.Delete(NewExePath);
             throw new InvalidDataException("The download was damaged (checksum mismatch).");
+        }
+        if (!IsProgramForThisSystem(NewExePath))
+        {
+            File.Delete(NewExePath);
+            throw new InvalidDataException($"The download isn't a {ClientPlatform.DisplayName(ClientPlatform.Current)} program.");
         }
 
         if (_linuxLauncher is not null)
@@ -128,6 +143,18 @@ public sealed class ClientUpdater(HttpClient http, ILogger logger)
         {
             // A tray app is still running the old exe; the next update overwrites it anyway.
         }
+    }
+
+    /// <summary>Windows programs start with "MZ", Linux ones with "\x7fELF".</summary>
+    private static bool IsProgramForThisSystem(string path)
+    {
+        Span<byte> magic = stackalloc byte[4];
+        using var file = File.OpenRead(path);
+        if (file.ReadAtLeast(magic, 4, throwOnEndOfStream: false) < 4)
+            return false;
+        return OperatingSystem.IsWindows()
+            ? magic[0] == 'M' && magic[1] == 'Z'
+            : magic.SequenceEqual("\u007fELF"u8);
     }
 
     private static async Task<string> HashFileAsync(string path, CancellationToken ct)
