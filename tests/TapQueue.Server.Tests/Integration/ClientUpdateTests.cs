@@ -17,9 +17,14 @@ public sealed class ClientUpdateTests : IAsyncLifetime
 
     public async Task DisposeAsync() => await _server.DisposeAsync();
 
-    private async Task<ClientBuildDto> PublishAsync(string version, byte[] exe) =>
+    private async Task<ClientBuildDto> PublishAsync(string version, byte[] exe, string? platform = null) =>
         await TestServer.ReadAsync<ClientBuildDto>(await _server.Admin.PostAsync(
-            $"/api/v1/admin/client-builds?version={Uri.EscapeDataString(version)}", new ByteArrayContent(exe)));
+            $"/api/v1/admin/client-builds?version={Uri.EscapeDataString(version)}" + (platform is null ? "" : $"&platform={platform}"),
+            new ByteArrayContent(exe)));
+
+    private async Task<ClientSetupResponse> CheckInAsync(string computer, string? platform) =>
+        await TestServer.ReadAsync<ClientSetupResponse>(await _server.NewClient().PostAsJsonAsync("/api/v1/client/setup",
+            new ClientSetupRequest(computer, "0.5.0+test", "aaaa", null, platform), TapQueueJson.Options));
 
     private static async Task<ClientHeartbeatResponse> HeartbeatAsync(HttpClient client) =>
         await TestServer.ReadAsync<ClientHeartbeatResponse>(await client.PostAsync("/api/v1/client/heartbeat", null));
@@ -98,5 +103,39 @@ public sealed class ClientUpdateTests : IAsyncLifetime
 
         var client = Assert.Single(clients!);
         Assert.Equal(("alice", "TEST-PC", "test"), (client.Username, client.Hostname, client.ClientVersion));
+    }
+
+    [Fact]
+    public async Task EachPlatformGetsItsOwnBuild()
+    {
+        var windows = await PublishAsync("0.5.0", Exe);
+        var linux = await PublishAsync("0.5.0", "\u007fELF pretend tapqueue-client"u8.ToArray(), ClientPlatform.Linux);
+
+        Assert.Equal((ClientPlatform.Windows, ClientPlatform.Linux), (windows.Platform, linux.Platform));
+        Assert.Equal(windows, (await CheckInAsync("WIN-PC", null)).ClientBuild); // services before 0.5 send no platform
+        Assert.Equal(windows, (await CheckInAsync("WIN-PC", ClientPlatform.Windows)).ClientBuild);
+        Assert.Equal(linux, (await CheckInAsync("linux-pc", ClientPlatform.Linux)).ClientBuild);
+
+        var pcs = await _server.Admin.GetFromJsonAsync<List<WorkstationDto>>("/api/v1/admin/workstations", TapQueueJson.Options);
+        Assert.Equal([("linux-pc", ClientPlatform.Linux, false), ("WIN-PC", ClientPlatform.Windows, false)],
+            pcs!.Select(p => (p.Hostname, p.Platform, p.UpToDate)));
+    }
+
+    [Fact]
+    public async Task PublishingForOnePlatformLeavesTheOtherAlone()
+    {
+        await PublishAsync("0.5.0", "\u007fELF pretend tapqueue-client"u8.ToArray(), ClientPlatform.Linux);
+
+        Assert.Null((await CheckInAsync("WIN-PC", ClientPlatform.Windows)).ClientBuild);
+    }
+
+    [Fact]
+    public async Task UnknownPlatformsAreRejected()
+    {
+        using var publish = await _server.Admin.PostAsync("/api/v1/admin/client-builds?version=0.5.0&platform=amiga", new ByteArrayContent(Exe));
+        using var checkIn = await _server.NewClient().PostAsJsonAsync("/api/v1/client/setup",
+            new ClientSetupRequest("PC", "0.5.0", "aaaa", null, "amiga"), TapQueueJson.Options);
+
+        Assert.Equal((HttpStatusCode.BadRequest, HttpStatusCode.BadRequest), (publish.StatusCode, checkIn.StatusCode));
     }
 }

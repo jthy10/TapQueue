@@ -309,6 +309,13 @@ public sealed class Database
             ALTER TABLE groups ADD COLUMN quota_pages INTEGER;
             ALTER TABLE groups ADD COLUMN quota_period TEXT;
         """,
+
+        // 10: Linux clients. Client builds are per platform (ClientPlatform), and so are PCs; everything
+        // before this was Windows.
+        """
+            ALTER TABLE client_builds ADD COLUMN platform TEXT NOT NULL DEFAULT 'win-x64';
+            ALTER TABLE workstations ADD COLUMN platform TEXT NOT NULL DEFAULT 'win-x64';
+        """,
     ];
 
     public void Migrate()

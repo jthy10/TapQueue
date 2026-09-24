@@ -1,4 +1,5 @@
 using TapQueue.Server.Data;
+using TapQueue.Shared;
 using TapQueue.Shared.Api;
 
 namespace TapQueue.Server.Api;
@@ -25,19 +26,22 @@ public static class AdminWorkstationsApi
 
     private static List<WorkstationDto> List(WorkstationStore workstations, SessionStore sessions, ServerSettings settings, ClientBuildStore builds)
     {
-        var latest = builds.Latest();
+        var latest = builds.LatestPerPlatform().ToDictionary(b => b.Platform!);
         var signedIn = sessions.ListActive(settings.SessionTimeout).ToLookup(s => s.Hostname ?? "", StringComparer.OrdinalIgnoreCase);
         return workstations.List().Select(w => new WorkstationDto(
             w.Hostname, w.LastIp, w.Version,
-            UpToDate: latest is null || string.Equals(latest.Sha256, w.BinarySha256, StringComparison.OrdinalIgnoreCase),
+            UpToDate: latest.GetValueOrDefault(w.Platform) is not { } build || string.Equals(build.Sha256, w.BinarySha256, StringComparison.OrdinalIgnoreCase),
             w.UpdateError, w.PendingCommand, w.Online, w.FirstSeenAt, w.LastSeenAt,
-            signedIn[w.Hostname].ToList())).ToList();
+            signedIn[w.Hostname].ToList(), w.Platform)).ToList();
     }
 
     private static IResult UpdateNow(string hostname, WorkstationStore workstations, ClientBuildStore builds, EventLog events)
     {
-        if (builds.Latest() is not { } build)
-            return Results.Conflict(new ErrorResponse("No client build is published yet. Publish one on Updates first."));
+        if (workstations.Get(hostname) is not { } pc)
+            return NotFound(hostname);
+        if (builds.Latest(pc.Platform) is not { } build)
+            return Results.Conflict(new ErrorResponse(
+                $"No {ClientPlatform.DisplayName(pc.Platform)} client build is published yet. Publish one on Updates first."));
         if (workstations.SetCommand(hostname, WorkstationCommand.Update) is not { } workstation)
             return NotFound(hostname);
         events.Admin(null, $"Asked {workstation.Hostname} to update to client {build.Version} now.");

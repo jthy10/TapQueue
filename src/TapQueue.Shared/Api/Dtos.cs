@@ -235,12 +235,15 @@ public sealed record JobDto(
     int? Pages = null);
 
 /// <summary>Sent by the user client when it starts, and again whenever its session expires.</summary>
+/// <param name="WindowsUser">The user signed in to the PC (Windows or Linux).</param>
+/// <param name="Platform">A <see cref="ClientPlatform"/>; clients older than 0.5 don't send it (they're all Windows).</param>
 public sealed record ClientSessionRequest(
     string Username,
     string? Token,
     string? WindowsUser,
     string? Hostname,
-    string? ClientVersion);
+    string? ClientVersion,
+    string? Platform = null);
 
 public sealed record ClientSessionResponse(
     string SessionToken,
@@ -251,10 +254,11 @@ public sealed record ClientSessionResponse(
     ClientBuildDto? ClientBuild = null);
 
 /// <summary>
-/// The Windows client build every client should be running. A client whose own exe has a different
-/// SHA-256 downloads <see cref="DownloadPath"/> (with its session token) and installs it.
+/// The client build every PC of a <see cref="Platform"/> should be running. A PC whose own program
+/// has a different SHA-256 downloads <see cref="DownloadPath"/> and installs it.
 /// </summary>
-public sealed record ClientBuildDto(string Version, string Sha256, long SizeBytes, DateTimeOffset PublishedAt, string DownloadPath);
+public sealed record ClientBuildDto(string Version, string Sha256, long SizeBytes, DateTimeOffset PublishedAt, string DownloadPath,
+    string Platform = ClientPlatform.Windows);
 
 /// <summary>The release station build every station should be running. Downloaded with the station token.</summary>
 public sealed record StationBuildDto(string Version, string Sha256, long SizeBytes, DateTimeOffset PublishedAt, string DownloadPath);
@@ -266,7 +270,8 @@ public sealed record ClientHeartbeatResponse(ClientBuildDto? ClientBuild);
 public sealed record ClientSetupResponse(IReadOnlyList<QueueDto> Queues, ClientBuildDto? ClientBuild, string? Command = null);
 
 /// <summary>The TapQueue service checking in: which PC it is, what it runs, and why its last update failed.</summary>
-public sealed record ClientSetupRequest(string Computer, string? Version, string? Sha256, string? UpdateError);
+/// <param name="Platform">A <see cref="ClientPlatform"/>; services older than 0.5 don't send it (they're all Windows).</param>
+public sealed record ClientSetupRequest(string Computer, string? Version, string? Sha256, string? UpdateError, string? Platform = null);
 
 public static class WorkstationCommand
 {
@@ -297,7 +302,8 @@ public sealed record WorkstationDto(
     bool Online,
     DateTimeOffset FirstSeenAt,
     DateTimeOffset LastSeenAt,
-    IReadOnlyList<ClientSessionDto> Sessions);
+    IReadOnlyList<ClientSessionDto> Sessions,
+    string Platform = ClientPlatform.Windows);
 
 /// <summary>A signed-in client, for `tapqueue-admin clients`.</summary>
 /// <param name="Id">The session, for signing it out.</param>

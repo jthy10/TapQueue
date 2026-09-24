@@ -11,7 +11,8 @@ public sealed record WorkstationRecord(
     string? UpdateError,
     string? PendingCommand,
     DateTimeOffset FirstSeenAt,
-    DateTimeOffset LastSeenAt)
+    DateTimeOffset LastSeenAt,
+    string Platform)
 {
     public bool Online => DateTimeOffset.UtcNow - LastSeenAt < TimeSpan.FromSeconds(WorkstationStatus.OfflineAfterSeconds);
 }
@@ -19,11 +20,11 @@ public sealed record WorkstationRecord(
 /// <summary>
 /// PCs running the TapQueue service, which checks in about once a minute whether or not anyone is
 /// signed in. That's how the console knows which client each PC runs and whether an update failed,
-/// and how a PC gets told to update now. PCs are known by their Windows computer name.
+/// and how a PC gets told to update now. PCs are known by their computer name (hostname on Linux).
 /// </summary>
 public sealed class WorkstationStore(Database database)
 {
-    private const string Columns = "hostname, last_ip, version, binary_sha256, update_error, pending_command, first_seen_at, last_seen_at";
+    private const string Columns = "hostname, last_ip, version, binary_sha256, update_error, pending_command, first_seen_at, last_seen_at, platform";
 
     public List<WorkstationRecord> List() =>
         database.Query($"SELECT {Columns} FROM workstations ORDER BY hostname", Map);
@@ -32,17 +33,18 @@ public sealed class WorkstationStore(Database database)
         database.QueryOne($"SELECT {Columns} FROM workstations WHERE hostname = $h", Map, ("$h", hostname));
 
     /// <summary>Records a check-in and hands back the pending command (clearing it, so it runs once).</summary>
-    public string? CheckIn(string hostname, string ip, ClientSetupRequest report)
+    /// <param name="platform">The report's platform, already checked.</param>
+    public string? CheckIn(string hostname, string ip, string platform, ClientSetupRequest report)
     {
         var now = DateTimeOffset.UtcNow;
         var command = database.Scalar("SELECT pending_command FROM workstations WHERE hostname = $h", ("$h", hostname)) as string;
         database.Execute("""
-            INSERT INTO workstations (hostname, last_ip, version, binary_sha256, update_error, first_seen_at, last_seen_at)
-            VALUES ($h, $ip, $v, $sha, $err, $now, $now)
+            INSERT INTO workstations (hostname, last_ip, version, binary_sha256, update_error, first_seen_at, last_seen_at, platform)
+            VALUES ($h, $ip, $v, $sha, $err, $now, $now, $p)
             ON CONFLICT (hostname) DO UPDATE SET hostname = $h, last_ip = $ip, version = $v, binary_sha256 = $sha,
-                update_error = $err, pending_command = NULL, last_seen_at = $now
+                update_error = $err, pending_command = NULL, last_seen_at = $now, platform = $p
             """, ("$h", hostname), ("$ip", ip), ("$v", report.Version), ("$sha", report.Sha256?.ToLowerInvariant()),
-            ("$err", report.UpdateError), ("$now", now));
+            ("$err", report.UpdateError), ("$now", now), ("$p", platform));
         return command;
     }
 
@@ -57,5 +59,5 @@ public sealed class WorkstationStore(Database database)
 
     private static WorkstationRecord Map(SqliteDataReader r) => new(
         r.GetString(0), r.GetString(1), r.GetStringOrNull(2), r.GetStringOrNull(3), r.GetStringOrNull(4), r.GetStringOrNull(5),
-        r.GetTime(6), r.GetTime(7));
+        r.GetTime(6), r.GetTime(7), r.GetString(8));
 }

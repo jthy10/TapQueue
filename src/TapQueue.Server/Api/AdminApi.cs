@@ -149,25 +149,30 @@ public static class AdminApi
         static string Plural(int n, string unit) => n == 1 ? $"1 {unit}" : $"{n} {unit}s";
     }
 
-    /// <summary>The request body is TapQueueClient.exe. Clients start installing it on their next heartbeat.</summary>
-    private static async Task<IResult> PublishClientBuild(HttpContext http, string? version, ClientBuildStore builds, EventLog events, ILoggerFactory loggers)
+    /// <summary>
+    /// The request body is the client program (TapQueueClient.exe or tapqueue-client) for
+    /// <paramref name="platform"/>, Windows if not given. PCs of that platform install it when they next check in.
+    /// </summary>
+    private static async Task<IResult> PublishClientBuild(HttpContext http, string? version, string? platform, ClientBuildStore builds, EventLog events, ILoggerFactory loggers)
     {
         version = Clean(version);
         if (version is null)
             return Results.BadRequest(new ErrorResponse("version is required, e.g. ?version=0.2.0+1a2b3c4."));
+        if (ClientPlatform.Parse(platform) is not { } parsed)
+            return Results.BadRequest(new ErrorResponse($"Unknown platform \"{platform}\". Known: {string.Join(", ", ClientPlatform.All)}."));
         BuildRecord build;
         try
         {
-            build = await builds.PublishAsync(version, http.Request.Body, http.RequestAborted);
+            build = await builds.PublishAsync(parsed, version, http.Request.Body, http.RequestAborted);
         }
         catch (InvalidDataException ex)
         {
             return Results.BadRequest(new ErrorResponse(ex.Message));
         }
         loggers.CreateLogger("TapQueue.Server.Api.AdminApi").LogInformation(
-            "Published Windows client {Version} ({Size} bytes, sha256 {Sha256}); clients will update on their next heartbeat",
-            build.Version, build.SizeBytes, build.Sha256);
-        events.Admin(null, $"Published Windows client {build.Version}; clients install it on their next heartbeat.");
+            "Published {Platform} client {Version} ({Size} bytes, sha256 {Sha256}); PCs will update when they next check in",
+            ClientPlatform.DisplayName(parsed), build.Version, build.SizeBytes, build.Sha256);
+        events.Admin(null, $"Published {ClientPlatform.DisplayName(parsed)} client {build.Version}; PCs install it when they next check in.");
         return Results.Ok(build.ToDto());
     }
 

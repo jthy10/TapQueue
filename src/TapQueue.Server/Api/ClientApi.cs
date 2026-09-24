@@ -2,6 +2,7 @@ using TapQueue.Server.Config;
 using TapQueue.Server.Data;
 using TapQueue.Server.Jobs;
 using TapQueue.Server.Printers;
+using TapQueue.Shared;
 using TapQueue.Shared.Api;
 
 namespace TapQueue.Server.Api;
@@ -17,14 +18,15 @@ public static class ClientApi
         // For the TapQueue service on each PC, which runs as the machine rather than a user.
         // Queue names and client builds are not secret: anyone who can reach the server can print to it.
         app.MapGet("/api/v1/client/setup", (QueueStore queues, ClientBuildStore builds) =>
-            new ClientSetupResponse(queues.List().Select(ToDto).ToList(), builds.Latest()?.ToDto()));
+            new ClientSetupResponse(queues.List().Select(ToDto).ToList(), builds.Latest(ClientPlatform.Windows)?.ToDto()));
         // The same, from services that say which PC they are and what they run (0.3 on), so they show
         // up under Workstations and can be told to update now.
         app.MapPost("/api/v1/client/setup", CheckIn);
         app.MapGet("/api/v1/client/builds/{sha256}", DownloadBuild);
 
         var me = app.MapGroup("/api/v1").AddEndpointFilter(RequireSession);
-        me.MapPost("/client/heartbeat", (ClientBuildStore builds) => new ClientHeartbeatResponse(builds.Latest()?.ToDto()));
+        // The build is only used by Windows tray apps older than 0.3, which updated themselves.
+        me.MapPost("/client/heartbeat", (ClientBuildStore builds) => new ClientHeartbeatResponse(builds.Latest(ClientPlatform.Windows)?.ToDto()));
         me.MapGet("/printers", (HttpContext http, PrinterRegistry printers, AccessPolicy access) =>
             printers.All.Where(p => access.CanReleaseAt(CurrentUser(http).Id, p.Id)).Select(printers.ToDto));
         me.MapGet("/me/jobs", (HttpContext http, JobStore jobs, bool? all) =>
@@ -75,7 +77,7 @@ public static class ClientApi
             queues.List().Where(q => access.CanPrintTo(user.Id, q.Id)).Select(ToDto).ToList(),
             printers.All.Where(p => access.CanReleaseAt(user.Id, p.Id)).Select(printers.ToDto).ToList(),
             HeartbeatSeconds,
-            builds.Latest()?.ToDto()));
+            builds.Latest(ClientPlatform.Parse(request.Platform) ?? ClientPlatform.Windows)?.ToDto()));
     }
 
     private static IResult CheckIn(ClientSetupRequest request, HttpContext http, QueueStore queues, ClientBuildStore builds, WorkstationStore workstations)
@@ -83,8 +85,10 @@ public static class ClientApi
         var computer = request.Computer?.Trim();
         if (string.IsNullOrEmpty(computer) || computer.Length > 255)
             return Results.BadRequest(new ErrorResponse("computer is required."));
-        var command = workstations.CheckIn(computer, http.ClientIp(), request with { UpdateError = Clean(request.UpdateError) });
-        return Results.Ok(new ClientSetupResponse(queues.List().Select(ToDto).ToList(), builds.Latest()?.ToDto(), command));
+        if (ClientPlatform.Parse(request.Platform) is not { } platform)
+            return Results.BadRequest(new ErrorResponse($"Unknown platform \"{request.Platform}\". Known: {string.Join(", ", ClientPlatform.All)}."));
+        var command = workstations.CheckIn(computer, http.ClientIp(), platform, request with { UpdateError = Clean(request.UpdateError) });
+        return Results.Ok(new ClientSetupResponse(queues.List().Select(ToDto).ToList(), builds.Latest(platform)?.ToDto(), command));
 
         static string? Clean(string? error) => string.IsNullOrWhiteSpace(error) ? null : error.Trim()[..Math.Min(error.Trim().Length, 500)];
     }
@@ -97,9 +101,11 @@ public static class ClientApi
         if (builds.Find(sha256) is not { } build || builds.FileFor(build.Sha256) is not { } path)
             return Results.NotFound(new ErrorResponse("No such client build."));
         loggers.CreateLogger("TapQueue.Server.Api.ClientApi").LogInformation(
-            "{Computer} ({Ip}) is downloading client {Version} to update itself",
-            string.IsNullOrWhiteSpace(computer) ? "A PC" : computer.Trim(), http.ClientIp(), build.Version);
-        return Results.File(path, "application/vnd.microsoft.portable-executable", "TapQueueClient.exe");
+            "{Computer} ({Ip}) is downloading {Platform} client {Version} to update itself",
+            string.IsNullOrWhiteSpace(computer) ? "A PC" : computer.Trim(), http.ClientIp(), ClientPlatform.DisplayName(build.Platform!), build.Version);
+        return build.Platform == ClientPlatform.Windows
+            ? Results.File(path, "application/vnd.microsoft.portable-executable", "TapQueueClient.exe")
+            : Results.File(path, "application/octet-stream", "tapqueue-client");
     }
 
     private static IResult CancelJob(long id, HttpContext http, JobStore jobs, Spool spool, EventLog events)
