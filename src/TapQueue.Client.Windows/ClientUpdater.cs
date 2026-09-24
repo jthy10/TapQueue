@@ -29,29 +29,34 @@ public sealed class ClientUpdater(HttpClient http, ILogger logger)
     private string NewExePath => _exePath + ".new";
     private string OldExePath => _exePath + ".old";
 
-    /// <summary>True if a different build was installed and this process should restart.</summary>
-    public async Task<bool> InstallIfDifferentAsync(ClientBuildDto? build, CancellationToken ct)
+    /// <summary>
+    /// Installs <paramref name="build"/> if it differs from the running exe. On
+    /// <see cref="UpdateOutcome.Installed"/> this process should restart.
+    /// </summary>
+    public async Task<UpdateOutcome> InstallIfDifferentAsync(ClientBuildDto? build, CancellationToken ct)
     {
-        if (build is null || build.Sha256 == _failedSha256)
-            return false;
+        if (build is null)
+            return UpdateOutcome.NoBuild;
+        if (build.Sha256 == _failedSha256)
+            return UpdateOutcome.Failed;
         if (string.Equals(build.Sha256, await OwnSha256Async(ct), StringComparison.OrdinalIgnoreCase))
         {
             LastError = null;
-            return false;
+            return UpdateOutcome.UpToDate;
         }
 
         logger.LogInformation("Installing TapQueue client {Version} (running {Current})", build.Version, Shared.TapQueueVersion.Current);
         try
         {
             await InstallAsync(build, ct);
-            return true;
+            return UpdateOutcome.Installed;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or HttpRequestException or InvalidDataException)
         {
             _failedSha256 = build.Sha256; // don't retry this build every minute; a newer one (or "update now") gets a fresh try
             LastError = ex.Message;
             logger.LogError("Couldn't install TapQueue client {Version}: {Error}", build.Version, ex.Message);
-            return false;
+            return UpdateOutcome.Failed;
         }
     }
 
@@ -104,4 +109,14 @@ public sealed class ClientUpdater(HttpClient http, ILogger logger)
         await using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 81920, useAsync: true);
         return Convert.ToHexStringLower(await SHA256.HashDataAsync(file, ct));
     }
+}
+
+public enum UpdateOutcome
+{
+    /// <summary>The server has no client build published.</summary>
+    NoBuild,
+    UpToDate,
+    Installed,
+    /// <summary>Installing failed (<see cref="ClientUpdater.LastError"/> says why).</summary>
+    Failed,
 }

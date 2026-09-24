@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.EventLog;
 using System.Net.Http.Json;
+using System.Threading.Channels;
 using TapQueue.Shared;
 using TapQueue.Shared.Api;
 
@@ -11,7 +12,8 @@ namespace TapQueue.Client.Windows;
 /// <summary>
 /// The "TapQueue" Windows service (<c>TapQueueClient.exe --service</c>, installed by the setup
 /// program, runs as LocalSystem). Once a minute it checks in with the server (saying which PC this is and
-/// which client it runs, so it shows under Workstations), gets its queues and client build, keeps the PC's printers in step, and installs a newly published client.
+/// which client it runs, so it shows under Workstations), gets its queues and client build, keeps the PC's printers in step, and installs a newly published client, straight away when someone chooses
+/// "Check for updates" in the tray menu (<see cref="UpdateCheckPipe"/>).
 /// Logs go to the Windows Application event log (source "TapQueue").
 /// </summary>
 public sealed class MachineService(ClientConfig config, IHostApplicationLifetime lifetime, ILogger<MachineService> logger) : BackgroundService
@@ -42,9 +44,22 @@ public sealed class MachineService(ClientConfig config, IHostApplicationLifetime
         var updater = new ClientUpdater(http, logger);
         updater.CleanUp();
 
+        var checks = Channel.CreateUnbounded<UpdateCheckPipe.Request>();
+        using var stopPipe = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        var pipe = Task.Run(() => UpdateCheckPipe.ServeAsync(checks.Writer, logger, stopPipe.Token), CancellationToken.None);
+
         string? lastError = null;
         while (!stoppingToken.IsCancellationRequested)
         {
+            // Checks asked for from the tray menu since the last check-in: this check-in answers them.
+            var asked = new List<UpdateCheckPipe.Request>();
+            while (checks.Reader.TryRead(out var request))
+                asked.Add(request);
+            if (asked.Count > 0)
+                updater.RetryFailed();
+
+            UpdateCheckReply reply;
+            ClientBuildDto? build = null;
             try
             {
                 var setup = await CheckInAsync(http, updater, stoppingToken);
@@ -61,15 +76,9 @@ public sealed class MachineService(ClientConfig config, IHostApplicationLifetime
                 if (config.InstallPrinters)
                     await printers.SyncAsync(setup.Queues, http.BaseAddress);
 
-                if (await updater.InstallIfDifferentAsync(setup.ClientBuild, stoppingToken))
-                {
-                    logger.LogInformation("Installed TapQueue client {Version}; restarting the service", setup.ClientBuild!.Version);
-                    // Stopping with a non-zero exit code makes Windows restart the service (the
-                    // installer sets restart-on-failure and failureflag), which runs the new exe.
-                    Environment.ExitCode = 1;
-                    lifetime.StopApplication();
-                    return;
-                }
+                build = setup.ClientBuild;
+                var outcome = await updater.InstallIfDifferentAsync(build, stoppingToken);
+                reply = new UpdateCheckReply(outcome, build?.Version, outcome == UpdateOutcome.Failed ? updater.LastError : null);
             }
             catch (Exception ex) when ((ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException or InvalidDataException or IOException)
                                        && !stoppingToken.IsCancellationRequested)
@@ -77,17 +86,50 @@ public sealed class MachineService(ClientConfig config, IHostApplicationLifetime
                 if (ex.Message != lastError) // log each new problem once, not every minute
                     logger.LogWarning("Can't reach {Server}: {Error}", config.ServerUrl, ex.Message);
                 lastError = ex.Message;
+                reply = new UpdateCheckReply(UpdateOutcome.Failed, null, $"Can't reach the TapQueue server: {ex.Message}");
             }
 
+            foreach (var request in asked)
+                request.Reply.TrySetResult(reply);
+
+            if (reply.Outcome == UpdateOutcome.Installed)
+            {
+                logger.LogInformation("Installed TapQueue client {Version}; restarting the service", build!.Version);
+                // Let the tray apps that asked hear about it before the pipe closes.
+                try
+                {
+                    await Task.WhenAll(asked.Select(r => r.Sent.Task)).WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+                }
+                catch (TimeoutException)
+                {
+                }
+                // Stopping with a non-zero exit code makes Windows restart the service (the
+                // installer sets restart-on-failure and failureflag), which runs the new exe.
+                Environment.ExitCode = 1;
+                lifetime.StopApplication();
+                break;
+            }
+
+            // Sleep until the next check-in, or until someone asks for a check from the tray menu.
             try
             {
-                await Task.Delay(TimeSpan.FromSeconds(WorkstationStatus.CheckInSeconds), stoppingToken);
+                using var delay = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+                var tick = Task.Delay(TimeSpan.FromSeconds(WorkstationStatus.CheckInSeconds), delay.Token);
+                await Task.WhenAny(tick, checks.Reader.WaitToReadAsync(delay.Token).AsTask());
+                delay.Cancel();
+                stoppingToken.ThrowIfCancellationRequested();
             }
             catch (OperationCanceledException)
             {
                 break;
             }
         }
+
+        checks.Writer.TryComplete();
+        while (checks.Reader.TryRead(out var request))
+            request.Reply.TrySetCanceled();
+        await stopPipe.CancelAsync();
+        await pipe;
     }
 
     /// <summary>
