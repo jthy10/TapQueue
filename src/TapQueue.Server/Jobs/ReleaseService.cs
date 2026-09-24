@@ -37,6 +37,7 @@ public sealed class ReleaseService(JobStore jobs, Spool spool, PrinterRegistry p
         var refusal = user.Disabled ? "This account is disabled."
             : !access.CanReleaseAt(user.Id, printer.Id) ? $"You aren't allowed to print at {printer.Name}."
             : null;
+        refusal ??= await PrinterRefusalAsync(printer, ct);
         if (refusal is not null)
             return new ReleaseResponse(held.Select(j => new ReleaseResult(j.Id, j.Name, false, refusal)).ToList());
         var toRelease = jobIds is null ? held : held.Where(j => jobIds.Contains(j.Id)).ToList();
@@ -52,6 +53,19 @@ public sealed class ReleaseService(JobStore jobs, Spool spool, PrinterRegistry p
         foreach (var job in toRelease.OrderBy(j => j.Id))
             results.Add(await ReleaseOneAsync(user, job, printer, ct));
         return new ReleaseResponse(results);
+    }
+
+    /// <summary>
+    /// Jobs sent to a stopped or unreachable printer would be lost to it, so they stay held instead.
+    /// A printer last seen down is checked again first, in case someone just fixed it.
+    /// </summary>
+    private async Task<string?> PrinterRefusalAsync(PrinterRecord printer, CancellationToken ct)
+    {
+        var status = printers.StatusOf(printer.Id);
+        if (status is null || status.CanPrint)
+            return null;
+        status = await printers.ProbeAsync(printer, ct);
+        return status.CanPrint ? null : $"{printer.Name} can't print right now ({status.Problem}). Your jobs are still held.";
     }
 
     private async Task<ReleaseResult> ReleaseOneAsync(UserRecord user, JobRecord job, PrinterRecord printer, CancellationToken ct)
