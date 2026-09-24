@@ -29,6 +29,7 @@ public sealed class TrayApp : ApplicationContext
     private bool _signedOut;
     private readonly DateTime _exeWrittenAt = File.GetLastWriteTimeUtc(Environment.ProcessPath!);
     private bool _polling;
+    private bool _checkingForUpdates;
     private string? _lastError;
     private JobsForm? _jobsForm;
 
@@ -171,6 +172,49 @@ public sealed class TrayApp : ApplicationContext
     }
 
     /// <summary>
+    /// Asks the TapQueue service to check the server for a new client and install it
+    /// (<see cref="UpdateCheckPipe"/>); once it has, restarts into it.
+    /// </summary>
+    private async Task CheckForUpdatesAsync()
+    {
+        if (_checkingForUpdates) return;
+        _checkingForUpdates = true;
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(15)); // a slow download
+            var reply = await UpdateCheckPipe.CheckAsync(timeout.Token);
+            switch (reply.Outcome)
+            {
+                case UpdateOutcome.UpToDate:
+                    Notify("TapQueue is up to date", $"You have {TapQueueVersion.Current}, the version your TapQueue server provides.");
+                    break;
+                case UpdateOutcome.NoBuild:
+                    Notify("No updates", "Your TapQueue server doesn't provide client updates.");
+                    break;
+                case UpdateOutcome.Installed:
+                    if (!RestartIfUpdated())
+                        Notify("TapQueue updated", $"Installed {reply.Version}. It starts next time you sign in.");
+                    break;
+                default:
+                    Notify("Update failed", reply.Error ?? "The TapQueue service couldn't install the update.", ToolTipIcon.Error);
+                    break;
+            }
+        }
+        catch (TimeoutException)
+        {
+            Notify("Can't check for updates", "The TapQueue service isn't running on this PC. Ask your IT team to reinstall TapQueue.", ToolTipIcon.Error);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or System.Text.Json.JsonException or OperationCanceledException)
+        {
+            Notify("Can't check for updates", ex.Message, ToolTipIcon.Error);
+        }
+        finally
+        {
+            _checkingForUpdates = false;
+        }
+    }
+
+    /// <summary>
     /// The TapQueue service replaces TapQueueClient.exe when an update is published. Start the new
     /// exe (it waits for this one to exit) and exit.
     /// </summary>
@@ -255,6 +299,8 @@ public sealed class TrayApp : ApplicationContext
             menu.Items.Add(_signedOut ? "Sign in again" : "Retry connection", null, async (_, _) => await ConnectAsync());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(new ToolStripMenuItem($"TapQueue {TapQueueVersion.Current}") { Enabled = false });
+        menu.Items.Add(new ToolStripMenuItem(_checkingForUpdates ? "Checking for updates…" : "Check for updates", null,
+            async (_, _) => await CheckForUpdatesAsync()) { Enabled = !_checkingForUpdates });
         menu.Items.Add("Exit", null, (_, _) => ExitThread());
     }
 
