@@ -175,8 +175,39 @@ public sealed record PrinterDto(
     string? MakeAndModel,
     string? StateMessage);
 
-/// <summary>What admins see of a printer: the user-facing view plus where it is on the network.</summary>
-public sealed record PrinterAdminDto(PrinterDto Printer, string Uri, bool TlsSkipVerify, DateTimeOffset? CheckedAt);
+/// <summary>What admins see of a printer: the user-facing view plus where it is on the network and how it's doing.</summary>
+public sealed record PrinterAdminDto(PrinterDto Printer, string Uri, bool TlsSkipVerify, DateTimeOffset? CheckedAt, PrinterHealthDto? Health = null);
+
+public static class PrinterHealthLevel
+{
+    /// <summary>Ready, nothing wrong.</summary>
+    public const string Ok = "ok";
+    /// <summary>Printing, but something needs attention soon (toner low, paper low).</summary>
+    public const string Warning = "warning";
+    /// <summary>Reachable, but reports a problem (paper jam, door open) or has stopped.</summary>
+    public const string Error = "error";
+    /// <summary>Didn't answer.</summary>
+    public const string Offline = "offline";
+}
+
+/// <param name="Level">One of <see cref="PrinterHealthLevel"/>.</param>
+/// <param name="State">"idle", "printing" or "stopped", or null when the printer didn't answer.</param>
+/// <param name="CanPrint">False when jobs aren't released to it: unreachable, stopped or not accepting jobs.</param>
+/// <param name="Problems">What's wrong, in words: "Paper jam", "Black cartridge low (5%)".</param>
+/// <param name="Since">When <paramref name="Level"/> last changed, as far as this server has seen.</param>
+public sealed record PrinterHealthDto(
+    string Level,
+    string? State,
+    bool CanPrint,
+    IReadOnlyList<string> Problems,
+    IReadOnlyList<PrinterSupplyDto> Supplies,
+    DateTimeOffset? Since);
+
+/// <param name="Type">IPP marker type: "toner-cartridge", "ink-cartridge", "waste-toner"…</param>
+/// <param name="Color">A CSS colour like "#000000", or null.</param>
+/// <param name="Level">Percent left, or null when the printer doesn't know.</param>
+/// <param name="Low">At or below the printer's own "low" level.</param>
+public sealed record PrinterSupplyDto(string Name, string? Type, string? Color, int? Level, bool Low);
 
 /// <param name="Name">Defaults to the id.</param>
 public sealed record CreatePrinterRequest(string Id, string Uri, string? Name = null, string? Location = null, bool? TlsSkipVerify = null);
