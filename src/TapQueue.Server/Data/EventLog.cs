@@ -18,6 +18,8 @@ public static class EventCategory
     public const string Crash = "crash";
     /// <summary>A printer had a problem (unreachable, paper jam, toner low) or recovered.</summary>
     public const string Printer = "printer";
+    /// <summary>The Active Directory sync added, changed or disabled users and groups, or failed.</summary>
+    public const string Directory = "directory";
 }
 
 /// <summary>
