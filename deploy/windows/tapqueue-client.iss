@@ -9,6 +9,8 @@
 ;
 ; Silent install for many PCs:
 ;   TapQueue_client_0.3.0.exe /VERYSILENT /SERVER=http://tapqueue-server:8631
+; Without /SERVER, a first install uses the one TapQueue server it finds on the network (and fails if
+; it finds none, or more than one). The wizard lists the servers it finds (TapQueueClient.exe --discover).
 
 #ifndef AppVersion
   #define AppVersion "0.0.0"
@@ -90,6 +92,13 @@ Type: files; Name: "{app}\TapQueueClient.exe.new"
 [Code]
 var
   ServerPage: TInputQueryWizardPage;
+  FoundLabel: TNewStaticText;
+  FoundList: TNewListBox;
+  SearchButton: TNewButton;
+  FoundUrls: TArrayOfString;
+  Searched: Boolean;
+  { What a silent install found, when no /SERVER was given. }
+  DiscoveredServerUrl: String;
 
 function ConfigPath: String;
 begin
@@ -121,17 +130,139 @@ begin
   end;
 end;
 
+{ Runs TapQueueClient.exe --discover, which writes one "url|name|version" line per server it finds.
+  Fills Urls and, for the list, Labels. Returns how many were found. }
+function DiscoverServers(var Urls, Labels: TArrayOfString): Integer;
+var
+  Exe, OutFile, Line, Name, Version: String;
+  Lines: TArrayOfString;
+  I, N, P, ResultCode: Integer;
+begin
+  SetArrayLength(Urls, 0);
+  SetArrayLength(Labels, 0);
+  Result := 0;
+  Exe := ExpandConstant('{tmp}\TapQueueClient.exe');
+  OutFile := ExpandConstant('{tmp}\servers.txt');
+  try
+    if not FileExists(Exe) then
+      ExtractTemporaryFile('TapQueueClient.exe');
+  except
+    Log('Could not unpack TapQueueClient.exe to look for servers: ' + GetExceptionMessage);
+    Exit;
+  end;
+  DeleteFile(OutFile);
+  if not Exec(Exe, '--discover "' + OutFile + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
+  begin
+    Log('Looking for TapQueue servers failed (exit code ' + IntToStr(ResultCode) + ').');
+    Exit;
+  end;
+  if not LoadStringsFromFile(OutFile, Lines) then
+    Exit;
+  for I := 0 to GetArrayLength(Lines) - 1 do
+  begin
+    Line := Trim(Lines[I]);
+    P := Pos('|', Line);
+    if P = 0 then
+      Continue;
+    N := GetArrayLength(Urls);
+    SetArrayLength(Urls, N + 1);
+    SetArrayLength(Labels, N + 1);
+    Urls[N] := Copy(Line, 1, P - 1);
+    Line := Copy(Line, P + 1, Length(Line));
+    P := Pos('|', Line);
+    Name := Copy(Line, 1, P - 1);
+    Version := Copy(Line, P + 1, Length(Line));
+    Labels[N] := Urls[N] + '    (' + Name + ', TapQueue ' + Version + ')';
+    Log('Found TapQueue server ' + Labels[N]);
+  end;
+  Result := GetArrayLength(Urls);
+end;
+
+function AddressIsBlank: Boolean;
+begin
+  Result := (Trim(ServerPage.Values[0]) = '') or (Lowercase(Trim(ServerPage.Values[0])) = 'http://');
+end;
+
+procedure SearchForServers;
+var
+  Labels: TArrayOfString;
+  I, Count: Integer;
+begin
+  FoundList.Items.Clear;
+  FoundLabel.Caption := 'Searching this network for TapQueue servers...';
+  SearchButton.Enabled := False;
+  WizardForm.NextButton.Enabled := False;
+  Count := DiscoverServers(FoundUrls, Labels);
+  for I := 0 to Count - 1 do
+    FoundList.Items.Add(Labels[I]);
+  if Count = 0 then
+    FoundLabel.Caption := 'No TapQueue servers found on this network. Type the server''s address above.'
+  else
+    FoundLabel.Caption := 'TapQueue servers on this network (click one to use it):';
+  { Fill in the address when it's blank, or when it's the only server there is. }
+  if (Count > 0) and (AddressIsBlank or (Count = 1)) then
+  begin
+    FoundList.ItemIndex := 0;
+    ServerPage.Values[0] := FoundUrls[0];
+  end;
+  SearchButton.Enabled := True;
+  WizardForm.NextButton.Enabled := True;
+end;
+
+procedure FoundListClick(Sender: TObject);
+begin
+  if FoundList.ItemIndex >= 0 then
+    ServerPage.Values[0] := FoundUrls[FoundList.ItemIndex];
+end;
+
+procedure SearchButtonClick(Sender: TObject);
+begin
+  SearchForServers;
+end;
+
 procedure InitializeWizard;
 begin
   ServerPage := CreateInputQueryPage(wpWelcome,
     'TapQueue server', 'Which TapQueue server should this PC use?',
-    'Enter the address of your TapQueue server, including the port, for example http://tapqueue-server:8631');
+    'Pick a server found on this network, or enter its address including the port, for example http://tapqueue-server:8631');
   ServerPage.Add('Server address:', False);
   ServerPage.Values[0] := ExpandConstant('{param:SERVER|}');
   if ServerPage.Values[0] = '' then
     ServerPage.Values[0] := ExistingServerUrl;
   if ServerPage.Values[0] = '' then
     ServerPage.Values[0] := 'http://';
+
+  FoundLabel := TNewStaticText.Create(ServerPage);
+  FoundLabel.Parent := ServerPage.Surface;
+  FoundLabel.Top := ServerPage.Edits[0].Top + ServerPage.Edits[0].Height + ScaleY(16);
+  FoundLabel.Width := ServerPage.SurfaceWidth;
+  FoundLabel.AutoSize := False;
+  FoundLabel.Height := ScaleY(16);
+
+  FoundList := TNewListBox.Create(ServerPage);
+  FoundList.Parent := ServerPage.Surface;
+  FoundList.Top := FoundLabel.Top + FoundLabel.Height + ScaleY(4);
+  FoundList.Width := ServerPage.SurfaceWidth;
+  FoundList.Height := ScaleY(80);
+  FoundList.OnClick := @FoundListClick;
+
+  SearchButton := TNewButton.Create(ServerPage);
+  SearchButton.Parent := ServerPage.Surface;
+  SearchButton.Caption := 'Search again';
+  SearchButton.Top := FoundList.Top + FoundList.Height + ScaleY(8);
+  SearchButton.Width := ScaleX(100);
+  SearchButton.Height := WizardForm.NextButton.Height;
+  SearchButton.OnClick := @SearchButtonClick;
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  { Search the first time the page is shown, not before: it takes a few seconds. }
+  if (CurPageID = ServerPage.ID) and not Searched then
+  begin
+    Searched := True;
+    SearchForServers;
+  end;
 end;
 
 function IsValidServerUrl(Url: String): Boolean;
@@ -151,12 +282,20 @@ begin
 end;
 
 function InitializeSetup: Boolean;
+var
+  Urls, Labels: TArrayOfString;
 begin
   Result := True;
   if WizardSilent and (ExpandConstant('{param:SERVER|}') = '') and (ExistingServerUrl = '') then
   begin
-    Log('Silent install needs /SERVER=http://your-server:8631 the first time.');
-    Result := False;
+    { First install with no server given: use the TapQueue server on this network, if there's exactly one. }
+    case DiscoverServers(Urls, Labels) of
+      0: Log('No TapQueue server found on this network. Run setup with /SERVER=http://your-server:8631');
+      1: DiscoveredServerUrl := Urls[0];
+    else
+      Log('More than one TapQueue server on this network. Pick one with /SERVER=http://your-server:8631');
+    end;
+    Result := DiscoveredServerUrl <> '';
   end;
 end;
 
@@ -229,7 +368,9 @@ begin
     if WizardSilent then
     begin
       if ExpandConstant('{param:SERVER|}') <> '' then
-        WriteConfig(ExpandConstant('{param:SERVER|}'));
+        WriteConfig(ExpandConstant('{param:SERVER|}'))
+      else if DiscoveredServerUrl <> '' then
+        WriteConfig(DiscoveredServerUrl);
     end
     else
       WriteConfig(ServerPage.Values[0]);

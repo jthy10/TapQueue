@@ -11,6 +11,10 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+### Added
+- The server answers "is there a TapQueue server here?" broadcasts on UDP port 8631, so the
+  Windows installer can find it. Set `server.discovery_port = 0` to turn this off.
+
 ## [0.3.0] - 2026-09-23
 
 ### Added

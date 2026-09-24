@@ -31,7 +31,9 @@ The script:
 - installs and starts the `tapqueue-server` systemd service.
 
 The server listens on port 8631 for both IPP (printing) and its REST API. Open it in the firewall
-if you use one: `sudo ufw allow 8631/tcp`.
+if you use one: `sudo ufw allow 8631/tcp`. It also answers the Windows installer's search for
+servers on UDP port 8631 (`sudo ufw allow 8631/udp`); with only TCP open, the installer still
+finds servers on its own subnet, just more slowly.
 
 ## Set up queues, printers and users
 
@@ -66,6 +68,7 @@ Then set up the [Windows client](windows-client.md) and a [release station](rele
 |---|---|---|
 | `server.listen` | `0.0.0.0:8631` | Address and port for IPP and the API |
 | `server.data_dir` | `/var/lib/tapqueue` | Database and held jobs |
+| `server.discovery_port` | `8631` | UDP port the Windows installer's server search is answered on. `0` = off |
 | `auth.mode` | `token` | `token`: users need the token from `users add`. `dev`: a username is enough (testing only) |
 | `auth.session_timeout_minutes` | `10` | Client sessions without a heartbeat for this long end |
 | `admin.token` | | Used by `tapqueue-admin` |

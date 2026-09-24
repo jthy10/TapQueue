@@ -14,8 +14,9 @@ Windows prints with its built-in IPP driver, so there's no printer driver to ins
 
 1. Download `TapQueue_client_X.Y.Z.exe` from [Releases](https://github.com/jthy10/TapQueue/releases)
    (the newest `client-v` release).
-2. Run it (it asks for admin rights) and enter your server's address, e.g.
-   `http://tapqueue-server:8631`.
+2. Run it (it asks for admin rights). It searches the network for TapQueue servers: pick yours
+   from the list, or type its address, e.g. `http://tapqueue-server:8631`. The search only
+   reaches the PC's own network; a server behind a router has to be typed in.
 3. TapQueue starts in the tray. Within a minute the **TapQueue Secure Print** printer (or whatever
    the queue is called) appears for every user of the PC.
 4. Print something to it, then tap a badge at a release station, or right-click the tray icon →
@@ -35,6 +36,9 @@ To install on many PCs, run it silently, for example from a deployment tool or a
 ```
 TapQueue_client_X.Y.Z.exe /VERYSILENT /SERVER=http://tapqueue-server:8631
 ```
+
+Without `/SERVER`, a first install uses the TapQueue server it finds on the network, and fails
+(nothing is installed) if it finds none or more than one. Upgrades keep the server already set.
 
 To remove TapQueue, uninstall it from Settings → Apps. That also removes the printers and the
 service. `client.toml` is kept, so reinstalling remembers the server.

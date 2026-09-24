@@ -9,6 +9,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Added
+- The installer searches the network for TapQueue servers and lists them on its server page;
+  with only one, its address is filled in. A silent first install without `/SERVER` uses the one
+  server it finds.
+
 ## [0.3.0] - 2026-09-23
 
 ### Added
