@@ -1,8 +1,8 @@
 import { api, enc } from "../api.js";
 import { h, icon, pageHead, panel, button, time, empty, loading } from "../ui.js";
 
-const filters = [["", "Everything"], ["job", "Jobs"], ["tap", "Taps"], ["signin", "Sign-ins"], ["crash", "Crashes"], ["admin", "Admin changes"]];
-const icons = { admin: "admins", job: "jobs", tap: "cards", signin: "workstations", crash: "alert" };
+const filters = [["", "Everything"], ["job", "Jobs"], ["tap", "Taps"], ["signin", "Sign-ins"], ["printer", "Printers"], ["crash", "Crashes"], ["admin", "Admin changes"]];
+const icons = { admin: "admins", job: "jobs", tap: "cards", signin: "workstations", crash: "alert", printer: "printers" };
 const pages = { user: "users", group: "groups", printer: "printers", station: "stations", queue: "queues", job: "jobs" };
 
 /** "user:alice" -> "users/alice", for linking an event to what it's about. */
@@ -26,6 +26,7 @@ export function activityList(events, { emptyText = "Nothing has happened yet." }
 
 function actorName(actor) {
   if (actor.startsWith("station:")) return `station ${actor.slice(8)}`;
+  if (actor === "system") return "TapQueue";
   return actor;
 }
 
@@ -37,7 +38,7 @@ export async function render(root, ctx) {
   const more = button("Load older", { onclick: () => load({ older: true }) });
   const foot = h("div", { class: "toolbar", style: "border-top:1px solid var(--border);border-bottom:none;justify-content:center" }, more);
 
-  root.append(pageHead("Activity", "Everything that happened: prints and releases, badge taps, sign-ins and admin changes. Kept for 90 days."),
+  root.append(pageHead("Activity", "Everything that happened: prints and releases, badge taps, sign-ins, printer problems and admin changes. Kept for 90 days."),
     panel({ flush: true, body: [h("div", { class: "toolbar" }, segmented), list, foot] }));
 
   async function load({ older } = {}) {

@@ -3,11 +3,31 @@ import { activityList } from "./activity.js";
 import { h, pageHead, panel, button, pill, time, table, empty, drawer, props, sectionTitle, field, input, checkbox, checkField,
   formDialog, confirm, attempt, loading } from "../ui.js";
 
-/** Online, online with a warning (toner low, paper jam…), or unreachable. */
+const tones = { ok: "ok", warning: "warn", error: "bad", offline: "bad" };
+
+/** Ready, printing, a warning (toner low), a problem (paper jam, stopped), or unreachable. */
 export function printerStatus(p) {
-  if (!p.checkedAt) return pill("Checking…");
-  if (!p.printer.online) return pill("Unreachable", "bad");
-  return p.printer.stateMessage && p.printer.stateMessage !== "ready" ? pill(p.printer.stateMessage, "warn") : pill("Ready", "ok");
+  const health = p.health;
+  if (!p.checkedAt || !health) return pill("Checking…");
+  if (health.level === "offline") return pill("Unreachable", "bad");
+  const label = health.problems[0] ?? (health.state === "printing" ? "Printing" : "Ready");
+  const more = health.problems.length > 1 ? ` +${health.problems.length - 1}` : "";
+  return pill(label + more, tones[health.level]);
+}
+
+const isDark = (hex) => [1, 3, 5].every((i) => parseInt(hex.slice(i, i + 2), 16) < 0x40);
+
+/** A thin bar per supply, e.g. the toner at 60%. */
+export function supplyMeters(supplies, { compact } = {}) {
+  if (!supplies?.length) return h("span", { class: "muted" }, compact ? "—" : "Not reported");
+  return h("div", { class: `supplies${compact ? " compact" : ""}` }, supplies.map((s) => {
+    // Black toner would vanish in dark mode, so near-black uses the text colour.
+    const fill = s.low ? "var(--warn)" : !s.color || isDark(s.color) ? "var(--text)" : s.color;
+    return h("div", { class: "supply", title: `${s.name}: ${s.level == null ? "level unknown" : `${s.level}%`}` },
+      compact ? null : h("span", { class: "supply-name" }, s.name),
+      h("span", { class: "meter" }, h("span", { style: `width:${s.level ?? 0}%;background:${fill}` })),
+      h("span", { class: `supply-level${s.low ? " low" : ""}` }, s.level == null ? "?" : `${s.level}%`));
+  }));
 }
 
 export async function render(root, ctx) {
@@ -31,6 +51,7 @@ export async function render(root, ctx) {
         { label: "Printer", value: (p) => [h("span", { class: "cell-strong" }, p.printer.name), h("span", { class: "sub" }, p.printer.makeAndModel ?? p.printer.id)] },
         { label: "Location", value: (p) => p.printer.location || h("span", { class: "muted" }, "—") },
         { label: "Status", value: printerStatus },
+        { label: "Supplies", value: (p) => supplyMeters(p.health?.supplies, { compact: true }) },
         { label: "Stations", value: (p) => usedBy(p).map((s) => s.id).join(", ") || h("span", { class: "muted" }, "None") },
         { label: "Checked", value: (p) => time(p.checkedAt) },
       ],
@@ -52,19 +73,23 @@ export async function render(root, ctx) {
       body: [
         props([
           ["Status", printerStatus(p)],
-          p.printer.stateMessage && p.printer.stateMessage !== "ready" && ["Printer says", p.printer.stateMessage],
+          p.health?.since && ["Since", time(p.health.since)],
+          p.health?.problems.length > 0 && ["Problems", h("ul", { class: "plain-list" }, p.health.problems.map((x) => h("li", null, x)))],
+          p.health && !p.health.canPrint && ["Releases", pill("Held back until it's fixed", "bad")],
           ["Model", p.printer.makeAndModel ?? h("span", { class: "muted" }, "Unknown until it's reachable")],
           ["Location", p.printer.location || "—"],
           ["Address", h("code", null, p.uri)],
           ["Certificate", p.tlsSkipVerify ? pill("Not verified", "warn") : "Verified (ipps/https only)"],
           ["Last checked", time(p.checkedAt)],
         ]),
+        sectionTitle("Supplies"),
+        supplyMeters(p.health?.supplies),
         sectionTitle("Release stations"),
         stationsHere.length
           ? props(stationsHere.map((s) => [h("a", { href: `stations/${enc(s.id)}` }, s.id), `Last seen ${time(s.lastSeenAt).textContent}`]))
           : h("p", { class: "muted", style: "margin:0" }, "No station releases to this printer. Jobs can still be released to it from the client or this console."),
-        sectionTitle("Changes"),
-        activityList(events, { emptyText: "No changes recorded." }),
+        sectionTitle("History"),
+        activityList(events, { emptyText: "Nothing recorded yet." }),
       ],
       footer: [
         button("Remove", { kind: "danger", onclick: () => remove(p), title: stationsHere.length ? "Move its stations to another printer first" : null }),

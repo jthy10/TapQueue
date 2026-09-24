@@ -396,6 +396,7 @@ dialog form { margin: 0; }
 }
 .feed-icon.job { background: var(--accent-weak); color: var(--accent); border-color: transparent; }
 .feed-icon.tap { background: var(--ok-weak); color: var(--ok); border-color: transparent; }
+.feed-icon.printer { background: var(--bad-weak); color: var(--bad); border-color: transparent; }
 .feed-icon.admin { background: var(--warn-weak); color: var(--warn); border-color: transparent; }
 .feed-body { min-width: 0; }
 .feed-text { display: block; color: var(--text); }
@@ -447,3 +448,15 @@ dialog.wide { width: min(720px, calc(100vw - 32px)); }
 .meter span { display: block; height: 100%; border-radius: 4px; background: var(--ok); }
 .meter.warn span { background: var(--warn); }
 .meter.bad span { background: var(--bad); }
+
+/* Printer supplies: a thin level bar per toner/ink. */
+.supplies { display: grid; gap: 8px; }
+.supplies.compact { gap: 4px; min-width: 90px; }
+.supply { display: grid; grid-template-columns: 140px 1fr 40px; align-items: center; gap: 10px; font-size: 13px; }
+.supplies.compact .supply { grid-template-columns: 1fr 34px; gap: 6px; font-size: 12px; }
+.supply-name { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meter { height: 6px; border-radius: 3px; background: var(--surface-2); border: 1px solid var(--border); overflow: hidden; }
+.meter > span { display: block; height: 100%; }
+.supply-level { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+.supply-level.low { color: var(--warn); font-weight: 600; }
+.plain-list { margin: 0; padding-left: 18px; }

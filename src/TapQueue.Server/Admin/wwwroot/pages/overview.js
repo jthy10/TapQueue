@@ -15,6 +15,7 @@ export async function render(root, ctx) {
     const crashes = await api.get("crashes?limit=200");
     if (!ctx.current) return;
     const online = printers.filter((p) => p.printer.online).length;
+    const ready = printers.filter((p) => p.health?.canPrint ?? p.printer.online).length;
     const latestBuild = builds[0];
     const published = new Set(builds.filter((b) => b === builds.find((x) => x.platform === b.platform)).map((b) => b.version));
     const outdated = latestBuild ? clients.filter((c) => !published.has(c.clientVersion)) : [];
@@ -22,8 +23,7 @@ export async function render(root, ctx) {
     body.replaceChildren(
       h("div", { class: "grid stats" },
         stat("Held jobs", held.length, "jobs", waiting(held)),
-        stat("Printers online", [online, h("small", null, ` / ${printers.length}`)], "printers",
-          online === printers.length ? "All reachable" : `${printers.length - online} unreachable`),
+        stat("Printers ready", [ready, h("small", null, ` / ${printers.length}`)], "printers", printerNote(printers, online, ready)),
         stat("Stations online", [stations.filter((s) => s.online).length, h("small", null, ` / ${stations.length}`)], "stations",
           stations.length === 0 ? "None set up" : stations.every((s) => s.online) ? "All reporting in" : `${stations.filter((s) => !s.online).length} offline`),
         stat("Workstations", clients.length, "workstations", "Signed in now"),
@@ -47,6 +47,12 @@ export async function render(root, ctx) {
   ctx.every(15000, () => load(false));
 }
 
+function printerNote(printers, online, ready) {
+  if (ready === printers.length) return "All ready to print";
+  const stopped = online - ready;
+  return [printers.length - online && `${printers.length - online} unreachable`, stopped && `${stopped} stopped`].filter(Boolean).join(", ");
+}
+
 function waiting(held) {
   const people = new Set(held.map((j) => j.owner ?? "?")).size;
   return people === 0 ? "Nothing waiting" : `${people === 1 ? "1 person" : `${people} people`} waiting`;
@@ -65,8 +71,12 @@ function attention({ printers, stations, unknown, queues, outdated, latestBuild,
   if (queues.length === 0) add("bad", "No queues", "Nobody can print until there's a queue to print to.", "queues");
   if (printers.length === 0) add("bad", "No printers", "Held jobs can't be released until a printer is added.", "printers");
   for (const p of printers) {
-    if (!p.printer.online) add("bad", `${p.printer.name} is unreachable`, p.printer.stateMessage, `printers/${p.printer.id}`);
-    else if (p.printer.stateMessage && p.printer.stateMessage !== "ready") add("warn", `${p.printer.name}: ${p.printer.stateMessage}`, null, `printers/${p.printer.id}`);
+    const health = p.health;
+    const since = health?.since ? ` For ${duration(health.since)}.` : "";
+    if (!p.printer.online) add("bad", `${p.printer.name} is unreachable`, `${p.printer.stateMessage.replace(/\.$/, "")}.${since}`, `printers/${p.printer.id}`);
+    else if (health?.level === "error") add("bad", `${p.printer.name}: ${health.problems.join(", ")}`,
+      (health.canPrint ? "Still printing." : "Jobs stay held until it's fixed.") + since, `printers/${p.printer.id}`);
+    else if (health?.level === "warning") add("warn", `${p.printer.name}: ${health.problems.join(", ")}`, null, `printers/${p.printer.id}`);
   }
   const printerIds = new Set(printers.map((p) => p.printer.id.toLowerCase()));
   for (const s of stations) {
