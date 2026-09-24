@@ -16,11 +16,47 @@ public sealed class LdapDirectorySourceFactory(ServerConfig serverConfig) : IDir
 {
     public IDirectorySource Connect(DirectoryConfig config)
     {
-        if (string.IsNullOrWhiteSpace(config.Host))
-            throw new DirectoryException("No domain controller is set.");
         if (string.IsNullOrWhiteSpace(config.BindDn) || string.IsNullOrEmpty(config.Password))
             throw new DirectoryException("The bind account and its password are required.");
+        try
+        {
+            return new LdapDirectorySource(Bind(config, config.BindDn.Trim(), config.Password), config.BadgeAttribute);
+        }
+        catch (LdapException ex)
+        {
+            throw Explain(config, ex, "the bind account's");
+        }
+    }
 
+    public DirectoryEntry? Authenticate(DirectoryConfig config, string name, string password)
+    {
+        // An empty password is an anonymous bind, which LDAP "succeeds" without checking anything.
+        if (string.IsNullOrEmpty(password))
+            return null;
+        DirectoryEntry? user;
+        using (var source = Connect(config))
+            user = source.FindUserBySignInName(name);
+        if (user is null)
+            return null;
+        try
+        {
+            Bind(config, user.Dn, password).Dispose();
+            return user;
+        }
+        catch (LdapException ex) when (ex.ErrorCode == 49) // invalid credentials, also for disabled, locked or expired accounts
+        {
+            return null;
+        }
+        catch (LdapException ex)
+        {
+            throw Explain(config, ex, $"{user.SamAccountName}'s");
+        }
+    }
+
+    private LdapConnection Bind(DirectoryConfig config, string who, string password)
+    {
+        if (string.IsNullOrWhiteSpace(config.Host))
+            throw new DirectoryException("No domain controller is set.");
         var connection = new LdapConnection(new LdapDirectoryIdentifier(config.Host.Trim(), config.Port));
         try
         {
@@ -31,20 +67,23 @@ public sealed class LdapDirectorySourceFactory(ServerConfig serverConfig) : IDir
             if (!string.IsNullOrWhiteSpace(config.CaCertificate))
                 TrustOnly(connection, config.CaCertificate);
             connection.AuthType = AuthType.Basic;
-            connection.Bind(new NetworkCredential(config.BindDn.Trim(), config.Password));
-            return new LdapDirectorySource(connection, config.BadgeAttribute);
+            connection.Bind(new NetworkCredential(who, password));
+            return connection;
         }
-        catch (LdapException ex)
+        catch
         {
             connection.Dispose();
-            throw new DirectoryException(ex.ErrorCode switch
-            {
-                49 => $"{config.Host} refused the bind account's name or password.",
-                81 => $"Couldn't connect to {config.Host}:{config.Port} over LDAPS. Check the host, that port {config.Port} is open, and that its certificate is trusted (and issued for that name).",
-                _ => $"{config.Host}: {ex.Message} {ex.ServerErrorMessage}".Trim(),
-            }, ex);
+            throw;
         }
     }
+
+    private static DirectoryException Explain(DirectoryConfig config, LdapException ex, string whose) =>
+        new(ex.ErrorCode switch
+        {
+            49 => $"{config.Host} refused {whose} name or password.",
+            81 => $"Couldn't connect to {config.Host}:{config.Port} over LDAPS. Check the host, that port {config.Port} is open, and that its certificate is trusted (and issued for that name).",
+            _ => $"{config.Host}: {ex.Message} {ex.ServerErrorMessage}".Trim(),
+        }, ex);
 
     private void TrustOnly(LdapConnection connection, string caPem)
     {
@@ -152,6 +191,25 @@ public sealed class LdapDirectorySource(LdapConnection connection, string? badge
                 return members;
             start = int.Parse(range[1].Split('-')[1]) + 1;
         }
+    }
+
+    public DirectoryEntry? FindUserBySignInName(string name)
+    {
+        var filter = SignInFilter(name);
+        if (filter is null)
+            return null;
+        var response = Send(new SearchRequest(DefaultNamingContext, $"(&{UserFilter}{filter})", SearchScope.Subtree, Attributes) { SizeLimit = 2 });
+        return response.Entries.Count == 1 ? Map(response.Entries[0]) : null;
+    }
+
+    /// <summary>"LAB\alice" and "alice" find sAMAccountName alice; "alice@lab.example.org" finds that userPrincipalName.</summary>
+    internal static string? SignInFilter(string name)
+    {
+        var n = name.Trim();
+        var slash = n.LastIndexOf('\\');
+        if (slash >= 0) n = n[(slash + 1)..];
+        if (n.Length == 0) return null;
+        return n.Contains('@') ? $"(userPrincipalName={Escape(n)})" : $"(sAMAccountName={Escape(n)})";
     }
 
     public IReadOnlyList<DirectoryEntry> Search(string text, EntryKind kind, int limit)

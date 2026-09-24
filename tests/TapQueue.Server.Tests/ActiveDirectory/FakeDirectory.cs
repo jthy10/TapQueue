@@ -65,5 +65,24 @@ public sealed class FakeDirectory : IDirectorySource, IDirectorySourceFactory
     public IDirectorySource Connect(DirectoryConfig config) =>
         ConnectError is null ? this : throw new DirectoryException(ConnectError);
 
+    private readonly Dictionary<string, string> _passwords = new(StringComparer.OrdinalIgnoreCase);
+
+    public void SetPassword(DirectoryEntry user, string password) => _passwords[user.Dn] = password;
+
+    public DirectoryEntry? FindUserBySignInName(string name)
+    {
+        var n = name[(name.LastIndexOf('\\') + 1)..].Split('@')[0];
+        return _entries.Values.FirstOrDefault(e => e.Kind == EntryKind.User && string.Equals(e.SamAccountName, n, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>Like AD, refuses disabled accounts even with the right password.</summary>
+    public DirectoryEntry? Authenticate(DirectoryConfig config, string name, string password)
+    {
+        using var source = Connect(config);
+        return FindUserBySignInName(name) is { Disabled: false } user && _passwords.GetValueOrDefault(user.Dn) is { Length: > 0 } expected && expected == password
+            ? user
+            : null;
+    }
+
     public void Dispose() { }
 }

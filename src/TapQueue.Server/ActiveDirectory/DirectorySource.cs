@@ -46,6 +46,12 @@ public interface IDirectorySource : IDisposable
     /// <summary>The DNs in a group's member attribute: users and groups, however many there are.</summary>
     IReadOnlyList<string> MemberDns(string groupDn);
 
+    /// <summary>
+    /// The user someone signs in as: a sAMAccountName (optionally DOMAIN\name) or a userPrincipalName
+    /// (name@domain). Null if there's no such user.
+    /// </summary>
+    DirectoryEntry? FindUserBySignInName(string name);
+
     /// <summary>OUs, groups or users whose name contains <paramref name="text"/>, for picking the sync's scope.</summary>
     IReadOnlyList<DirectoryEntry> Search(string text, EntryKind kind, int limit);
 }
@@ -54,6 +60,13 @@ public interface IDirectorySource : IDisposable
 public interface IDirectorySourceFactory
 {
     IDirectorySource Connect(DirectoryConfig config);
+
+    /// <summary>
+    /// Checks a person's own name and password against AD (for <see cref="Shared.Api.ClientSignIn.Domain"/>).
+    /// Returns their entry, or null if there's no such user or AD refuses the password. Throws
+    /// <see cref="DirectoryException"/> if AD can't be reached.
+    /// </summary>
+    DirectoryEntry? Authenticate(DirectoryConfig config, string name, string password);
 }
 
 /// <summary>AD couldn't be reached or refused us, or the scope names something that isn't there. The message says which.</summary>
