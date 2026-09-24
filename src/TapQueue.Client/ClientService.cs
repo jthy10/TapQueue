@@ -24,6 +24,22 @@ public sealed class ClientService(
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // Reports from earlier crashes that couldn't be sent then.
+        _ = Task.Run(() => CrashReporter.SendPendingAsync(CrashProgram.Service, config, TimeSpan.FromSeconds(30)), CancellationToken.None);
+        try
+        {
+            await RunAsync(stoppingToken);
+        }
+        catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
+        {
+            logger.LogCritical(ex, "The TapQueue service crashed; restarting");
+            CrashReporter.Report(CrashProgram.Service, ex, config);
+            restarter.Restart();
+        }
+    }
+
+    private async Task RunAsync(CancellationToken stoppingToken)
+    {
         using var http = new HttpClient
         {
             BaseAddress = new Uri(config.ServerUrl.TrimEnd('/') + "/"),

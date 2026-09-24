@@ -1,6 +1,7 @@
 using Avalonia;
 using System.Diagnostics;
 using TapQueue.Shared;
+using TapQueue.Shared.Api;
 
 namespace TapQueue.Client.Linux;
 
@@ -25,7 +26,22 @@ internal static class Program
             return 0;
         }
         if (args.Contains("--service"))
-            return LinuxService.RunAsync(args.Where(a => a != "--service").ToArray()).GetAwaiter().GetResult();
+        {
+            var serviceArgs = args.Where(a => a != "--service").ToArray();
+            AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+                CrashReporter.Report(CrashProgram.Service, (Exception)e.ExceptionObject, serviceArgs);
+            try
+            {
+                return LinuxService.RunAsync(serviceArgs).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                // Before or while starting (e.g. an unreadable client.toml); systemd starts it again.
+                Console.Error.WriteLine($"TapQueue service failed: {ex}");
+                CrashReporter.Report(CrashProgram.Service, ex, serviceArgs);
+                return 1;
+            }
+        }
         if (args.Contains("--remove-printers"))
             return PrinterSync.RemoveAllAsync(new CupsPrinterInstaller()).GetAwaiter().GetResult();
         if (Array.IndexOf(args, "--discover") is var discover and >= 0)
@@ -53,10 +69,23 @@ internal static class Program
             return 1;
         }
 
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            CrashReporter.Report(CrashProgram.Tray, (Exception)e.ExceptionObject, config);
+        _ = Task.Run(() => CrashReporter.SendPendingAsync(CrashProgram.Tray, config, TimeSpan.FromSeconds(30)));
+
         TrayApp.Start = new TrayApp.Options(config, appArgs, updatedFrom);
-        return AppBuilder.Configure<TrayApp>()
-            .UsePlatformDetect()
-            .StartWithClassicDesktopLifetime(appArgs, Avalonia.Controls.ShutdownMode.OnExplicitShutdown);
+        try
+        {
+            return AppBuilder.Configure<TrayApp>()
+                .UsePlatformDetect()
+                .StartWithClassicDesktopLifetime(appArgs, Avalonia.Controls.ShutdownMode.OnExplicitShutdown);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"TapQueue: {ex}");
+            CrashReporter.Report(CrashProgram.Tray, ex, config);
+            return 1;
+        }
     }
 
     /// <summary>One server per line, "url|name|version", to FILE or standard output.</summary>

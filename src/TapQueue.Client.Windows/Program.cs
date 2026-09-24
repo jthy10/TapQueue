@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using TapQueue.Shared;
+using TapQueue.Shared.Api;
 
 namespace TapQueue.Client.Windows;
 
@@ -19,7 +20,22 @@ internal static class Program
     private static int Main(string[] args)
     {
         if (args.Contains("--service"))
-            return MachineService.RunAsync(args.Where(a => a != "--service").ToArray()).GetAwaiter().GetResult();
+        {
+            var serviceArgs = args.Where(a => a != "--service").ToArray();
+            AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+                CrashReporter.Report(CrashProgram.Service, (Exception)e.ExceptionObject, serviceArgs);
+            try
+            {
+                return MachineService.RunAsync(serviceArgs).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                // Before or while starting (e.g. an unreadable client.toml). Exiting without telling
+                // Windows the service stopped counts as a failure, so Windows tries it again.
+                CrashReporter.Report(CrashProgram.Service, ex, serviceArgs);
+                return 1;
+            }
+        }
         if (args.Contains("--remove-printers"))
             return PrinterSync.RemoveAllAsync(new PrinterInstaller()).GetAwaiter().GetResult();
         if (Array.IndexOf(args, "--discover") is var discover and >= 0 && discover + 1 < args.Length)
@@ -36,6 +52,10 @@ internal static class Program
             return 0;
 
         ApplicationConfiguration.Initialize();
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            CrashReporter.Report(CrashProgram.Tray, (Exception)e.ExceptionObject, appArgs);
+        // An error in a menu or window handler: report it and keep the tray app running.
+        Application.ThreadException += (_, e) => CrashReporter.Report(CrashProgram.Tray, e.Exception, appArgs);
 
         ClientConfig config;
         try
@@ -48,6 +68,7 @@ internal static class Program
             return 1;
         }
 
+        _ = Task.Run(() => CrashReporter.SendPendingAsync(CrashProgram.Tray, config, TimeSpan.FromSeconds(30)));
         Application.Run(new TrayApp(config, appArgs, updatedFrom));
         return 0;
     }
