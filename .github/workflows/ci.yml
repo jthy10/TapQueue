@@ -60,6 +60,11 @@ jobs:
           Expand-Archive (Get-ChildItem linux-built/TapQueue_client_*_win-x64.zip).FullName linux-built/client
           ./scripts/smoke-test-windows-service.ps1 linux-built/client/TapQueueClient.exe
 
+      # The Linux-built exe differs from the one built here, so it can stand in for a new build.
+      - name: Update the Windows service to a pushed build
+        shell: pwsh
+        run: ./scripts/test-windows-service-update.ps1 -From out/client/TapQueueClient.exe -To linux-built/client/TapQueueClient.exe
+
       - uses: actions/upload-artifact@v4
         with:
           name: tapqueue-client-installer-${{ github.sha }}
