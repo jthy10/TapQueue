@@ -73,7 +73,7 @@ Reference: [admin console](docs/admin-ui.md) Â· [admin CLI](docs/admin-cli.md) Â
 - [x] One-command server and station installs from GitHub
 - [x] Web admin console
 - [x] Page counting and quotas
-- [ ] Printer health monitoring (state, problems, toner levels)
+- [x] Printer health monitoring (state, problems, toner levels)
 - [ ] Admin sign-in and roles
 - [ ] Directory sync (Active Directory / LDAP / Entra ID)
 - [ ] TLS for client and IPP connections, and per-job identity instead of IP-based ownership
