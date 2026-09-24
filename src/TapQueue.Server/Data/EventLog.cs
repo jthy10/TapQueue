@@ -16,6 +16,8 @@ public static class EventCategory
     public const string SignIn = "signin";
     /// <summary>A client program crashed and sent a crash report.</summary>
     public const string Crash = "crash";
+    /// <summary>A printer had a problem (unreachable, paper jam, toner low) or recovered.</summary>
+    public const string Printer = "printer";
 }
 
 /// <summary>
@@ -26,6 +28,9 @@ public sealed class EventLog(Database database)
 {
     /// <summary>Until admins sign in, every admin change is by "admin".</summary>
     public const string AdminActor = "admin";
+
+    /// <summary>Things TapQueue noticed by itself, like a printer going offline.</summary>
+    public const string System = "system";
 
     public static string User(string username) => $"user:{username}";
     public static string Printer(string id) => $"printer:{id}";

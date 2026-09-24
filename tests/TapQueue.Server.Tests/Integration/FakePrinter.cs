@@ -25,6 +25,14 @@ public sealed class FakePrinter : IAsyncDisposable
     /// <summary>Answer this many Print-Jobs with server-error-busy before accepting one.</summary>
     public int BusyCount { get; set; }
 
+    /// <summary>What Get-Printer-Attributes reports: printer-state, printer-state-reasons, printer-is-accepting-jobs.</summary>
+    public int State { get; set; } = IppPrinterState.Idle;
+    public string[] Reasons { get; set; } = ["none"];
+    public bool AcceptingJobs { get; set; } = true;
+
+    /// <summary>The black toner's level in percent (its low level is 10).</summary>
+    public int TonerLevel { get; set; } = 80;
+
     public string Uri { get; }
 
     private FakePrinter(WebApplication app)
@@ -60,8 +68,15 @@ public sealed class FakePrinter : IAsyncDisposable
             response = IppMessage.CreateResponse(request, IppStatus.Ok);
             response.Group(IppTag.PrinterAttributes)
                 .Add("printer-make-and-model", IppValue.Text("Fake LaserJet"))
-                .Add("printer-state", IppValue.Enum(IppPrinterState.Idle))
-                .Add("printer-state-reasons", IppValue.Keyword("none"))
+                .Add("printer-state", IppValue.Enum(State))
+                .Add("printer-state-reasons", Reasons.Select(IppValue.Keyword))
+                .Add("printer-is-accepting-jobs", IppValue.Boolean(AcceptingJobs))
+                .Add("marker-names", IppValue.Name("black cartridge"))
+                .Add("marker-colors", IppValue.Name("#000000"))
+                .Add("marker-types", IppValue.Keyword("toner-cartridge"))
+                .Add("marker-levels", IppValue.Integer(TonerLevel))
+                .Add("marker-low-levels", IppValue.Integer(10))
+                .Add("marker-high-levels", IppValue.Integer(100))
                 .Add("document-format-supported", IppValue.MimeType("application/pdf"), IppValue.MimeType("application/octet-stream"));
         }
         else if (request.Code == IppOperation.PrintJob && BusyCount > 0)
