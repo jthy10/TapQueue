@@ -452,3 +452,36 @@ public static class TapOutcome
 /// <param name="Outcome">One of <see cref="TapOutcome"/>.</param>
 /// <param name="Message">A short sentence suitable for showing at the printer.</param>
 public sealed record StationTapResponse(string Outcome, string Message, UserDto? User, IReadOnlyList<ReleaseResult> Results);
+
+/// <summary>
+/// A client program that crashed, sent by it (or, if it couldn't be sent then, the next time it starts).
+/// </summary>
+/// <param name="Program">What crashed: "service" (the TapQueue service) or "tray" (the tray app).</param>
+/// <param name="Message">The error, one line.</param>
+/// <param name="Details">The full exception with its stack trace.</param>
+public sealed record CrashReportRequest(
+    string Computer,
+    string Program,
+    string? Platform,
+    string? Version,
+    DateTimeOffset OccurredAt,
+    string Message,
+    string? Details);
+
+public sealed record CrashReportDto(
+    long Id,
+    string Computer,
+    string Ip,
+    string Program,
+    string Platform,
+    string? Version,
+    DateTimeOffset OccurredAt,
+    DateTimeOffset ReceivedAt,
+    string Message,
+    string? Details);
+
+public static class CrashProgram
+{
+    public const string Service = "service";
+    public const string Tray = "tray";
+}

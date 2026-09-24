@@ -19,6 +19,17 @@ public static class AdminWorkstationsApi
             return Results.NoContent();
         });
         admin.MapDelete("/clients/{id:long}", SignOut);
+
+        admin.MapGet("/crashes", (CrashStore crashes, string? computer, int? limit) =>
+            crashes.List(string.IsNullOrWhiteSpace(computer) ? null : computer.Trim(), Math.Clamp(limit ?? 100, 1, CrashStore.Keep)));
+        admin.MapDelete("/crashes/{id:long}", (long id, CrashStore crashes) =>
+            crashes.Delete(id) ? Results.NoContent() : Results.NotFound(new ErrorResponse($"No crash report {id}.")));
+        admin.MapDelete("/crashes", (CrashStore crashes, EventLog events, string? computer) =>
+        {
+            var cleared = crashes.Clear(string.IsNullOrWhiteSpace(computer) ? null : computer.Trim());
+            events.Admin(null, $"Cleared {cleared} crash report{(cleared == 1 ? "" : "s")}{(string.IsNullOrWhiteSpace(computer) ? "" : $" from {computer.Trim()}")}.");
+            return Results.Ok(new { Cleared = cleared });
+        });
     }
 
     private static IResult NotFound(string hostname) =>

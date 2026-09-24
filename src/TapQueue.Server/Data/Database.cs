@@ -316,6 +316,23 @@ public sealed class Database
             ALTER TABLE client_builds ADD COLUMN platform TEXT NOT NULL DEFAULT 'win-x64';
             ALTER TABLE workstations ADD COLUMN platform TEXT NOT NULL DEFAULT 'win-x64';
         """,
+
+        // 11: crash reports sent by clients (CrashStore).
+        """
+            CREATE TABLE crash_reports (
+                id           INTEGER PRIMARY KEY,
+                computer     TEXT NOT NULL COLLATE NOCASE,
+                ip           TEXT NOT NULL,
+                program      TEXT NOT NULL,
+                platform     TEXT NOT NULL,
+                version      TEXT,
+                occurred_at  TEXT NOT NULL,
+                received_at  TEXT NOT NULL,
+                message      TEXT NOT NULL,
+                details      TEXT
+            );
+            CREATE INDEX ix_crash_reports_computer ON crash_reports(computer, id);
+        """,
     ];
 
     public void Migrate()

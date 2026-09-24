@@ -23,6 +23,8 @@ public static class ClientApi
         // up under Workstations and can be told to update now.
         app.MapPost("/api/v1/client/setup", CheckIn);
         app.MapGet("/api/v1/client/builds/{sha256}", DownloadBuild);
+        // Anonymous like the setup check-in: a program that crashes may not have signed in (or be able to).
+        app.MapPost("/api/v1/client/crash", ReportCrash);
 
         var me = app.MapGroup("/api/v1").AddEndpointFilter(RequireSession);
         // The build is only used by Windows tray apps older than 0.3, which updated themselves.
@@ -92,6 +94,23 @@ public static class ClientApi
         return Results.Ok(new ClientSetupResponse(queues.List().Select(ToDto).ToList(), builds.Latest(platform)?.ToDto(), command));
 
         static string? Clean(string? error) => string.IsNullOrWhiteSpace(error) ? null : error.Trim()[..Math.Min(error.Trim().Length, 500)];
+    }
+
+    private static IResult ReportCrash(CrashReportRequest report, HttpContext http, CrashStore crashes, EventLog events, ILoggerFactory loggers)
+    {
+        if (string.IsNullOrWhiteSpace(report.Computer) || string.IsNullOrWhiteSpace(report.Program) || string.IsNullOrWhiteSpace(report.Message))
+            return Results.BadRequest(new ErrorResponse("computer, program and message are required."));
+        if (ClientPlatform.Parse(report.Platform) is not { } platform)
+            return Results.BadRequest(new ErrorResponse($"Unknown platform \"{report.Platform}\"."));
+
+        var crash = crashes.Add(report, platform, http.ClientIp());
+        var what = crash.Program == CrashProgram.Service ? "TapQueue service" : crash.Program == CrashProgram.Tray ? "tray app" : crash.Program;
+        loggers.CreateLogger("TapQueue.Server.Api.ClientApi").LogWarning(
+            "{Computer} ({Ip}): {What} {Version} crashed: {Message} (crash report {Id})",
+            crash.Computer, crash.Ip, what, crash.Version ?? "?", crash.Message, crash.Id);
+        events.Record(EventCategory.Crash, crash.Computer, null,
+            $"The {what} on {crash.Computer} ({ClientPlatform.DisplayName(platform)}, client {crash.Version ?? "?"}) crashed: {crash.Message}");
+        return Results.Ok(new { crash.Id });
     }
 
     private static QueueDto ToDto(QueueRecord q) => new(q.Id, q.Name, q.Description, $"/ipp/{q.Id}");

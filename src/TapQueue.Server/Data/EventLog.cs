@@ -14,6 +14,8 @@ public static class EventCategory
     public const string Tap = "tap";
     /// <summary>A client signed in, or was turned away.</summary>
     public const string SignIn = "signin";
+    /// <summary>A client program crashed and sent a crash report.</summary>
+    public const string Crash = "crash";
 }
 
 /// <summary>

@@ -53,6 +53,7 @@ public static class ServerApp
         builder.Services.AddSingleton<BadgeStore>();
         builder.Services.AddSingleton<StationStore>();
         builder.Services.AddSingleton<WorkstationStore>();
+        builder.Services.AddSingleton<CrashStore>();
         builder.Services.AddSingleton<PrinterStore>();
         builder.Services.AddSingleton<QueueStore>();
         builder.Services.AddSingleton<UnknownTaps>();
