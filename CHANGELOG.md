@@ -11,6 +11,8 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-24
+
 ### Added
 - The server answers "is there a TapQueue server here?" broadcasts on UDP port 8631, so the
   Windows installer can find it. Set `server.discovery_port = 0` to turn this off.
@@ -115,7 +117,8 @@ First working version.
   readers. A tap releases the user's held jobs to the station's printer.
 - Badge enrollment by an admin (`badges add --last-tap`).
 
-[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.3.0...HEAD
+[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.4.0...HEAD
+[0.4.0]: https://github.com/jthy10/TapQueue/compare/server-v0.3.0...server-v0.4.0
 [0.3.0]: https://github.com/jthy10/TapQueue/compare/server-v0.2.0...server-v0.3.0
 [0.2.0]: https://github.com/jthy10/TapQueue/compare/v0.1.0...server-v0.2.0
 [0.1.0]: https://github.com/jthy10/TapQueue/releases/tag/v0.1.0
