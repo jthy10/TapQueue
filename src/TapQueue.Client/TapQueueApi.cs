@@ -52,9 +52,13 @@ public sealed class TapQueueApi(ClientConfig config) : IDisposable
         }
     }
 
-    /// <summary>"Sign in as…": checks the domain account's password and remembers the sign-in (not the password).</summary>
+    /// <summary>
+    /// "Sign in as…": checks the domain account's password and remembers the sign-in (not the password).
+    /// Whoever was signed in before is signed out once it works, so a mistyped password changes nothing.
+    /// </summary>
     public async Task<ClientSessionResponse> SignInWithPasswordAsync(string username, string password, CancellationToken ct = default)
     {
+        var (previous, previousRemembered) = (Session, Remembered);
         var session = await CreateSessionAsync(Request(username.Trim(), password: password), ct);
         SignInMode = ClientSignIn.Domain;
         if (session.RememberToken is { } token)
@@ -62,30 +66,35 @@ public sealed class TapQueueApi(ClientConfig config) : IDisposable
             Remembered = new SavedSignIn(config.ServerUrl, session.User.Username, token);
             Remembered.Save();
         }
+        if (previous is not null)
+            await EndOnServerAsync(previous, previousRemembered?.RememberToken, ct);
         return session;
     }
 
     /// <summary>Ends the session and forgets the remembered sign-in, here and on the server (if it can be reached).</summary>
     public async Task SignOutAsync(CancellationToken ct = default)
     {
-        var remembered = Remembered;
+        var (session, remembered) = (Session, Remembered);
         Forget();
-        if (Session is { } session)
+        Session = null;
+        if (session is not null)
+            await EndOnServerAsync(session, remembered?.RememberToken, ct);
+    }
+
+    private async Task EndOnServerAsync(ClientSessionResponse session, string? rememberToken, CancellationToken ct)
+    {
+        try
         {
-            Session = null;
-            try
+            using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/client/sign-out")
             {
-                using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/client/sign-out")
-                {
-                    Content = JsonContent.Create(new ClientSignOutRequest(remembered?.RememberToken), options: TapQueueJson.Options),
-                };
-                request.Headers.Authorization = new("Bearer", session.SessionToken);
-                using var response = await _http.SendAsync(request, ct);
-            }
-            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
-            {
-                // Signed out here either way; the server drops the session when its heartbeats stop.
-            }
+                Content = JsonContent.Create(new ClientSignOutRequest(rememberToken), options: TapQueueJson.Options),
+            };
+            request.Headers.Authorization = new("Bearer", session.SessionToken);
+            using var response = await _http.SendAsync(request, ct);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            // Signed out here either way; the server drops the session when its heartbeats stop.
         }
     }
 
