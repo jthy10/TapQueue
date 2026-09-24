@@ -67,6 +67,10 @@ const string Usage = """
       tapqueue-admin workstations update <computer>  Install the published client now, even if it failed before
       tapqueue-admin workstations forget <computer>  Drop a PC that's gone from the list
 
+      tapqueue-admin crashes [<computer>]            Crash reports sent by clients, newest first
+      tapqueue-admin crashes show <id>               One report with its full error
+      tapqueue-admin crashes clear [<computer>]      Delete crash reports (all, or one PC's)
+
       tapqueue-admin server                          Settings (and whether each is set here or in server.toml)
       tapqueue-admin server set hold-hours|session-timeout <number|default>
                                                      Change a setting now, or go back to server.toml's
@@ -166,6 +170,9 @@ try
         ("workstations", null) => await ListWorkstations(),
         ("workstations", "update") when positional.Count == 3 => await UpdateWorkstation(positional[2]),
         ("workstations", "forget") when positional.Count == 3 => await Delete($"workstations/{Uri.EscapeDataString(positional[2])}", $"Forgot {positional[2]}."),
+        ("crashes", "show") when positional.Count == 3 && long.TryParse(positional[2], out var crashId) => await ShowCrash(crashId),
+        ("crashes", "clear") when positional.Count <= 3 => await ClearCrashes(positional.ElementAtOrDefault(2)),
+        ("crashes", _) when positional.Count <= 2 => await ListCrashes(positional.ElementAtOrDefault(1)),
         ("server", null) => await ShowServer(),
         ("server", "set") when positional.Count == 4 => await SetServerSetting(positional[2], positional[3]),
         ("server", "log") when positional.Count == 2 => await ServerLog(options.ContainsKey("--follow")),
@@ -513,6 +520,51 @@ async Task<int> ListWorkstations()
     }));
     foreach (var w in workstations.Where(w => w.UpdateError is not null))
         Console.WriteLine($"{w.Hostname}: last update failed: {w.UpdateError}");
+    return 0;
+}
+
+async Task<int> ListCrashes(string? computer)
+{
+    var crashes = await Get<List<CrashReportDto>>("crashes" + (computer is null ? "" : $"?computer={Uri.EscapeDataString(computer)}"));
+    if (crashes is null) return 1;
+    if (crashes.Count == 0)
+    {
+        Console.WriteLine(computer is null ? "No crash reports." : $"No crash reports from {computer}.");
+        return 0;
+    }
+    Table(["ID", "WHEN", "COMPUTER", "OS", "PROGRAM", "VERSION", "ERROR"], crashes.Select(c => new[]
+    {
+        c.Id.ToString(), Ago(c.OccurredAt), c.Computer, ClientPlatform.DisplayName(c.Platform), c.Program, c.Version ?? "?",
+        c.Message.Length > 80 ? c.Message[..79] + "…" : c.Message,
+    }));
+    Console.WriteLine("Full error: tapqueue-admin crashes show <id>");
+    return 0;
+}
+
+async Task<int> ShowCrash(long id)
+{
+    var crash = (await Get<List<CrashReportDto>>($"crashes?limit={500}"))?.FirstOrDefault(c => c.Id == id);
+    if (crash is null)
+    {
+        Console.Error.WriteLine($"No crash report {id}.");
+        return 1;
+    }
+    Console.WriteLine($"Crash report {crash.Id}: the {crash.Program} on {crash.Computer} ({ClientPlatform.DisplayName(crash.Platform)}, {crash.Ip})");
+    Console.WriteLine($"Client {crash.Version ?? "?"}, crashed {crash.OccurredAt.ToLocalTime():g}, reported {crash.ReceivedAt.ToLocalTime():g}");
+    Console.WriteLine();
+    Console.WriteLine(crash.Details ?? crash.Message);
+    return 0;
+}
+
+async Task<int> ClearCrashes(string? computer)
+{
+    using var response = await http.DeleteAsync("crashes" + (computer is null ? "" : $"?computer={Uri.EscapeDataString(computer)}"));
+    if (!response.IsSuccessStatusCode)
+    {
+        await PrintError(response);
+        return 1;
+    }
+    Console.WriteLine(computer is null ? "Cleared all crash reports." : $"Cleared crash reports from {computer}.");
     return 0;
 }
 

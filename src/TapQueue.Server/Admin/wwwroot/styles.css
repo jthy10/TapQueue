@@ -331,6 +331,10 @@ dialog form { margin: 0; }
 .secret code { flex: 1; overflow-wrap: anywhere; white-space: pre-wrap; }
 .callout { background: var(--warn-weak); color: var(--warn); border-radius: var(--radius-sm); padding: 9px 12px; font-size: 13px; margin-bottom: 12px; }
 .callout.info { background: var(--accent-weak); color: var(--accent); }
+.crash { border-top: 1px solid var(--border); padding: 8px 0; }
+.crash summary { cursor: pointer; font-size: 13px; }
+.crash pre { margin: 8px 0 0; padding: 10px; max-height: 320px; overflow: auto; font-size: 11.5px; line-height: 1.45;
+  background: var(--bg-sunken, rgba(127,127,127,.08)); border-radius: var(--radius-sm); white-space: pre-wrap; word-break: break-word; }
 
 .tap-wait { text-align: center; padding: 18px 8px; }
 .tap-wait .ring {

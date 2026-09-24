@@ -1,8 +1,8 @@
 import { api, enc } from "../api.js";
 import { h, icon, pageHead, panel, button, time, empty, loading } from "../ui.js";
 
-const filters = [["", "Everything"], ["job", "Jobs"], ["tap", "Taps"], ["signin", "Sign-ins"], ["admin", "Admin changes"]];
-const icons = { admin: "admins", job: "jobs", tap: "cards", signin: "workstations" };
+const filters = [["", "Everything"], ["job", "Jobs"], ["tap", "Taps"], ["signin", "Sign-ins"], ["crash", "Crashes"], ["admin", "Admin changes"]];
+const icons = { admin: "admins", job: "jobs", tap: "cards", signin: "workstations", crash: "alert" };
 const pages = { user: "users", group: "groups", printer: "printers", station: "stations", queue: "queues", job: "jobs" };
 
 /** "user:alice" -> "users/alice", for linking an event to what it's about. */

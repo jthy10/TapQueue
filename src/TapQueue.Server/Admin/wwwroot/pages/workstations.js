@@ -24,7 +24,11 @@ function merge(workstations, clients) {
   return [...byName.values()].sort((a, b) => a.hostname.localeCompare(b.hostname));
 }
 
+const DAY = 24 * 60 * 60 * 1000;
+const recentCrashes = (pc) => (pc.crashes ?? []).filter((c) => Date.now() - new Date(c.occurredAt) < DAY);
+
 function status(pc) {
+  if (recentCrashes(pc).length) return pill(pc.online ? "Crashed" : "Crashed, offline", "bad");
   if (!pc.online) return pill("Offline", "bad");
   if (pc.updateError) return pill("Update failed", "warn");
   return pill("Online", "ok");
@@ -49,13 +53,14 @@ export async function render(root, ctx) {
   panel({ flush: true, body: list }));
 
   async function load() {
-    const [workstations, clients, builds, server] = await Promise.all([
-      api.get("workstations"), api.get("clients"), api.get("client-builds"), api.get("server")]);
+    const [workstations, clients, builds, server, crashes] = await Promise.all([
+      api.get("workstations"), api.get("clients"), api.get("client-builds"), api.get("server"), api.get("crashes?limit=200")]);
     if (!ctx.current) return;
     latest = {};
     for (const b of builds) latest[b.platform] ??= b.version; // newest first
     timeout = server.sessionTimeoutMinutes;
     pcs = merge(workstations, clients);
+    for (const pc of pcs) pc.crashes = crashes.filter((c) => c.computer.toLowerCase() === pc.hostname.toLowerCase());
     list.replaceChildren(table({
       rows: pcs,
       search: (pc) => `${pc.hostname} ${pc.lastIp} ${pc.version ?? ""} ${pc.sessions.map((s) => `${s.username} ${s.windowsUser ?? ""}`).join(" ")}`,
@@ -94,6 +99,13 @@ export async function render(root, ctx) {
           pc.firstSeenAt && ["First seen", dateTime(pc.firstSeenAt)],
           pc.pendingCommand && ["Waiting to", `${pc.pendingCommand} (when it next checks in, within a minute)`],
         ]),
+        pc.crashes.length > 0 && sectionTitle("Crash reports"),
+        pc.crashes.length > 0 && h("div", null,
+          pc.crashes.slice(0, 10).map((c) => h("details", { class: "crash" },
+            h("summary", null, h("b", null, c.program === "service" ? "TapQueue service" : "Tray app"), ` ${c.version ?? ""} · `,
+              time(c.occurredAt), h("div", { class: "sub" }, c.message)),
+            h("pre", null, c.details ?? c.message))),
+          button("Clear crash reports", { small: true, kind: "ghost", onclick: () => clearCrashes(pc) })),
         sectionTitle("Signed in"),
         pc.sessions.length === 0
           ? h("p", { class: "muted", style: "margin:0" }, `Nobody. Jobs printed from here don't belong to anyone until someone signs in.`)
@@ -110,6 +122,12 @@ export async function render(root, ctx) {
         pc.service && button("Update now", { iconName: "updates", onclick: () => updateNow(pc), disabled: !latest[pc.platform] }),
       ],
     });
+  }
+
+  async function clearCrashes(pc) {
+    if (await attempt(() => api.del(`crashes?computer=${enc(pc.hostname)}`), `Cleared crash reports from ${pc.hostname}`) === undefined) return;
+    await load();
+    open(pc.hostname);
   }
 
   async function signOut(pc, s) {

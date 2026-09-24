@@ -12,6 +12,7 @@ export async function render(root, ctx) {
       api.get("server"), api.get(`printers${refresh ? "?refresh=true" : ""}`), api.get("stations"), api.get("clients"),
       api.get("jobs?status=held"), api.get("badges/unknown"), api.get("queues"), api.get("client-builds"), api.get("events?limit=10"),
     ]);
+    const crashes = await api.get("crashes?limit=200");
     if (!ctx.current) return;
     const online = printers.filter((p) => p.printer.online).length;
     const latestBuild = builds[0];
@@ -28,7 +29,7 @@ export async function render(root, ctx) {
         stat("Workstations", clients.length, "workstations", "Signed in now"),
       ),
       h("div", { class: "grid two" },
-        panel({ title: "Needs attention", flush: true, body: attention({ printers, stations, unknown, queues, outdated, latestBuild, server }) }),
+        panel({ title: "Needs attention", flush: true, body: attention({ printers, stations, unknown, queues, outdated, latestBuild, server, crashes }) }),
         panel({ title: "Server", flush: true, body: h("div", { class: "panel-body" }, h("dl", { class: "props" },
           h("dt", null, "Version"), h("dd", null, server.version),
           h("dt", null, "Up for"), h("dd", null, duration(server.startedAt)),
@@ -55,7 +56,7 @@ function stat(label, value, href, note) {
   return h("a", { class: "panel stat", href }, h("div", { class: "stat-label" }, label), h("div", { class: "stat-value" }, value), h("div", { class: "stat-note" }, note));
 }
 
-function attention({ printers, stations, unknown, queues, outdated, latestBuild, server }) {
+function attention({ printers, stations, unknown, queues, outdated, latestBuild, server, crashes }) {
   const items = [];
   const add = (tone, title, text, href) => items.push(h("li", null,
     h("span", { class: `icon ${tone}` }, icon(tone === "ok" ? "check" : "alert")),
@@ -76,6 +77,9 @@ function attention({ printers, stations, unknown, queues, outdated, latestBuild,
     else if (!s.settings.enabled) add("warn", `Station ${name} is out of service`, s.settings.maintenanceMessage || null, `stations/${s.id}`);
   }
   if (unknown.length) add("warn", `${plural(unknown.length, "unknown card")} tapped recently`, "Link them to people on the Cards page.", "cards");
+  const crashedPcs = [...new Set(crashes.filter((c) => Date.now() - new Date(c.occurredAt) < 24 * 60 * 60 * 1000).map((c) => c.computer))];
+  if (crashedPcs.length) add("bad", `TapQueue crashed on ${crashedPcs.length === 1 ? crashedPcs[0] : plural(crashedPcs.length, "workstation")} in the last day`,
+    "Open the workstation to read the crash report.", crashedPcs.length === 1 ? `workstations/${encodeURIComponent(crashedPcs[0])}` : "workstations");
   if (outdated.length) add("warn", `${plural(outdated.length, "workstation")} not on the published client`, "They update within a minute of their next heartbeat.", "workstations");
   if (server.authMode === "dev") add("warn", "Dev sign-in is on", "Clients can sign in as anyone without a token. Fine for testing only.", "server");
   if (items.length === 0) add("ok", "All clear", "Nothing needs you right now.");
