@@ -78,6 +78,8 @@ const string Usage = """
       tapqueue-admin directory scope add <dn>        Sync the users under an OU, in a group (with nested
                                                      groups) or one user. Set up the connection in the console
       tapqueue-admin directory scope remove <id>     Stop syncing a scope item (id from `directory`)
+      tapqueue-admin directory sign-in <pc|domain>   How the tray signs in: as the PC's user (default), or
+                                                     with a domain account entered in the tray
 
       tapqueue-admin server                          Settings (and whether each is set here or in server.toml)
       tapqueue-admin server set hold-hours|session-timeout <number|default>
@@ -184,6 +186,7 @@ try
         ("directory", null) => await ShowDirectory(),
         ("directory", "sync") when positional.Count == 2 => await SyncDirectory(options.ContainsKey("--dry-run"), options.ContainsKey("--force")),
         ("directory", "scope") when positional.Count == 4 && positional[2] == "add" => await AddDirectoryScope(positional[3]),
+        ("directory", "sign-in") when positional.Count == 3 => await SetClientSignIn(positional[2]),
         ("directory", "scope") when positional.Count == 4 && positional[2] == "remove" =>
             await Delete($"directory/scope/{long.Parse(positional[3])}", $"Removed scope item {positional[3]}; the next sync disables users only it brought in."),
         ("server", null) => await ShowServer(),
@@ -261,6 +264,21 @@ async Task<int> ListJobs(string? status)
     return 0;
 }
 
+async Task<int> SetClientSignIn(string mode)
+{
+    if (!ClientSignIn.All.Contains(mode))
+    {
+        Console.Error.WriteLine($"Expected one of: {string.Join(", ", ClientSignIn.All)}.");
+        return 2;
+    }
+    if (await Send<DirectoryStatusDto>(HttpMethod.Patch, "directory/config", new UpdateDirectoryConfigRequest(ClientSignIn: mode)) is null)
+        return 1;
+    Console.WriteLine(mode == ClientSignIn.Domain
+        ? "The tray now asks for a domain account: people choose Sign in as… and enter their AD name and password."
+        : "The tray now signs in as the PC's user.");
+    return 0;
+}
+
 async Task<int> ShowDirectory()
 {
     var d = await Get<DirectoryStatusDto>("directory");
@@ -274,6 +292,9 @@ async Task<int> ShowDirectory()
     Console.WriteLine(c.Enabled
         ? $"Daily sync at {c.SyncTime}{(d.NextRunAt is { } next ? $", next {next.ToLocalTime():yyyy-MM-dd HH:mm}" : "")}; stops before disabling more than {c.MaxDisablePercent}%."
         : "Daily sync is off.");
+    Console.WriteLine(c.ClientSignIn == ClientSignIn.Domain
+        ? "The tray signs in with a domain account (Sign in as…), remembered until they sign out."
+        : "The tray signs in as the PC's user.");
     Console.WriteLine();
     if (d.Scope.Count == 0)
         Console.WriteLine("Nothing in the scope yet: tapqueue-admin directory scope add <dn>");
