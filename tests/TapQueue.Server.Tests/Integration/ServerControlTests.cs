@@ -88,8 +88,10 @@ public sealed class ServerControlTests : IAsyncLifetime
     [Fact]
     public async Task RestartIsRefusedWhenNothingWouldStartTheServerAgain()
     {
+        // CI runners run under systemd themselves, so the test process can inherit INVOCATION_ID.
+        Environment.SetEnvironmentVariable("INVOCATION_ID", null);
         var info = (await _server.Admin.GetFromJsonAsync<ServerInfoDto>("/api/v1/admin/server", TapQueueJson.Options))!;
-        Assert.False(info.CanRestart); // tests don't run under systemd
+        Assert.False(info.CanRestart);
 
         var response = await _server.Admin.PostAsync("/api/v1/admin/server/restart", null);
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
