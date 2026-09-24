@@ -71,13 +71,19 @@ Reference: [admin console](docs/admin-ui.md) Â· [admin CLI](docs/admin-cli.md) Â
 - [x] Versioned releases with prebuilt archives and an install script
 - [x] Windows installer; client updates pushed from the server
 - [x] One-command server and station installs from GitHub
-- [ ] Feedback at the printer (screen or beeper) for "nothing to print" and errors
-- [ ] Self-service badge enrollment from the tray app
-- [ ] TLS for client and IPP connections
-- [ ] Web admin console
+- [x] Web admin console
+- [x] Page counting and quotas
+- [ ] Printer health monitoring (state, problems, toner levels)
+- [ ] Admin sign-in and roles
 - [ ] Directory sync (Active Directory / LDAP / Entra ID)
-- [ ] Page counting, quotas and reports
+- [ ] TLS for client and IPP connections, and per-job identity instead of IP-based ownership
+- [ ] Feedback at the printer (screen or status light) for "nothing to print" and errors
+- [ ] Follow-me printing, reports and cost accounting
+- [ ] Self-service badge enrollment from the tray app
+- [ ] Notifications and database backups
 - [ ] Signed Windows builds; .deb packages; ARM builds for small release devices
+
+The full list, with what each item means, is in [docs/roadmap.md](docs/roadmap.md).
 
 ## License
 
