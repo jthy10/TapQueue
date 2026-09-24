@@ -11,6 +11,8 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-24
+
 ### Added
 - Printer health monitoring. Printers are checked every 30 seconds (was every 2 minutes) for
   their state, what's wrong (paper jam, out of paper, door open…) and toner or ink levels. Each
@@ -159,7 +161,8 @@ First working version.
   readers. A tap releases the user's held jobs to the station's printer.
 - Badge enrollment by an admin (`badges add --last-tap`).
 
-[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.5.0...HEAD
+[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.6.0...HEAD
+[0.6.0]: https://github.com/jthy10/TapQueue/compare/server-v0.5.0...server-v0.6.0
 [0.5.0]: https://github.com/jthy10/TapQueue/compare/server-v0.4.0...server-v0.5.0
 [0.4.0]: https://github.com/jthy10/TapQueue/compare/server-v0.3.0...server-v0.4.0
 [0.3.0]: https://github.com/jthy10/TapQueue/compare/server-v0.2.0...server-v0.3.0
