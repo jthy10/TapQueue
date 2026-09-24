@@ -113,7 +113,10 @@ public sealed class LdapDirectorySourceFactory(ServerConfig serverConfig) : IDir
         // OpenLDAP (under System.DirectoryServices.Protocols on Linux) reads trusted CAs from a directory.
         var directory = Path.Combine(serverConfig.Server.DataDir, "directory-ca");
         Directory.CreateDirectory(directory);
-        File.WriteAllText(Path.Combine(directory, "ca.pem"), ca.ExportCertificatePem() + "\n");
+        foreach (var old in Directory.GetFiles(directory))
+            File.Delete(old);
+        // OpenSSL builds of libldap only find it under its subject hash; GnuTLS builds read any file.
+        File.WriteAllText(Path.Combine(directory, OpenSslSubjectHash.Of(ca) + ".0"), ca.ExportCertificatePem() + "\n");
         connection.SessionOptions.TrustedCertificatesDirectory = directory;
         connection.SessionOptions.StartNewTlsSessionContext();
     }
