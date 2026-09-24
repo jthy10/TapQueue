@@ -11,6 +11,8 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-24
+
 ### Added
 - Linux clients. Client builds are published per platform (Windows or Linux) and each PC is
   offered its own platform's newest build; `tapqueue-admin clients publish` takes the Linux
@@ -126,7 +128,8 @@ First working version.
   readers. A tap releases the user's held jobs to the station's printer.
 - Badge enrollment by an admin (`badges add --last-tap`).
 
-[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.4.0...HEAD
+[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.5.0...HEAD
+[0.5.0]: https://github.com/jthy10/TapQueue/compare/server-v0.4.0...server-v0.5.0
 [0.4.0]: https://github.com/jthy10/TapQueue/compare/server-v0.3.0...server-v0.4.0
 [0.3.0]: https://github.com/jthy10/TapQueue/compare/server-v0.2.0...server-v0.3.0
 [0.2.0]: https://github.com/jthy10/TapQueue/compare/v0.1.0...server-v0.2.0
