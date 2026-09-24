@@ -10,6 +10,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Added
+- **Sign in as…** and **Sign out** in the tray menu (Windows and Linux), for servers set to have
+  people sign in with their domain account. Sign in as… is greyed out when the server signs people
+  in as the PC's user (the default). The sign-in is remembered in the PC user's profile until they
+  sign out. Needs server 0.6.0. See
+  [active-directory.md](docs/active-directory.md#tray-sign-in).
+
 ## [0.5.0] - 2026-09-24
 
 ### Added

@@ -60,7 +60,8 @@ recorded in the activity log under **Printers**, logged by the server, and liste
 IPP jobs carry a username (`requesting-user-name`), but it's just a string the sending computer
 fills in, and anyone can put anything there. TapQueue doesn't trust it on its own.
 
-Instead, the **tray app signs in** with the user's token and keeps a session open with a heartbeat.
+Instead, the **tray app signs in** with the user's token (or, if the server asks for it, their
+[domain account](active-directory.md#tray-sign-in)) and keeps a session open with a heartbeat.
 When a job arrives, the server looks at the **IP address it came from** and finds the signed-in
 session(s) on that address:
 

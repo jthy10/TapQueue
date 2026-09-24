@@ -25,6 +25,12 @@ breaking changes; they're listed under **Changed** with what to do.
   can come from an AD attribute. Every sync can be previewed first, and one that would disable
   too many users stops. LDAPS only. Console page **Active Directory**, `tapqueue-admin
   directory`, and [docs/active-directory.md](docs/active-directory.md).
+- Tray sign-in with a domain account. A new Active Directory setting, **Tray sign-in**, has the
+  tray app ask for an AD username and password (checked against AD over LDAPS) instead of signing
+  in as the PC's user. The sign-in is remembered with a token, never the password, until the person
+  signs out, an admin signs the PC out or the user is disabled. `tapqueue-admin directory sign-in
+  <pc|domain>`. Needs client 0.6.0. See
+  [active-directory.md](docs/active-directory.md#tray-sign-in).
 
 ### Changed
 - Users and groups synced from AD can't be renamed, re-enabled, given or stripped of AD group

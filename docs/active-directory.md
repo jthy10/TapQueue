@@ -121,11 +121,39 @@ number, the first keeps it and the sync warns about the other.
 
 Leave the attribute empty to manage cards in TapQueue only.
 
+## Tray sign-in
+
+By default the tray app on each PC signs in as the person signed in to the PC, without asking.
+To have people sign in with their domain account instead, set **Tray sign-in** on the Active
+Directory page to *A domain account* (or run `tapqueue-admin directory sign-in domain`). It works
+whether or not the daily sync is on, but the connection must be set up.
+
+With a domain account:
+
+- The tray shows **Not signed in** and asks people to sign in. **Sign in as…** in its menu (greyed
+  out in the default mode) asks for their AD username (`alice`, `LAB\alice` or
+  `alice@lab.example.org`) and password.
+- The server checks the password by binding to AD as that user over LDAPS. Only users TapQueue
+  already has from the sync can sign in; others are told to ask IT.
+- The password is never stored. The server hands the tray a sign-in token instead, which it keeps
+  in the PC user's profile (`%LocalAppData%\TapQueue\sign-in.json` on Windows,
+  `~/.config/tapqueue/sign-in.json` on Linux) and signs in with from then on, across restarts,
+  until they choose **Sign out**.
+- The token is forgotten when they sign out, when an admin signs that PC out (Workstations), and
+  when the user is disabled in TapQueue or by the sync. Changing the AD password doesn't end it;
+  disabling the account in AD does, at the next sync.
+- Jobs printed on a PC where nobody has signed in yet aren't anyone's, even in dev mode (there's
+  no falling back to the PC's user name).
+
+Wrong passwords count toward AD's lockout policy like any other sign-in.
+
 ## Troubleshooting
 
 | Message | What to check |
 |---|---|
 | Couldn't connect … over LDAPS | Port 636 open from the server to the DC; the DC has a certificate (AD CS, or one you installed); the name you gave matches the certificate; the CA certificate is right. |
+| TapQueue can't reach your domain controller to check your password (in the tray) | The same as the first row; the server's log has the details. |
+| … isn't set up to print with TapQueue (in the tray) | The person signed in to AD fine but isn't in the sync's scope, or no sync has run since they were added. |
 | refused the bind account's name or password | The account name (UPN or DN) and password; the account isn't locked or expired. |
 | … is no longer in Active Directory | A scope item was deleted. Remove it from the scope, or add it again if it was recreated (a recreated object has a new objectGUID). |
 | Stopped: this would disable … | See [the safety limit](#the-safety-limit). |
