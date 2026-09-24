@@ -522,3 +522,130 @@ public static class CrashProgram
     public const string Service = "service";
     public const string Tray = "tray";
 }
+
+/// <summary>
+/// Active Directory sync settings. The bind password is never sent back; <paramref name="HasPassword"/> says
+/// whether one is saved.
+/// </summary>
+/// <param name="CaCertificate">PEM of the CA that issued the domain controllers' certificates; empty to use the server's trusted CAs.</param>
+/// <param name="BadgeAttribute">The user attribute with their card number (like employeeNumber); empty to manage cards in TapQueue.</param>
+/// <param name="SyncTime">When the daily sync runs, HH:mm in the server's time zone.</param>
+/// <param name="MaxDisablePercent">A sync that would disable more than this share of AD users stops instead, in case AD or the scope is wrong.</param>
+public sealed record DirectoryConfigDto(
+    bool Enabled,
+    string Host,
+    int Port,
+    string BindDn,
+    bool HasPassword,
+    string CaCertificate,
+    string BadgeAttribute,
+    string SyncTime,
+    int MaxDisablePercent);
+
+/// <summary>Fields left null are unchanged. An empty password is ignored, so the console can leave it blank.</summary>
+public sealed record UpdateDirectoryConfigRequest(
+    bool? Enabled = null,
+    string? Host = null,
+    int? Port = null,
+    string? BindDn = null,
+    string? Password = null,
+    string? CaCertificate = null,
+    string? BadgeAttribute = null,
+    string? SyncTime = null,
+    int? MaxDisablePercent = null);
+
+/// <summary>What the sync pulls users from.</summary>
+public static class DirectoryScopeKind
+{
+    /// <summary>Every user anywhere under the OU.</summary>
+    public const string OrganizationalUnit = "ou";
+    /// <summary>Every member of the group, through nested groups too. The group also becomes a TapQueue group.</summary>
+    public const string Group = "group";
+    /// <summary>One user.</summary>
+    public const string User = "user";
+
+    public static readonly string[] All = [OrganizationalUnit, Group, User];
+}
+
+public sealed record DirectoryScopeDto(long Id, string Kind, string Guid, string Dn, string Name, DateTimeOffset AddedAt);
+
+/// <summary>Adds an OU, group or user to the scope, by its objectGUID (from a search) or its DN.</summary>
+public sealed record AddDirectoryScopeRequest(string? Guid = null, string? Dn = null);
+
+/// <summary>An OU, group or user found in AD.</summary>
+/// <param name="Kind">One of <see cref="DirectoryScopeKind"/>.</param>
+/// <param name="Username">sAMAccountName, for users and groups.</param>
+public sealed record DirectoryObjectDto(string Kind, string Guid, string Dn, string Name, string? Username, string? DisplayName, bool InScope);
+
+public static class DirectoryRunOutcome
+{
+    public const string Running = "running";
+    public const string Succeeded = "succeeded";
+    /// <summary>AD couldn't be read (unreachable, refused, scope object gone). Nothing changed.</summary>
+    public const string Failed = "failed";
+    /// <summary>Too many users would have been disabled, so nothing changed. Force a sync to go ahead.</summary>
+    public const string Stopped = "stopped";
+}
+
+/// <param name="Trigger">"schedule" or "admin".</param>
+/// <param name="DryRun">A preview: nothing was changed.</param>
+/// <param name="Summary">What it did, one line.</param>
+public sealed record DirectoryRunDto(
+    long Id,
+    DateTimeOffset StartedAt,
+    DateTimeOffset? FinishedAt,
+    string Trigger,
+    bool DryRun,
+    string Outcome,
+    string Summary,
+    string? Error);
+
+/// <param name="DryRun">Only work out what would change.</param>
+/// <param name="Force">Go ahead even if it would disable more users than the settings allow.</param>
+public sealed record DirectorySyncRequest(bool DryRun = false, bool Force = false);
+
+/// <summary>One thing a sync changes (or would, in a preview).</summary>
+/// <param name="Action">One of <see cref="DirectoryChangeAction"/>.</param>
+/// <param name="Subject">Who or what it's about: a username or group id.</param>
+public sealed record DirectoryChangeDto(string Action, string Subject, string Description);
+
+public static class DirectoryChangeAction
+{
+    public const string CreateUser = "create-user";
+    /// <summary>A local user with the same username is handed to AD, keeping their cards and history.</summary>
+    public const string LinkUser = "link-user";
+    public const string UpdateUser = "update-user";
+    public const string DisableUser = "disable-user";
+    public const string EnableUser = "enable-user";
+    public const string CreateGroup = "create-group";
+    public const string UpdateGroup = "update-group";
+    public const string DeleteGroup = "delete-group";
+    public const string Members = "members";
+    public const string Badge = "badge";
+}
+
+/// <param name="Applied">False for a preview, a failed sync or a stopped one: nothing changed.</param>
+/// <param name="Users">Users found in the scope.</param>
+/// <param name="Groups">Groups found in the scope.</param>
+/// <param name="Warnings">Things skipped, like a username already taken by a different AD account.</param>
+public sealed record DirectorySyncResultDto(
+    long RunId,
+    bool Applied,
+    string Outcome,
+    string Summary,
+    string? Error,
+    int Users,
+    int Groups,
+    IReadOnlyList<DirectoryChangeDto> Changes,
+    IReadOnlyList<string> Warnings);
+
+/// <param name="NextRunAt">When the daily sync runs next; null if it's off.</param>
+public sealed record DirectoryStatusDto(
+    DirectoryConfigDto Config,
+    IReadOnlyList<DirectoryScopeDto> Scope,
+    IReadOnlyList<DirectoryRunDto> Runs,
+    DateTimeOffset? NextRunAt,
+    bool Running);
+
+/// <param name="NamingContext">The domain's root, like DC=lab,DC=example,DC=org.</param>
+public sealed record DirectoryTestResultDto(bool Success, string Message, string? NamingContext);
