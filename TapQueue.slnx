@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/TapQueue.Admin/TapQueue.Admin.csproj" />
+    <Project Path="src/TapQueue.Client.Linux/TapQueue.Client.Linux.csproj" />
     <Project Path="src/TapQueue.Client.Windows/TapQueue.Client.Windows.csproj" />
     <Project Path="src/TapQueue.Client/TapQueue.Client.csproj" />
     <Project Path="src/TapQueue.Server/TapQueue.Server.csproj" />
