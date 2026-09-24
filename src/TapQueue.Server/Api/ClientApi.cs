@@ -63,12 +63,13 @@ public static class ClientApi
             return Results.Json(new ErrorResponse("Your TapQueue account is disabled. Ask an admin."), statusCode: StatusCodes.Status403Forbidden);
         }
 
+        var system = ClientPlatform.DisplayName(ClientPlatform.Parse(request.Platform) ?? ClientPlatform.Windows);
         var token = Tokens.New();
         sessions.Create(Tokens.Hash(token), user.Id, request.WindowsUser, request.Hostname, http.ClientIp(), request.ClientVersion);
         events.Record(EventCategory.SignIn, user.Username, EventLog.User(user.Username),
-            $"{user.Username} signed in on {request.Hostname ?? "an unknown PC"} ({http.ClientIp()}) as Windows user {request.WindowsUser ?? "?"}.");
-        logger.LogInformation("{User} signed in from {Host} ({Ip}) as Windows user {WindowsUser}, client {Version}",
-            user.Username, request.Hostname, http.ClientIp(), request.WindowsUser, request.ClientVersion ?? "unknown");
+            $"{user.Username} signed in on {request.Hostname ?? "an unknown PC"} ({http.ClientIp()}) as {system} user {request.WindowsUser ?? "?"}.");
+        logger.LogInformation("{User} signed in from {Host} ({Ip}) as {System} user {PcUser}, client {Version}",
+            user.Username, request.Hostname, http.ClientIp(), system, request.WindowsUser, request.ClientVersion ?? "unknown");
 
         return Results.Ok(new ClientSessionResponse(
             token,
