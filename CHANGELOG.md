@@ -11,6 +11,13 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-09-24
+
+### Fixed
+- Changing **Tray sign-in** now takes effect on PCs that are already signed in: their sessions
+  end and the tray signs in again the new way. Before, a tray signed in as the PC's user stayed
+  signed in that way after switching to domain accounts, until it restarted.
+
 ## [0.6.1] - 2026-09-24
 
 ### Fixed
@@ -168,7 +175,8 @@ First working version.
   readers. A tap releases the user's held jobs to the station's printer.
 - Badge enrollment by an admin (`badges add --last-tap`).
 
-[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.6.1...HEAD
+[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.6.2...HEAD
+[0.6.2]: https://github.com/jthy10/TapQueue/compare/server-v0.6.1...server-v0.6.2
 [0.6.1]: https://github.com/jthy10/TapQueue/compare/server-v0.6.0...server-v0.6.1
 [0.6.0]: https://github.com/jthy10/TapQueue/compare/server-v0.5.0...server-v0.6.0
 [0.5.0]: https://github.com/jthy10/TapQueue/compare/server-v0.4.0...server-v0.5.0
