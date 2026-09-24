@@ -20,6 +20,7 @@ public static class LinuxService
         builder.Services.AddSingleton(config);
         builder.Services.AddSingleton<IPrinterInstaller, CupsPrinterInstaller>();
         builder.Services.AddSingleton<IUpdateCheckListener, UpdateCheckSocket>();
+        builder.Services.AddSingleton<IServiceRestarter, ExitCodeRestarter>();
         builder.Services.AddHostedService<ClientService>();
         var host = builder.Build();
         host.Services.GetRequiredService<ILogger<ClientService>>().LogInformation(

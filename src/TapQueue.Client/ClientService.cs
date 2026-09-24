@@ -19,7 +19,7 @@ public sealed class ClientService(
     ClientConfig config,
     IPrinterInstaller installer,
     IUpdateCheckListener listener,
-    IHostApplicationLifetime lifetime,
+    IServiceRestarter restarter,
     ILogger<ClientService> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -93,11 +93,8 @@ public sealed class ClientService(
                 catch (TimeoutException)
                 {
                 }
-                // Stopping with a non-zero exit code makes the service manager start it again, which
-                // runs the new program (Windows: the installer sets restart-on-failure and
-                // failureflag; Linux: the unit has Restart=on-failure).
-                Environment.ExitCode = 1;
-                lifetime.StopApplication();
+                // The service manager starts it again, running the new program.
+                restarter.Restart();
                 break;
             }
 

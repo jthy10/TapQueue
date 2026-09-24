@@ -22,6 +22,7 @@ public static class MachineService
         builder.Services.AddSingleton(config);
         builder.Services.AddSingleton<IPrinterInstaller, PrinterInstaller>();
         builder.Services.AddSingleton<IUpdateCheckListener, UpdateCheckPipe>();
+        builder.Services.AddSingleton<IServiceRestarter, WindowsServiceRestarter>();
         builder.Services.AddHostedService<ClientService>();
         var host = builder.Build();
         host.Services.GetRequiredService<ILogger<ClientService>>().LogInformation(

@@ -2,6 +2,7 @@ using TapQueue.Client.Linux;
 
 namespace TapQueue.Client.Tests;
 
+[System.Runtime.Versioning.SupportedOSPlatform("linux")]
 public sealed class CupsNameTests
 {
     [Theory]
