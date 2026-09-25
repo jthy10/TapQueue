@@ -26,32 +26,37 @@ public sealed class PrinterSync(IPrinterInstaller installer, ILogger logger)
 
     private Dictionary<string, string>? _applied;
 
-    /// <summary>Adds, repoints or removes printers. Does nothing if the queues haven't changed since last time.</summary>
-    public async Task SyncAsync(IReadOnlyList<QueueDto> queues, Uri serverUrl)
+    /// <summary>
+    /// Adds, repoints or removes printers. Does nothing if the queues haven't changed since last time,
+    /// unless <paramref name="reinstallAll"/> ("Refresh printers" in the tray menu), which removes and
+    /// adds every printer again. Returns the first failure, or null when everything worked.
+    /// </summary>
+    public async Task<string?> SyncAsync(IReadOnlyList<QueueDto> queues, Uri serverUrl, bool reinstallAll = false)
     {
         var wanted = queues.ToDictionary(q => q.Name, q => new Uri(serverUrl, q.IppPath.TrimStart('/')).ToString(), StringComparer.OrdinalIgnoreCase);
-        if (_applied is not null && SameAs(_applied, wanted))
-            return;
+        if (!reinstallAll && _applied is not null && SameAs(_applied, wanted))
+            return null;
 
         var installed = Load();
-        var ok = true;
+        string? error = null;
         foreach (var (name, _) in installed.Where(p => !wanted.ContainsKey(p.Key)).ToList())
         {
             var (success, output) = await installer.RemoveAsync(name);
             Log(success, $"Removing printer \"{name}\"", output);
             if (success) installed.Remove(name);
-            ok &= success;
+            else error ??= $"Couldn't remove \"{name}\": {output}";
         }
         foreach (var (name, url) in wanted)
         {
             var moved = installed.TryGetValue(name, out var previous) && previous != url;
-            var (success, output) = await installer.EnsureInstalledAsync(name, new Uri(url), reinstall: moved);
+            var (success, output) = await installer.EnsureInstalledAsync(name, new Uri(url), reinstall: moved || reinstallAll);
             Log(success, $"Adding printer \"{name}\" ({url})", output);
             if (success) installed[name] = url;
-            ok &= success;
+            else error ??= $"Couldn't add \"{name}\": {output}";
         }
         Save(installed);
-        _applied = ok ? wanted : null; // retry next time if anything failed
+        _applied = error is null ? wanted : null; // retry next time if anything failed
+        return error;
     }
 
     /// <summary>Removes every printer this PC's TapQueue service added. Used when uninstalling.</summary>

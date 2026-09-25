@@ -13,6 +13,7 @@ namespace TapQueue.Client;
 /// its platform and which client it runs, so it shows under Workstations), gets its queues and
 /// client build, keeps the PC's printers in step, and installs a newly published client, straight
 /// away when someone chooses "Check for updates" in the tray menu (<see cref="UpdateCheck"/>).
+/// "Refresh printers" in the tray menu makes it check in straight away and reinstall every printer.
 /// The platform's program sets up the host (logging, service manager) around it.
 /// </summary>
 public sealed class ClientService(
@@ -61,10 +62,12 @@ public sealed class ClientService(
             var asked = new List<UpdateCheck.Request>();
             while (checks.Reader.TryRead(out var request))
                 asked.Add(request);
-            if (asked.Count > 0)
+            var refreshing = asked.Any(r => r.RefreshPrinters);
+            if (asked.Any(r => !r.RefreshPrinters))
                 updater.RetryFailed();
 
             UpdateCheckReply reply;
+            PrinterRefreshReply printersReply;
             ClientBuildDto? build = null;
             try
             {
@@ -80,7 +83,16 @@ public sealed class ClientService(
                 }
 
                 if (config.InstallPrinters)
-                    await printers.SyncAsync(setup.Queues, http.BaseAddress);
+                {
+                    if (refreshing)
+                        logger.LogInformation("Reinstalling this PC's printers (asked from this PC)");
+                    var printerError = await printers.SyncAsync(setup.Queues, http.BaseAddress, reinstallAll: refreshing);
+                    printersReply = new PrinterRefreshReply(printerError is null, setup.Queues.Count, printerError);
+                }
+                else
+                {
+                    printersReply = new PrinterRefreshReply(false, 0, "TapQueue is set not to add printers on this PC (install_printers = false in client.toml).");
+                }
 
                 build = setup.ClientBuild;
                 var outcome = await updater.InstallIfDifferentAsync(build, stoppingToken);
@@ -93,10 +105,14 @@ public sealed class ClientService(
                     logger.LogWarning("Can't reach {Server}: {Error}", config.ServerUrl, ex.Message);
                 lastError = ex.Message;
                 reply = new UpdateCheckReply(UpdateOutcome.Failed, null, $"Can't reach the TapQueue server: {ex.Message}");
+                printersReply = new PrinterRefreshReply(false, 0, reply.Error);
             }
 
             foreach (var request in asked)
-                request.Reply.TrySetResult(reply);
+            {
+                if (request.RefreshPrinters) request.PrintersReply.TrySetResult(printersReply);
+                else request.Reply.TrySetResult(reply);
+            }
 
             if (reply.Outcome == UpdateOutcome.Installed)
             {
@@ -131,7 +147,10 @@ public sealed class ClientService(
 
         checks.Writer.TryComplete();
         while (checks.Reader.TryRead(out var request))
+        {
             request.Reply.TrySetCanceled();
+            request.PrintersReply.TrySetCanceled();
+        }
         await stopListening.CancelAsync();
         await listening;
     }
