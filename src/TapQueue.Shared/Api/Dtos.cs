@@ -67,6 +67,7 @@ public sealed record UserDto(long Id, string Username, string DisplayName);
 /// <param name="Quota">Their own page limit, which overrides their groups'.</param>
 /// <param name="DisabledBy">"admin" or "directory" when they're disabled.</param>
 /// <param name="DirectoryState">Why AD sync disabled them: "disabled", "expired" or "missing" (out of the sync's scope).</param>
+/// <param name="HasPassword">A local user with an admin console password.</param>
 public sealed record UserAdminDto(
     long Id,
     string Username,
@@ -77,7 +78,8 @@ public sealed record UserAdminDto(
     string Source = "local",
     QuotaDto? Quota = null,
     string? DisabledBy = null,
-    string? DirectoryState = null);
+    string? DirectoryState = null,
+    bool HasPassword = false);
 
 /// <summary>A page limit: at most <paramref name="Pages"/> pages per <paramref name="Period"/> (one of <see cref="QuotaPeriod"/>).</summary>
 public sealed record QuotaDto(int Pages, string Period);
@@ -678,3 +680,85 @@ public sealed record DirectoryStatusDto(
 
 /// <param name="NamingContext">The domain's root, like DC=lab,DC=example,DC=org.</param>
 public sealed record DirectoryTestResultDto(bool Success, string Message, string? NamingContext);
+
+/// <summary>
+/// The parts of the admin console (and admin API) a role is given for. See docs/admin-roles.md.
+/// </summary>
+public static class AdminArea
+{
+    /// <summary>Held jobs and history: release, cancel.</summary>
+    public const string Jobs = "jobs";
+    /// <summary>Users, groups, cards and page limits.</summary>
+    public const string People = "people";
+    /// <summary>Active Directory: connection, scope, sync.</summary>
+    public const string Directory = "directory";
+    /// <summary>Printers, queues, stations and workstations.</summary>
+    public const string Fleet = "fleet";
+    /// <summary>Client and station builds.</summary>
+    public const string Updates = "updates";
+    /// <summary>Server settings, log, restart and crash reports.</summary>
+    public const string Server = "server";
+    /// <summary>In a grant: every area.</summary>
+    public const string All = "*";
+
+    public static readonly IReadOnlyList<string> Each = [Jobs, People, Directory, Fleet, Updates, Server];
+}
+
+/// <summary>What a grant lets someone do in an area. Each includes the ones before it.</summary>
+public static class AdminRole
+{
+    /// <summary>Look, change nothing.</summary>
+    public const string Viewer = "viewer";
+    /// <summary>Day-to-day work: release and cancel jobs, cards, restart stations, sign PCs out, run a sync.</summary>
+    public const string Operator = "operator";
+    /// <summary>Everything, including settings. Admin in every area is a full admin, who also manages admins.</summary>
+    public const string Admin = "admin";
+
+    public static readonly IReadOnlyList<string> All = [Viewer, Operator, Admin];
+
+    /// <summary>0 for no role, then 1 to 3 in the order above.</summary>
+    public static int Rank(string? role) => role switch { Viewer => 1, Operator => 2, Admin => 3, _ => 0 };
+}
+
+/// <param name="Username">Set for a grant to one user; <paramref name="GroupId"/> for a grant to a group's members.</param>
+/// <param name="Area">One of <see cref="AdminArea"/>, or <see cref="AdminArea.All"/>.</param>
+public sealed record AdminGrantDto(long Id, string? Username, string? GroupId, string? GroupName, string Area, string Role, DateTimeOffset CreatedAt);
+
+/// <summary>Gives a user or a group a role in some areas, replacing the role they had there.</summary>
+/// <param name="Areas">Null or empty for every area.</param>
+public sealed record GrantAdminRequest(string? Username, string? GroupId, string Role, IReadOnlyList<string>? Areas = null);
+
+/// <summary>Someone who can use the admin console, with the roles their own grants and groups add up to.</summary>
+/// <param name="Roles">Area to role, for the areas they have one in.</param>
+/// <param name="Via">Where the roles come from: "direct" and/or group names.</param>
+/// <param name="SignInProblem">Why they can't sign in right now (no password, disabled, AD not set up); null if they can.</param>
+public sealed record AdminPersonDto(
+    string Username,
+    string DisplayName,
+    string Source,
+    IReadOnlyDictionary<string, string> Roles,
+    bool FullAdmin,
+    IReadOnlyList<string> Via,
+    string? SignInProblem);
+
+/// <param name="FullAdmins">People who are full admins and can sign in: with none, only dev mode or admin.token can manage the server.</param>
+public sealed record AdminsDto(IReadOnlyList<AdminGrantDto> Grants, IReadOnlyList<AdminPersonDto> People, int FullAdmins);
+
+public sealed record AdminSignInRequest(string Username, string Password);
+
+/// <summary>Who is using the console, and what they may do.</summary>
+/// <param name="Username">Null when nobody is signed in: dev mode's open console, or the admin token.</param>
+/// <param name="Roles">Area to role for every area they have one in.</param>
+/// <param name="HasPassword">A local user with a TapQueue password, which they can change.</param>
+public sealed record AdminMeDto(
+    string AuthMode,
+    string? Username,
+    string? DisplayName,
+    IReadOnlyDictionary<string, string> Roles,
+    bool FullAdmin,
+    bool HasPassword);
+
+/// <summary>Sets a local user's admin console password, or with null removes it.</summary>
+public sealed record SetPasswordRequest(string? Password);
+
+public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);

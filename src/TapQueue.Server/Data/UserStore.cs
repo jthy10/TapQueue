@@ -7,8 +7,9 @@ namespace TapQueue.Server.Data;
 /// <param name="DisabledBy">Who disabled them (<see cref="DisabledBy"/>), null if they're enabled.</param>
 /// <param name="DirectoryState">Why the directory disabled them (<see cref="DirectoryState"/>), if it did.</param>
 /// <param name="ExternalId">Their id in the directory that syncs them (AD's objectGUID).</param>
+/// <param name="HasPassword">They have an admin console password (local users only; AD users use their domain password).</param>
 public sealed record UserRecord(long Id, string Username, string DisplayName, string? TokenHash, DateTimeOffset CreatedAt, DateTimeOffset? DisabledAt, string Source,
-    QuotaDto? Quota = null, string? DisabledBy = null, string? DirectoryState = null, string? ExternalId = null)
+    QuotaDto? Quota = null, string? DisabledBy = null, string? DirectoryState = null, string? ExternalId = null, bool HasPassword = false)
 {
     public bool Disabled => DisabledAt is not null;
 
@@ -18,7 +19,7 @@ public sealed record UserRecord(long Id, string Username, string DisplayName, st
     public UserDto ToDto() => new(Id, Username, DisplayName);
 
     public UserAdminDto ToAdminDto(IReadOnlyList<string> groups) =>
-        new(Id, Username, DisplayName, CreatedAt, DisabledAt, groups, Source, Quota, DisabledBy, DirectoryState);
+        new(Id, Username, DisplayName, CreatedAt, DisabledAt, groups, Source, Quota, DisabledBy, DirectoryState, HasPassword);
 }
 
 public static class UserSource
@@ -30,7 +31,7 @@ public static class UserSource
 public sealed class UserStore(Database database)
 {
     private const string Columns =
-        "id, username, display_name, token_hash, created_at, disabled_at, source, quota_pages, quota_period, disabled_by, directory_state, external_id";
+        "id, username, display_name, token_hash, created_at, disabled_at, source, quota_pages, quota_period, disabled_by, directory_state, external_id, password_hash IS NOT NULL";
 
     public UserRecord? FindByUsername(string username) =>
         database.QueryOne($"SELECT {Columns} FROM users WHERE username = $u", Map, ("$u", username));
@@ -74,6 +75,7 @@ public sealed class UserStore(Database database)
         {
             database.Execute("DELETE FROM sessions WHERE user_id = $id", ("$id", userId));
             database.Execute("DELETE FROM client_logins WHERE user_id = $id", ("$id", userId));
+            database.Execute("DELETE FROM admin_sessions WHERE user_id = $id", ("$id", userId));
         }
         return database.QueryOne($"""
             UPDATE users SET disabled_at = CASE WHEN $disabled THEN COALESCE(disabled_at, $now) END,
@@ -82,6 +84,17 @@ public sealed class UserStore(Database database)
             WHERE id = $id
             RETURNING {Columns}
             """, Map, ("$disabled", disabled), ("$now", DateTimeOffset.UtcNow), ("$by", by), ("$state", directoryState), ("$id", userId));
+    }
+
+    /// <summary>The admin console password's hash (<see cref="Admins.PasswordHasher"/>); null if they have none.</summary>
+    public string? PasswordHash(long userId) =>
+        database.Scalar("SELECT password_hash FROM users WHERE id = $id", ("$id", userId)) as string;
+
+    /// <summary>Sets or (with null) removes the admin console password, signing them out of the console everywhere.</summary>
+    public void SetPasswordHash(long userId, string? hash)
+    {
+        database.Execute("UPDATE users SET password_hash = $h WHERE id = $id", ("$h", hash), ("$id", userId));
+        database.Execute("DELETE FROM admin_sessions WHERE user_id = $id", ("$id", userId));
     }
 
     /// <summary>Hands the user to a directory (or back to TapQueue, with <see cref="UserSource.Local"/> and null).</summary>
@@ -111,7 +124,7 @@ public sealed class UserStore(Database database)
     private static UserRecord Map(SqliteDataReader r) =>
         new(r.GetInt64(0), r.GetString(1), r.GetString(2), r.GetStringOrNull(3), r.GetTime(4), r.GetTimeOrNull(5), r.GetString(6),
             r.IsDBNull(7) ? null : new QuotaDto(r.GetInt32(7), r.GetString(8)),
-            r.GetStringOrNull(9), r.GetStringOrNull(10), r.GetStringOrNull(11));
+            r.GetStringOrNull(9), r.GetStringOrNull(10), r.GetStringOrNull(11), r.GetBoolean(12));
 }
 
 public static class DisabledBy

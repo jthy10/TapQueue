@@ -386,6 +386,36 @@ public sealed class Database
             CREATE INDEX ix_client_logins_user ON client_logins(user_id);
             ALTER TABLE sessions ADD COLUMN login_id INTEGER REFERENCES client_logins(id) ON DELETE SET NULL;
         """,
+
+        // 14: Admin sign-in (AdminAccess). A grant gives a user, or every member of a group, a role in one
+        // area of the admin console ('*' for all of them). Local users sign in with password_hash; AD users
+        // with their domain password. admin_sessions are the console's sign-in cookies, stored hashed.
+        """
+            ALTER TABLE users ADD COLUMN password_hash TEXT;
+
+            CREATE TABLE admin_grants (
+                id          INTEGER PRIMARY KEY,
+                user_id     INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                group_id    TEXT REFERENCES groups(id) ON DELETE CASCADE,
+                area        TEXT NOT NULL,
+                role        TEXT NOT NULL,
+                created_at  TEXT NOT NULL,
+                CHECK ((user_id IS NULL) <> (group_id IS NULL))
+            );
+            CREATE UNIQUE INDEX ix_admin_grants_user ON admin_grants(user_id, area) WHERE user_id IS NOT NULL;
+            CREATE UNIQUE INDEX ix_admin_grants_group ON admin_grants(group_id, area) WHERE group_id IS NOT NULL;
+
+            CREATE TABLE admin_sessions (
+                id            INTEGER PRIMARY KEY,
+                token_hash    TEXT NOT NULL UNIQUE,
+                user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                ip            TEXT NOT NULL,
+                user_agent    TEXT,
+                created_at    TEXT NOT NULL,
+                last_seen_at  TEXT NOT NULL
+            );
+            CREATE INDEX ix_admin_sessions_user ON admin_sessions(user_id);
+        """,
     ];
 
     public void Migrate()
