@@ -34,6 +34,10 @@ every print dialog. The tray app starts the next time someone signs in to the de
 now, open **TapQueue** from the app menu. Print something to it, then tap a badge at a release
 station, or click the tray icon → **Release all to** → pick a printer.
 
+If a TapQueue printer goes missing or stops working, choose **Refresh printers** in the tray menu:
+the service checks with the server straight away, then removes and adds each TapQueue printer in
+CUPS again.
+
 What goes where:
 
 | | |
@@ -43,7 +47,7 @@ What goes where:
 | `/var/lib/tapqueue-client/printers.txt` | The printers the service added, so they can be removed later |
 | `tapqueue-client.service` | The service; its log: `journalctl -u tapqueue-client` |
 | `/etc/xdg/autostart/tapqueue-client.desktop` | Starts the tray app when anyone signs in to the desktop |
-| `/run/tapqueue-client/update.sock` | Where the tray app asks the service to check for updates |
+| `/run/tapqueue-client/update.sock` | Where the tray app asks the service to check for updates or refresh printers |
 
 The printer's CUPS name is the queue name with spaces (and `/ \ # ? ' "`) made underscores, e.g.
 `TapQueue_Secure_Print`; print dialogs show the queue name itself. The service doesn't share the

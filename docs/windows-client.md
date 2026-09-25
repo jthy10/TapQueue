@@ -23,6 +23,11 @@ desktops, see the [Linux client](linux-client.md).
 4. Print something to it, then tap a badge at a release station, or right-click the tray icon →
    **Release all to** → pick a printer.
 
+If a TapQueue printer goes missing or stops working, choose **Refresh printers** in the tray menu.
+The TapQueue service checks with the server straight away, then removes and adds each TapQueue
+printer again, and the tray app says how many it reinstalled (or what went wrong). Any user of the
+PC may do this; it only ever installs the queues the server lists.
+
 What goes where:
 
 | | |

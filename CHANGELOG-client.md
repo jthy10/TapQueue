@@ -10,6 +10,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Added
+- **Refresh printers** in the tray menu (Windows and Linux): the TapQueue service checks with the
+  server straight away and removes and adds each TapQueue printer again, for when one has gone
+  missing or stopped working.
+
 ## [0.7.0] - 2026-09-25
 
 ### Added
