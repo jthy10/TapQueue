@@ -63,7 +63,7 @@ public sealed class DirectorySync(
     private DirectorySyncResultDto RunLocked(string trigger, bool dryRun, bool force)
     {
         var runId = store.StartRun(trigger, dryRun);
-        var actor = trigger == ScheduleTrigger ? EventLog.System : EventLog.AdminActor;
+        var actor = trigger == ScheduleTrigger ? EventLog.System : EventLog.CurrentAdmin;
         var config = store.Config();
         var scope = store.Scope();
 

@@ -1,11 +1,11 @@
 using Microsoft.AspNetCore.StaticFiles;
-using TapQueue.Server.Config;
 
 namespace TapQueue.Server.Admin;
 
 /// <summary>
 /// Serves the admin console (wwwroot, embedded in the binary) at /admin. Every path without a file
-/// extension gets index.html, and the console's router picks the page. See docs/admin-ui.md.
+/// extension gets index.html, and the console's router picks the page. The page itself is public; it asks
+/// the admin to sign in (<see cref="Api.AdminAuthApi"/>) before it shows anything. See docs/admin-ui.md.
 /// </summary>
 public static class AdminUi
 {
@@ -18,10 +18,8 @@ public static class AdminUi
     public static void MapAdminUi(this IEndpointRouteBuilder app)
     {
         var diskDir = Environment.GetEnvironmentVariable(DirVariable);
-        app.MapGet("/admin/{**path}", (string? path, HttpContext http, ServerConfig config) =>
+        app.MapGet("/admin/{**path}", (string? path, HttpContext http) =>
         {
-            if (!IsEnabled(config))
-                return Results.NotFound("The admin console is only available with auth.mode = \"dev\" until it has a sign-in. See docs/admin-ui.md.");
             // The page's relative links (styles.css, pages/…) need the trailing slash.
             if (http.Request.Path == "/admin")
                 return Results.Redirect("/admin/");
@@ -37,9 +35,6 @@ public static class AdminUi
             return Results.Stream(stream, contentType.StartsWith("text/") ? contentType + "; charset=utf-8" : contentType);
         });
     }
-
-    /// <summary>No sign-in yet, so the console (and the admin API without a token) only exist in dev mode.</summary>
-    public static bool IsEnabled(ServerConfig config) => config.Auth.Mode == "dev";
 
     private static Stream? Embedded(string path) =>
         typeof(AdminUi).Assembly.GetManifestResourceStream(ResourcePrefix + path);

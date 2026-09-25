@@ -1,6 +1,7 @@
 using System.Net;
 using TapQueue.Server.ActiveDirectory;
 using TapQueue.Server.Admin;
+using TapQueue.Server.Admins;
 using TapQueue.Server.Api;
 using TapQueue.Server.Config;
 using TapQueue.Server.Data;
@@ -53,6 +54,9 @@ public static class ServerApp
         builder.Services.AddSingleton<UserImport>();
         builder.Services.AddSingleton<SessionStore>();
         builder.Services.AddSingleton<ClientLoginStore>();
+        builder.Services.AddSingleton<AdminStore>();
+        builder.Services.AddSingleton<AdminRoster>();
+        builder.Services.AddSingleton<SignInThrottle>();
         builder.Services.AddSingleton<BadgeStore>();
         builder.Services.AddSingleton<StationStore>();
         builder.Services.AddSingleton<WorkstationStore>();
@@ -86,6 +90,7 @@ public static class ServerApp
         app.MapGet("/healthz", () => Results.Ok(new { status = "ok", version = TapQueueVersion.Current }));
         app.MapClientApi();
         app.MapAdminApi();
+        app.MapAdminAuthApi();
         app.MapStationApi();
         app.MapAdminUi();
         return app;

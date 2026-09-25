@@ -6,7 +6,7 @@ using TapQueue.Shared.Api;
 
 namespace TapQueue.Server.Tests.Integration;
 
-/// <summary>The admin console is served, and the admin API opened to it, only in dev mode.</summary>
+/// <summary>The admin console is always served; the admin API is open to it without sign-in only in dev mode.</summary>
 public sealed class AdminConsoleTests
 {
     [Theory]
@@ -51,13 +51,14 @@ public sealed class AdminConsoleTests
     }
 
     [Fact]
-    public async Task TokenModeHasNoConsoleAndNeedsTheToken()
+    public async Task TokenModeServesTheConsoleButTheApiNeedsSignIn()
     {
         await using var server = await TestServer.StartAsync();
         using var browser = server.NewClient();
 
-        Assert.Equal(HttpStatusCode.NotFound, (await browser.GetAsync("/admin/")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await browser.GetAsync("/admin/")).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await browser.GetAsync("/api/v1/admin/users")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await browser.GetAsync("/api/v1/admin-auth/me")).StatusCode);
     }
 
     [Fact]

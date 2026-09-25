@@ -1,4 +1,4 @@
-using TapQueue.Server.Admin;
+using TapQueue.Server.Admins;
 using TapQueue.Server.Config;
 using TapQueue.Server.Data;
 using TapQueue.Server.Jobs;
@@ -11,14 +11,15 @@ using TapQueue.Shared.Api;
 namespace TapQueue.Server.Api;
 
 /// <summary>
-/// Endpoints used by tapqueue-admin and the admin console. Authenticated with admin.token from server.toml,
-/// except in dev mode, where the console (which has no sign-in yet) calls them without it.
+/// Endpoints used by tapqueue-admin and the admin console. tapqueue-admin authenticates with admin.token
+/// from server.toml, the console with a signed-in admin's cookie; <see cref="AdminAccess"/> checks both
+/// and which role each endpoint needs.
 /// </summary>
 public static class AdminApi
 {
     public static void MapAdminApi(this IEndpointRouteBuilder app)
     {
-        var admin = app.MapGroup("/api/v1/admin").AddEndpointFilter(RequireAdmin);
+        var admin = app.MapGroup("/api/v1/admin").AddEndpointFilter(AdminAccess.Require);
 
         admin.MapGet("/server", ServerInfo);
         admin.MapPatch("/server/settings", UpdateServerSettings);
@@ -87,6 +88,7 @@ public static class AdminApi
         admin.MapQuotasApi();
         admin.MapUsersBulkApi();
         admin.MapDirectoryApi();
+        admin.MapAdminsApi();
 
         admin.MapGet("/client-builds", (ClientBuildStore builds) => builds.List().Select(b => b.ToDto()));
         admin.MapPost("/client-builds", PublishClientBuild);
@@ -336,9 +338,9 @@ public static class AdminApi
             if (request.Disabled is { } disabled)
                 user = lifecycle.SetDisabled(user, disabled);
         }
-        catch (DirectoryOwnedException ex)
+        catch (UserChangeRefusedException ex)
         {
-            return Results.Conflict(new ErrorResponse(ex.Message));
+            return AdminApi.Refused(ex);
         }
         return Results.Ok(user.ToAdminDto(groups.Memberships().GetValueOrDefault(user.Id) ?? []));
     }
@@ -351,9 +353,9 @@ public static class AdminApi
         {
             lifecycle.Delete(user);
         }
-        catch (DirectoryOwnedException ex)
+        catch (UserChangeRefusedException ex)
         {
-            return Results.Conflict(new ErrorResponse(ex.Message));
+            return AdminApi.Refused(ex);
         }
         return Results.NoContent();
     }
@@ -378,18 +380,11 @@ public static class AdminApi
         var printer = printers.Find(request.PrinterId);
         if (printer is null)
             return Results.NotFound(new ErrorResponse($"Unknown printer \"{request.PrinterId}\"."));
-        return Results.Ok(await release.ReleaseAsync(user, printer, request.JobIds, EventLog.AdminActor, "from the admin console", ct));
+        return Results.Ok(await release.ReleaseAsync(user, printer, request.JobIds, EventLog.CurrentAdmin, "from the admin console", ct));
     }
 
-    private static async ValueTask<object?> RequireAdmin(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
-    {
-        var http = context.HttpContext;
-        var config = http.RequestServices.GetRequiredService<ServerConfig>();
-        var token = ClientApi.BearerToken(http);
-        if (AdminUi.IsEnabled(config) && token is null)
-            return await next(context);
-        if (token is null || !Tokens.FixedTimeEquals(token, config.Admin.Token))
-            return Results.Json(new ErrorResponse("Admin token required."), statusCode: StatusCodes.Status401Unauthorized);
-        return await next(context);
-    }
+    /// <summary>409 when Active Directory owns what was about to change, 403 when the admin's role doesn't reach it.</summary>
+    internal static IResult Refused(UserChangeRefusedException ex) => ex is AdminRightsException
+        ? AdminAccess.Forbidden(ex.Message)
+        : Results.Conflict(new ErrorResponse(ex.Message));
 }

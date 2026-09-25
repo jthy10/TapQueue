@@ -64,7 +64,7 @@ public static class AdminUsersBulkApi
                     case BulkUserAction.RemoveFromGroup: lifecycle.RemoveFromGroup(user, group!); break;
                 }
             }
-            catch (DirectoryOwnedException ex)
+            catch (UserChangeRefusedException ex)
             {
                 errors.Add(ex.Message);
                 continue;

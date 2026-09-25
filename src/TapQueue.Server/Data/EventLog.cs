@@ -28,8 +28,26 @@ public static class EventCategory
 /// </summary>
 public sealed class EventLog(Database database)
 {
-    /// <summary>Until admins sign in, every admin change is by "admin".</summary>
+    /// <summary>Admin changes made with admin.token or in dev mode's open console, where nobody signed in.</summary>
     public const string AdminActor = "admin";
+
+    private static readonly AsyncLocal<string?> Acting = new();
+
+    /// <summary>Who admin changes in this request are by: the signed-in admin, or <see cref="AdminActor"/>.</summary>
+    public static string CurrentAdmin => Acting.Value ?? AdminActor;
+
+    /// <summary>Records admin changes under <paramref name="actor"/> until disposed. Set for each admin API request.</summary>
+    public static IDisposable ActingAs(string actor)
+    {
+        var previous = Acting.Value;
+        Acting.Value = actor;
+        return new Restore(() => Acting.Value = previous);
+    }
+
+    private sealed class Restore(Action restore) : IDisposable
+    {
+        public void Dispose() => restore();
+    }
 
     /// <summary>Things TapQueue noticed by itself, like a printer going offline.</summary>
     public const string System = "system";
@@ -46,7 +64,7 @@ public sealed class EventLog(Database database)
             INSERT INTO events (at, category, actor, subject, message) VALUES ($at, $c, $a, $s, $m)
             """, ("$at", DateTimeOffset.UtcNow), ("$c", category), ("$a", actor), ("$s", subject), ("$m", message));
 
-    public void Admin(string? subject, string message) => Record(EventCategory.Admin, AdminActor, subject, message);
+    public void Admin(string? subject, string message) => Record(EventCategory.Admin, CurrentAdmin, subject, message);
 
     /// <summary>Newest first. <paramref name="before"/> is an event id, for paging back.</summary>
     public List<EventDto> List(string? category = null, string? subject = null, long? before = null, int limit = 100) =>

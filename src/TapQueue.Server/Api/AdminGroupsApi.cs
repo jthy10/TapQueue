@@ -1,3 +1,4 @@
+using TapQueue.Server.Admins;
 using TapQueue.Server.Data;
 using TapQueue.Server.Users;
 using TapQueue.Shared.Api;
@@ -66,13 +67,17 @@ public static class AdminGroupsApi
         return Results.Ok(updated.ToDto());
     }
 
-    private static IResult Delete(string id, GroupStore groups, EventLog events)
+    private static IResult Delete(string id, GroupStore groups, AdminStore admins, AdminRoster roster, EventLog events)
     {
         if (groups.Get(id) is not { } group)
             return NotFound(id);
         if (group.FromDirectory)
             return Results.Conflict(new ErrorResponse(
                 $"\"{group.Name}\" is an Active Directory group and would be back at the next sync; remove it from the sync's scope instead."));
+        if (admins.GroupHasGrants(id) && AdminAccess.CurrentPermissions is { IsFullAdmin: false })
+            return AdminAccess.Forbidden($"\"{group.Name}\" gives admin rights, so only a full admin can delete it.");
+        if (roster.WouldLockOut(new RosterChange(GroupGone: id)))
+            return Results.Conflict(new ErrorResponse(AdminRoster.LockOutMessage));
         if (!groups.Delete(id))
             return NotFound(id);
         events.Admin(EventLog.Group(group.Id), $"Removed group \"{group.Name}\" ({group.Id}) and its {group.MemberCount} memberships.");
@@ -89,9 +94,9 @@ public static class AdminGroupsApi
         {
             lifecycle.AddToGroup(user, group);
         }
-        catch (DirectoryOwnedException ex)
+        catch (UserChangeRefusedException ex)
         {
-            return Results.Conflict(new ErrorResponse(ex.Message));
+            return AdminApi.Refused(ex);
         }
         return Results.NoContent();
     }
@@ -106,9 +111,9 @@ public static class AdminGroupsApi
         {
             lifecycle.RemoveFromGroup(user, group);
         }
-        catch (DirectoryOwnedException ex)
+        catch (UserChangeRefusedException ex)
         {
-            return Results.Conflict(new ErrorResponse(ex.Message));
+            return AdminApi.Refused(ex);
         }
         return Results.NoContent();
     }
