@@ -12,6 +12,8 @@ const string Usage = """
       tapqueue-admin users add <username> [--name "Display Name"]
                                                      Create a user and print their client token
       tapqueue-admin users reset-token <username>    Issue a new client token (the old one stops working)
+      tapqueue-admin users password <username> [--clear]
+                                                     Set (asks for it) or remove a local user's admin console password
       tapqueue-admin users quota <username>          Their page limits and how much they've used
       tapqueue-admin users quota <username> <pages> day|week|month
                                                      Give a user their own page limit (overrides their groups')
@@ -81,6 +83,13 @@ const string Usage = """
       tapqueue-admin directory sign-in <pc|domain>   How the tray signs in: as the PC's user (default), or
                                                      with a domain account entered in the tray
 
+      tapqueue-admin admins                          Who can use the admin console, with their roles and grants
+      tapqueue-admin admins grant <username | @group-id> viewer|operator|admin [--area jobs,people,...]
+                                                     Give a role in some areas (default: every area; admin in
+                                                     every area is a full admin). Areas: jobs, people,
+                                                     directory, fleet, updates, server
+      tapqueue-admin admins revoke <grant-id>        Take a role away (grant id from `admins`)
+
       tapqueue-admin server                          Settings (and whether each is set here or in server.toml)
       tapqueue-admin server set hold-hours|session-timeout <number|default>
                                                      Change a setting now, or go back to server.toml's
@@ -111,7 +120,7 @@ for (var i = 0; i < args.Length; i++)
     }
     if (args[i].StartsWith("--"))
     {
-        var takesValue = args[i] is "--server" or "--token" or "--name" or "--status" or "--uri" or "--location" or "--description" or "--media" or "--version-name" or "--platform";
+        var takesValue = args[i] is "--server" or "--token" or "--name" or "--status" or "--uri" or "--location" or "--description" or "--media" or "--version-name" or "--platform" or "--area";
         var switchWithValue = args[i] is "--tls-skip-verify" or "--color" or "--duplex" && i + 1 < args.Length && ParseSwitch(args[i + 1]) is not null;
         options[args[i]] = (takesValue || switchWithValue) && i + 1 < args.Length ? args[++i] : null;
     }
@@ -148,6 +157,11 @@ try
         ("users", null) => await ListUsers(),
         ("users", "add") when positional.Count == 3 => await AddUser(positional[2], options.GetValueOrDefault("--name")),
         ("users", "reset-token") when positional.Count == 3 => await ResetToken(positional[2]),
+        ("users", "password") when positional.Count == 3 => await SetPassword(positional[2], options.ContainsKey("--clear")),
+        ("admins", null) => await ListAdmins(),
+        ("admins", "grant") when positional.Count == 4 => await GrantAdmin(positional[2], positional[3], options.GetValueOrDefault("--area")),
+        ("admins", "revoke") when positional.Count == 3 && long.TryParse(positional[2], out var grantId) =>
+            await Delete($"admins/grants/{grantId}", $"Removed grant {grantId}."),
         ("users", "quota") when positional.Count == 3 => await ShowUserQuota(positional[2]),
         ("users", "quota") when positional.Count is 4 or 5 => await SetQuota("users", positional[2], positional.Skip(3).ToList()),
         ("groups", "quota") when positional.Count is 4 or 5 => await SetQuota("groups", positional[2], positional.Skip(3).ToList()),
@@ -249,6 +263,77 @@ async Task<int> ResetToken(string username)
     if (result is null) return 1;
     Console.WriteLine($"New client token for {result.User.Username}: {result.Token}");
     return 0;
+}
+
+async Task<int> SetPassword(string username, bool clear)
+{
+    string? password = null;
+    if (!clear)
+    {
+        password = ReadSecret($"New admin console password for {username}: ");
+        if (ReadSecret("Again: ") != password)
+        {
+            Console.Error.WriteLine("The passwords don't match.");
+            return 1;
+        }
+    }
+    using var response = await http.PutAsJsonAsync($"users/{Uri.EscapeDataString(username)}/password", new SetPasswordRequest(password), TapQueueJson.Options);
+    if (!response.IsSuccessStatusCode)
+    {
+        await PrintError(response);
+        return 1;
+    }
+    Console.WriteLine(clear ? $"Removed {username}'s password." : $"Set {username}'s password. They're signed out of the console everywhere.");
+    return 0;
+}
+
+async Task<int> ListAdmins()
+{
+    var admins = await Get<AdminsDto>("admins");
+    if (admins is null) return 1;
+    Table(["USERNAME", "ROLES", "THROUGH", "SIGN-IN"], admins.People.Select(p => new[]
+    {
+        p.Username,
+        p.FullAdmin ? "full admin" : string.Join(", ", AdminArea.Each.Where(p.Roles.ContainsKey).Select(a => $"{a}:{p.Roles[a]}")),
+        string.Join(", ", p.Via),
+        p.SignInProblem ?? (p.Source == "ad" ? "domain password" : "password"),
+    }));
+    Console.WriteLine();
+    Table(["GRANT", "TO", "AREA", "ROLE"], admins.Grants.Select(g => new[]
+    {
+        g.Id.ToString(), g.Username ?? $"@{g.GroupId}", g.Area == AdminArea.All ? "every area" : g.Area, g.Role,
+    }));
+    if (admins.FullAdmins == 0)
+        Console.WriteLine("\nNobody can sign in to the console as a full admin. Grant someone admin in every area, and give them a password.");
+    return 0;
+}
+
+async Task<int> GrantAdmin(string who, string role, string? areas)
+{
+    var group = who.StartsWith('@') ? who[1..] : null;
+    var request = new GrantAdminRequest(group is null ? who : null, group, role,
+        areas?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+    var grants = await Send<List<AdminGrantDto>>(HttpMethod.Post, "admins/grants", request);
+    if (grants is null) return 1;
+    Console.WriteLine($"{who} is now: {string.Join(", ", grants.Select(g => $"{g.Role} in {(g.Area == AdminArea.All ? "every area" : g.Area)}"))}.");
+    return 0;
+}
+
+static string ReadSecret(string prompt)
+{
+    Console.Write(prompt);
+    if (Console.IsInputRedirected)
+        return Console.ReadLine() ?? "";
+    var text = new System.Text.StringBuilder();
+    while (true)
+    {
+        var key = Console.ReadKey(intercept: true);
+        if (key.Key == ConsoleKey.Enter) break;
+        if (key.Key == ConsoleKey.Backspace) { if (text.Length > 0) text.Length--; }
+        else if (!char.IsControl(key.KeyChar)) text.Append(key.KeyChar);
+    }
+    Console.WriteLine();
+    return text.ToString();
 }
 
 async Task<int> ListJobs(string? status)
