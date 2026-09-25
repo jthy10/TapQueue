@@ -96,6 +96,20 @@ What happens to a job that would go over is up to you (`server set quota-overrun
 
 A job that can't be released stays held, and the station, client or console says why.
 
+## Admins
+
+Roles in the admin console, and local users' console passwords. Full admins only (the admin token
+is one). See [admin-roles.md](admin-roles.md).
+
+```
+tapqueue-admin admins                                    # people, their roles, and every grant
+tapqueue-admin admins grant alice admin                  # admin in every area: a full admin
+tapqueue-admin admins grant @helpdesk operator --area jobs,fleet
+tapqueue-admin admins revoke 3                           # grant id from `admins`
+tapqueue-admin users password alice                      # asks for it twice
+tapqueue-admin users password alice --clear
+```
+
 ## Connecting
 
 The first of these that's set wins:

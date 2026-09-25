@@ -9,8 +9,9 @@ checklist; [admin-ui.md](admin-ui.md#roadmap) has the admin console's own phases
    (jammed, out of paper, door open) and supply levels. Show it in the console and CLI, record
    problems in the activity log, and don't release to a printer that can't print, so jobs stay
    held for another printer instead of disappearing into a stopped one.
-2. **Admin sign-in and roles.** Admin accounts (Admin, Operator, Viewer) and the console
-   available with `auth.mode = "token"`. Phase 7 in [admin-ui.md](admin-ui.md#roadmap).
+2. **Admin sign-in and roles.** *(Done in 0.7.0, see [admin-roles.md](admin-roles.md).)* Viewer,
+   operator and admin roles per console area for users and groups, local or from AD, and the
+   console available with `auth.mode = "token"`. Single sign-on is item 15.
 3. **Directory sync.** *(Active Directory done in 0.6.0, see [active-directory.md](active-directory.md).)*
    Users and groups from AD, by OU, group (nested) and single user, daily. Entra ID is still to do.
 4. **TLS everywhere.** IPP, the client API and the admin console over HTTPS, so print data and
@@ -42,3 +43,6 @@ checklist; [admin-ui.md](admin-ui.md#roadmap) has the admin console's own phases
 13. **Backup and restore** of the database: a CLI command and a scheduled backup.
 14. **Packaging.** Signed Windows builds (no SmartScreen warning), .deb packages, ARM builds for
     small release stations like a Raspberry Pi.
+15. **Single sign-on** for the admin console (and maybe the tray): OIDC with Entra ID, Google or
+    Okta, or SAML. Roles already belong to users and groups rather than to a way of signing in,
+    so this adds a sign-in method and changes nothing else.

@@ -11,6 +11,21 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+### Added
+- Admin sign-in and roles. Admins are TapQueue users, local or from Active Directory. Give a
+  person or a group the **viewer**, **operator** or **admin** role in an area of the console
+  (Jobs, People, Active Directory, Fleet, Updates, Server) or in all of them. Admin in every area
+  makes someone a full admin, who also manages admins. Local users sign in with a console password,
+  AD users with their domain password. New **Admins** page, `tapqueue-admin admins` and
+  `tapqueue-admin users password`, and the activity log now records which admin made each change.
+  See [admin-roles.md](docs/admin-roles.md).
+
+### Changed
+- The admin console is available with `auth.mode = "token"` and asks for a sign-in; it shows each
+  admin only the pages their roles cover. Dev mode still opens it to anyone, so you can give the
+  first people roles; do that before switching to token mode. `admin.token` still gives
+  `tapqueue-admin` full access. Database schema 14.
+
 ## [0.6.2] - 2026-09-24
 
 ### Fixed

@@ -4,9 +4,9 @@ The admin console is a web page served by `tapqueue-server` at `http://<server>:
 covers everything `tapqueue-admin` does, and adds the things a CLI is bad at: live status,
 tap-to-enroll, logs, and remote control of stations and clients.
 
-> **Development only, for now.** The console has no sign-in yet. It's only served when
-> `auth.mode = "dev"`, and while it is, the admin API also accepts requests without the admin
-> token. With `auth.mode = "token"` the console is off and the API needs the token as before.
+> **Sign-in.** With `auth.mode = "token"` the console asks for a sign-in, and each admin sees and
+> does what their roles allow. In dev mode it's open to anyone on the network, so you can set up
+> the first admins. See [admin-roles.md](admin-roles.md).
 
 ## Principles
 
@@ -39,7 +39,7 @@ A sidebar groups pages by what you're doing; each page is a list with a detail d
 | | Workstations | Windows and Linux PCs running the client: who's signed in, client version, update now, sign out. |
 | **System** | Updates | Client and station builds: publish, see who runs what, roll back. |
 | | Server | Version, uptime, settings, live log, restart. |
-| | Admins | Admin accounts and roles (for when sign-in exists). |
+| | Admins | Who may use the console: roles for people and groups, per area. Full admins only. |
 
 URLs are `/admin/<page>` and `/admin/<page>/<id>` for an open detail drawer, so every view can be
 linked to and survives a reload.
@@ -95,5 +95,7 @@ Each phase ships on its own and leaves the console usable.
    groups'; otherwise the most generous group limit counts. The Server page chooses whether a job
    may take someone over their limit (the default) or has to fit. Users shows each person's usage.
    See [admin-cli.md](admin-cli.md#page-limits).
-7. **Admin sign-in and roles.** Admin accounts with roles (Admin, Operator, Viewer), sign-in,
-   and the console available with `auth.mode = "token"`.
+7. **Admin sign-in and roles.** *(Done.)* Admins are TapQueue users. Roles (viewer, operator,
+   admin) go to people or groups, per area of the console or for all of them. Local users sign in
+   with a console password, AD users with their domain password. The console is available with
+   `auth.mode = "token"` and shows each admin only their pages. See [admin-roles.md](admin-roles.md).

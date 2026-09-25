@@ -69,9 +69,9 @@ Then set up the [Windows client](windows-client.md) and a [release station](rele
 | `server.listen` | `0.0.0.0:8631` | Address and port for IPP and the API |
 | `server.data_dir` | `/var/lib/tapqueue` | Database and held jobs |
 | `server.discovery_port` | `8631` | UDP port the Windows installer's server search is answered on. `0` = off |
-| `auth.mode` | `token` | `token`: users need the token from `users add`. `dev`: a username is enough (testing only) |
+| `auth.mode` | `token` | `token`: users need the token from `users add`, and the admin console needs a sign-in. `dev`: a username is enough, and the console is open to anyone (setup and testing only; see [admin-roles.md](admin-roles.md)) |
 | `auth.session_timeout_minutes` | `10` | Client sessions without a heartbeat for this long end |
-| `admin.token` | | Used by `tapqueue-admin` |
+| `admin.token` | | Used by `tapqueue-admin`; gives full admin access |
 | `jobs.hold_hours` | `24` | Held jobs not released within this time are deleted |
 
 Queues, printers, users, badges and stations live in the database and are managed with

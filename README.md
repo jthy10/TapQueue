@@ -55,7 +55,7 @@ IP address can't handle.
 2. Install the client on each PC: [Windows](docs/windows-client.md) or [Linux](docs/linux-client.md).
 3. [Set up a release station](docs/release-station.md) next to each printer and enroll badges.
 
-Reference: [admin console](docs/admin-ui.md) · [admin CLI](docs/admin-cli.md) · [Active Directory sync](docs/active-directory.md) · changelogs: [server and station](CHANGELOG.md),
+Reference: [admin console](docs/admin-ui.md) · [admin sign-in and roles](docs/admin-roles.md) · [admin CLI](docs/admin-cli.md) · [Active Directory sync](docs/active-directory.md) · changelogs: [server and station](CHANGELOG.md),
 [clients](CHANGELOG-client.md) ·
 [development](docs/development.md) · [releasing](docs/releasing.md)
 
@@ -74,7 +74,7 @@ Reference: [admin console](docs/admin-ui.md) · [admin CLI](docs/admin-cli.md) �
 - [x] Web admin console
 - [x] Page counting and quotas
 - [x] Printer health monitoring (state, problems, toner levels)
-- [ ] Admin sign-in and roles
+- [x] Admin sign-in and roles (SSO later)
 - [x] Active Directory sync (Entra ID later)
 - [ ] TLS for client and IPP connections, and per-job identity instead of IP-based ownership
 - [ ] Feedback at the printer (screen or status light) for "nothing to print" and errors
