@@ -45,7 +45,9 @@ public sealed class AdminRolesTests
     [Theory]
     [InlineData("/server")]
     [InlineData("/events")]
-    public void AnyAdminReadsTheServerAndTheActivityLog(string path)
+    [InlineData("/printers")]
+    [InlineData("/queues")]
+    public void AnyAdminReadsTheServerTheActivityLogAndPrinterNames(string path)
     {
         Assert.Equal(AdminRequirement.AnyAdmin, AdminAccess.Requirement("GET", path));
     }

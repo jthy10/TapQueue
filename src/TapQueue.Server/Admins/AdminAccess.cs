@@ -71,9 +71,9 @@ public static class AdminAccess
             _ => null,
         };
 
-        // Everyone in the console needs these: the header shows the server's version and mode, and
-        // Overview and every page's history show the activity log.
-        if (read && (parts is ["server"] || parts is ["events", ..]))
+        // Everyone in the console needs these: the server's mode, the activity log (Overview and every
+        // page's history), and printer and queue names (releasing jobs, groups).
+        if (read && (parts is ["server"] or ["events", ..] or ["printers"] or ["queues"]))
             return AdminRequirement.AnyAdmin;
         // Passwords and admins: nobody may give themselves (or take over someone with) more rights.
         if (area is null || parts is ["users", _, "password"])
