@@ -5,6 +5,7 @@ import { enrollCard, editCard, removeCard } from "./cards.js";
 import { jobStatus } from "./jobs.js";
 import { activityList } from "./activity.js";
 import { quotaText, quotaField, saveQuota, usageMeter } from "./quota.js";
+import { roleList } from "./admins.js";
 
 export async function render(root, ctx) {
   let data;
@@ -102,7 +103,7 @@ export async function render(root, ctx) {
 
   async function load() {
     const [users, badges, held, clients, server, groups, quotas] = await Promise.all([
-      api.get("users"), api.get("badges"), api.get("jobs?status=held"), api.get("clients"), api.get("server"), api.get("groups"), api.get("quotas"),
+      api.get("users"), api.get("badges"), api.maybe("jobs?status=held", []), api.maybe("clients", []), api.get("server"), api.get("groups"), api.get("quotas"),
     ]);
     if (!ctx.current) return;
     const by = (rows, key) => rows.reduce((m, r) => m.set(r[key], [...(m.get(r[key]) ?? []), r]), new Map());
@@ -155,10 +156,11 @@ export async function render(root, ctx) {
     ctx.setId(username);
     const user = data.users.find((u) => u.username.toLowerCase() === username.toLowerCase());
     if (!user) return ctx.setId(null);
-    const [badges, jobs, events, quota] = await Promise.all([
-      api.get(`badges?username=${enc(user.username)}`), api.get("jobs"), api.get(`events?subject=${enc(`user:${user.username}`)}&limit=15`),
-      api.get(`users/${enc(user.username)}/quota`),
+    const [badges, jobs, events, quota, admins] = await Promise.all([
+      api.get(`badges?username=${enc(user.username)}`), api.maybe("jobs", []), api.get(`events?subject=${enc(`user:${user.username}`)}&limit=15`),
+      api.get(`users/${enc(user.username)}/quota`), ctx.can("full") ? api.get("admins") : null,
     ]);
+    const asAdmin = admins?.people.find((p) => p.username === user.username);
     const theirJobs = jobs.filter((j) => j.owner === user.username).slice(0, 10);
     const sessions = data.clients.get(user.username) ?? [];
     const refresh = async () => { await load(); open(user.username); };
@@ -210,6 +212,20 @@ export async function render(root, ctx) {
           ? props(sessions.map((s) => [s.hostname ?? s.remoteIp, h("span", null, `${s.windowsUser ?? "?"} · client ${s.clientVersion ?? "unknown"}`, h("span", { class: "sub" }, `${s.remoteIp}, seen ${time(s.lastSeenAt).textContent}`))]))
           : h("p", { class: "muted", style: "margin:0" }, "Not signed in anywhere. Jobs they print can't be matched to them."),
 
+        admins && [
+          sectionTitle("Admin console"),
+          props([
+            ["Role", asAdmin ? (asAdmin.fullAdmin ? pill("Full admin", "ok") : roleList(asAdmin.roles)) : h("span", { class: "muted" }, "None")],
+            asAdmin && ["Sign-in", asAdmin.signInProblem ? h("span", { class: "text-bad" }, asAdmin.signInProblem)
+              : fromAd ? "With their domain password" : "With their console password"],
+            !fromAd && ["Password", user.hasPassword ? "Set" : h("span", { class: "muted" }, "None")],
+          ]),
+          h("div", { class: "actions", style: "margin-top:10px" },
+            h("a", { class: "btn small", href: "admins" }, "Roles"),
+            !fromAd && button(user.hasPassword ? "Change password" : "Set password", { small: true, iconName: "key", onclick: () => setPassword(user) }),
+            !fromAd && user.hasPassword && button("Remove password", { small: true, kind: "ghost danger", onclick: () => removePassword(user) })),
+        ],
+
         sectionTitle("Recent jobs"),
         theirJobs.length
           ? h("div", { class: "panel" }, table({ rows: theirJobs, onRowClick: (j) => ctx.navigate(`jobs/${j.id}`), columns: [
@@ -231,6 +247,37 @@ export async function render(root, ctx) {
         !fromAd && button("Rename", { kind: "primary", onclick: () => rename(user) }),
       ],
     });
+  }
+
+  function setPassword(user) {
+    formDialog({
+      title: `${user.hasPassword ? "Change" : "Set"} ${user.displayName}'s password`,
+      description: "For signing in to this admin console, if they have a role here. Printing doesn't use it. They're signed out of the console everywhere.",
+      submitLabel: "Save password",
+      body: [
+        field("New password", input("password", { type: "password", required: true, minlength: 10, autocomplete: "new-password" }), "At least 10 characters. Tell them over a safe channel."),
+        field("Again", input("again", { type: "password", required: true, autocomplete: "new-password" })),
+      ],
+      onSubmit: async ({ password, again }) => {
+        if (password !== again) throw new Error("The passwords don't match.");
+        await api.put(`users/${enc(user.username)}/password`, { password });
+        toast("Password saved");
+        await load();
+        open(user.username);
+      },
+    });
+  }
+
+  async function removePassword(user) {
+    if (!await confirm({
+      title: `Remove ${user.displayName}'s password?`,
+      message: "They won't be able to sign in to the admin console until they have one again.",
+      confirmLabel: "Remove password",
+    })) return;
+    if (await attempt(() => api.put(`users/${enc(user.username)}/password`, { password: null }), "Password removed") !== undefined) {
+      await load();
+      open(user.username);
+    }
   }
 
   function changeGroups(user) {

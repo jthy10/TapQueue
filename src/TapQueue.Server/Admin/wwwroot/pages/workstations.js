@@ -54,7 +54,7 @@ export async function render(root, ctx) {
 
   async function load() {
     const [workstations, clients, builds, server, crashes] = await Promise.all([
-      api.get("workstations"), api.get("clients"), api.get("client-builds"), api.get("server"), api.get("crashes?limit=200")]);
+      api.get("workstations"), api.get("clients"), api.maybe("client-builds", []), api.get("server"), api.maybe("crashes?limit=200", [])]);
     if (!ctx.current) return;
     latest = {};
     for (const b of builds) latest[b.platform] ??= b.version; // newest first

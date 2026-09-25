@@ -10,15 +10,16 @@
   <script type="module" src="app.js"></script>
 </head>
 <body>
-  <div class="dev-banner">Development mode: this console has no sign-in, and anyone on the network can use it. Set <code>auth.mode = "token"</code> to turn it off.</div>
-  <div class="shell">
+  <div class="dev-banner" id="dev-banner" hidden>Development mode: anyone on the network can use this console without signing in. Set up admins under <a href="admins">Admins</a>, then set <code>auth.mode = "token"</code>.</div>
+  <div class="sign-in" id="sign-in" hidden></div>
+  <div class="shell" id="shell" hidden>
     <nav class="sidebar" aria-label="Main">
       <a class="brand" href="overview">
         <img src="/icons/128.png" alt="">
         <div><b>TapQueue</b><span>Admin console</span></div>
       </a>
       <div id="nav"></div>
-      <div class="sidebar-foot" id="server-version"></div>
+      <div class="sidebar-foot"><div id="account"></div><div id="server-version"></div></div>
     </nav>
     <main class="main"><div class="page" id="page"></div></main>
   </div>

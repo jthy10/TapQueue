@@ -15,7 +15,7 @@ export async function render(root, ctx) {
 
   async function load() {
     const [builds, workstations, stationBuilds, stations] = await Promise.all([
-      api.get("client-builds"), api.get("workstations"), api.get("station-builds"), api.get("stations"),
+      api.get("client-builds"), api.maybe("workstations", []), api.get("station-builds"), api.maybe("stations", []),
     ]);
     const current = new Set(platforms.map(([p]) => builds.find((b) => b.platform === p)).filter(Boolean));
     if (!ctx.current) return;

@@ -13,7 +13,7 @@ export async function render(root, ctx) {
   panel({ flush: true, body: list }));
 
   async function load() {
-    [queues, held] = await Promise.all([api.get("queues"), api.get("jobs?status=held")]);
+    [queues, held] = await Promise.all([api.get("queues"), api.maybe("jobs?status=held", [])]);
     if (!ctx.current) return;
     list.replaceChildren(table({
       rows: queues,
