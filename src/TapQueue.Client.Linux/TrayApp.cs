@@ -43,6 +43,7 @@ public sealed class TrayApp : Application
     private bool _needsSignIn;
     private bool _polling;
     private bool _checkingForUpdates;
+    private bool _refreshingPrinters;
     private string? _lastError;
     private JobsWindow? _jobsWindow;
     private SignInWindow? _signInWindow;
@@ -308,6 +309,41 @@ public sealed class TrayApp : Application
     }
 
     /// <summary>
+    /// Asks the TapQueue service to remove and add this PC's TapQueue printers in CUPS again
+    /// (<see cref="UpdateCheckSocket"/>), for when one has gone missing or stopped working.
+    /// </summary>
+    private async Task RefreshPrintersAsync()
+    {
+        if (_refreshingPrinters) return;
+        _refreshingPrinters = true;
+        BuildMenu();
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(10)); // each printer can take a while
+            var reply = await UpdateCheckSocket.RefreshPrintersAsync(timeout.Token);
+            if (reply.Success)
+                Notify("Printers refreshed", reply.Printers == 0
+                    ? "Your TapQueue server has no printers for this PC."
+                    : $"Reinstalled {reply.Printers} TapQueue printer{(reply.Printers == 1 ? "" : "s")}.");
+            else
+                Notify("Couldn't refresh printers", reply.Error ?? "The TapQueue service couldn't reinstall the printers.", urgent: true);
+        }
+        catch (TimeoutException)
+        {
+            Notify("Can't refresh printers", "The TapQueue service isn't running on this PC. Ask your IT team to reinstall TapQueue.", urgent: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or System.Text.Json.JsonException or OperationCanceledException)
+        {
+            Notify("Can't refresh printers", ex.Message, urgent: true);
+        }
+        finally
+        {
+            _refreshingPrinters = false;
+            BuildMenu();
+        }
+    }
+
+    /// <summary>
     /// The TapQueue service installs a new build when one is published, pointing the tapqueue-client
     /// launcher at it (<see cref="LinuxBuilds"/>). Start the new program (it waits for this one to
     /// exit) and exit. A development build run from elsewhere restarts when its file is rebuilt.
@@ -416,6 +452,8 @@ public sealed class TrayApp : Application
             menu.Add(Item("Sign out", () => _ = SignOutAsync()));
         menu.Add(new NativeMenuItemSeparator());
         menu.Add(new NativeMenuItem($"TapQueue {TapQueueVersion.Current}") { IsEnabled = false });
+        menu.Add(new NativeMenuItem(_refreshingPrinters ? "Refreshing printers…" : "Refresh printers") { IsEnabled = !_refreshingPrinters }
+            .WithClick(() => _ = RefreshPrintersAsync()));
         menu.Add(new NativeMenuItem(_checkingForUpdates ? "Checking for updates…" : "Check for updates") { IsEnabled = !_checkingForUpdates }
             .WithClick(() => _ = CheckForUpdatesAsync()));
         menu.Add(Item("Exit", Exit));

@@ -62,8 +62,32 @@ public sealed class UpdateCheckPipe : IUpdateCheckListener
     /// </summary>
     public static async Task<UpdateCheckReply> CheckAsync(CancellationToken ct)
     {
-        await using var pipe = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
-        await pipe.ConnectAsync(TimeSpan.FromSeconds(5), ct);
+        await using var pipe = await ConnectAsync(ct);
         return await UpdateCheck.AskAsync(pipe, ct);
+    }
+
+    /// <summary>
+    /// Tray side: asks the service to remove and add this PC's printers again. Throws
+    /// <see cref="TimeoutException"/> if the service isn't running.
+    /// </summary>
+    public static async Task<PrinterRefreshReply> RefreshPrintersAsync(CancellationToken ct)
+    {
+        await using var pipe = await ConnectAsync(ct);
+        return await UpdateCheck.AskRefreshPrintersAsync(pipe, ct);
+    }
+
+    private static async Task<NamedPipeClientStream> ConnectAsync(CancellationToken ct)
+    {
+        var pipe = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+        try
+        {
+            await pipe.ConnectAsync(TimeSpan.FromSeconds(5), ct);
+            return pipe;
+        }
+        catch
+        {
+            await pipe.DisposeAsync();
+            throw;
+        }
     }
 }

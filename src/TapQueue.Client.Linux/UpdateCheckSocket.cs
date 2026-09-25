@@ -70,6 +70,22 @@ public sealed class UpdateCheckSocket : IUpdateCheckListener
     /// </summary>
     public static async Task<UpdateCheckReply> CheckAsync(CancellationToken ct)
     {
+        await using var stream = await ConnectAsync(ct);
+        return await UpdateCheck.AskAsync(stream, ct);
+    }
+
+    /// <summary>
+    /// Tray side: asks the service to remove and add this PC's printers again. Throws
+    /// <see cref="TimeoutException"/> if the service isn't running.
+    /// </summary>
+    public static async Task<PrinterRefreshReply> RefreshPrintersAsync(CancellationToken ct)
+    {
+        await using var stream = await ConnectAsync(ct);
+        return await UpdateCheck.AskRefreshPrintersAsync(stream, ct);
+    }
+
+    private static async Task<NetworkStream> ConnectAsync(CancellationToken ct)
+    {
         var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
         try
         {
@@ -80,8 +96,7 @@ public sealed class UpdateCheckSocket : IUpdateCheckListener
             socket.Dispose();
             throw new TimeoutException("The TapQueue service isn't running.", ex);
         }
-        await using var stream = new NetworkStream(socket, ownsSocket: true);
-        return await UpdateCheck.AskAsync(stream, ct);
+        return new NetworkStream(socket, ownsSocket: true);
     }
 
     private static async Task<bool> DelayAsync(TimeSpan delay, CancellationToken ct)

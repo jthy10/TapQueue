@@ -31,6 +31,7 @@ public sealed class TrayApp : ApplicationContext
     private readonly DateTime _exeWrittenAt = File.GetLastWriteTimeUtc(Environment.ProcessPath!);
     private bool _polling;
     private bool _checkingForUpdates;
+    private bool _refreshingPrinters;
     private string? _lastError;
     private JobsForm? _jobsForm;
     private SignInForm? _signInForm;
@@ -289,6 +290,39 @@ public sealed class TrayApp : ApplicationContext
     }
 
     /// <summary>
+    /// Asks the TapQueue service to remove and add this PC's TapQueue printers again
+    /// (<see cref="UpdateCheckPipe"/>), for when one has gone missing or stopped working.
+    /// </summary>
+    private async Task RefreshPrintersAsync()
+    {
+        if (_refreshingPrinters) return;
+        _refreshingPrinters = true;
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(10)); // each printer can take a while
+            var reply = await UpdateCheckPipe.RefreshPrintersAsync(timeout.Token);
+            if (reply.Success)
+                Notify("Printers refreshed", reply.Printers == 0
+                    ? "Your TapQueue server has no printers for this PC."
+                    : $"Reinstalled {reply.Printers} TapQueue printer{(reply.Printers == 1 ? "" : "s")}.");
+            else
+                Notify("Couldn't refresh printers", reply.Error ?? "The TapQueue service couldn't reinstall the printers.", ToolTipIcon.Error);
+        }
+        catch (TimeoutException)
+        {
+            Notify("Can't refresh printers", "The TapQueue service isn't running on this PC. Ask your IT team to reinstall TapQueue.", ToolTipIcon.Error);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or System.Text.Json.JsonException or OperationCanceledException)
+        {
+            Notify("Can't refresh printers", ex.Message, ToolTipIcon.Error);
+        }
+        finally
+        {
+            _refreshingPrinters = false;
+        }
+    }
+
+    /// <summary>
     /// The TapQueue service replaces TapQueueClient.exe when an update is published. Start the new
     /// exe (it waits for this one to exit) and exit.
     /// </summary>
@@ -391,6 +425,8 @@ public sealed class TrayApp : ApplicationContext
             menu.Items.Add("Sign out", null, async (_, _) => await SignOutAsync());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(new ToolStripMenuItem($"TapQueue {TapQueueVersion.Current}") { Enabled = false });
+        menu.Items.Add(new ToolStripMenuItem(_refreshingPrinters ? "Refreshing printers…" : "Refresh printers", null,
+            async (_, _) => await RefreshPrintersAsync()) { Enabled = !_refreshingPrinters });
         menu.Items.Add(new ToolStripMenuItem(_checkingForUpdates ? "Checking for updates…" : "Check for updates", null,
             async (_, _) => await CheckForUpdatesAsync()) { Enabled = !_checkingForUpdates });
         menu.Items.Add("Exit", null, (_, _) => ExitThread());
