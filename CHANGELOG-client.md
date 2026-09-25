@@ -10,6 +10,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-25
+
 ### Added
 - `install.ps1`: install, upgrade or repair the Windows client from PowerShell
   (`irm https://raw.githubusercontent.com/jthy10/TapQueue/main/install.ps1 | iex`), with a
@@ -90,7 +92,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 First working version: a tray app configured by a file that signs in, adds the printer, and shows
 and releases held jobs.
 
-[Unreleased]: https://github.com/jthy10/TapQueue/compare/client-v0.6.0...HEAD
+[Unreleased]: https://github.com/jthy10/TapQueue/compare/client-v0.7.0...HEAD
+[0.7.0]: https://github.com/jthy10/TapQueue/compare/client-v0.6.0...client-v0.7.0
 [0.6.0]: https://github.com/jthy10/TapQueue/compare/client-v0.5.0...client-v0.6.0
 [0.5.0]: https://github.com/jthy10/TapQueue/compare/client-v0.4.0...client-v0.5.0
 [0.4.0]: https://github.com/jthy10/TapQueue/compare/client-v0.3.0...client-v0.4.0
