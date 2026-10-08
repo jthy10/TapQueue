@@ -174,6 +174,26 @@ public sealed class ServerUpdateTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task UpgradesWaitForJobsBeingPrinted()
+    {
+        await Check();
+        await _server.PrintAsync("report.pdf", "%PDF-1.4 test"u8.ToArray());
+        _server.Service<TapQueue.Server.Data.Database>().Execute("UPDATE jobs SET status = 'releasing'");
+
+        Assert.Equal(HttpStatusCode.Conflict, (await Apply(Newer)).StatusCode);
+
+        var at = DateTimeOffset.UtcNow.AddHours(1);
+        await TestServer.ReadAsync<ServerUpdateDto>(await Apply(Newer, at));
+        var updater = _server.Service<ServerUpdater>();
+        updater.RunDue(at.AddMinutes(1));
+        Assert.False(File.Exists(RequestFile));
+        Assert.NotNull(updater.Scheduled());
+        // It doesn't wait forever on a job that's stuck.
+        updater.RunDue(at.AddMinutes(16));
+        Assert.True(File.Exists(RequestFile));
+    }
+
+    [Fact]
     public async Task AScheduledUpgradeCanBeCalledOff()
     {
         await Check();

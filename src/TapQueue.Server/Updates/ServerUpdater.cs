@@ -140,6 +140,8 @@ public sealed class ServerUpdater(UpdaterSetup setup, IReleaseFeed feed, Databas
             return null;
         }
 
+        if (ReleasingJobs() is > 0 and var releasing)
+            return $"{releasing} job{(releasing == 1 ? " is" : "s are")} printing right now; upgrading restarts the server. Try again in a moment, or schedule it.";
         ClearSchedule();
         Request(version);
         events.Admin(null, $"Started upgrading the server to {version}.");
@@ -169,6 +171,9 @@ public sealed class ServerUpdater(UpdaterSetup setup, IReleaseFeed feed, Databas
         }
         if (scheduled.At > now)
             return;
+        // Upgrading restarts the server: let jobs being sent to a printer finish first (checked again every 30 seconds).
+        if (ReleasingJobs() > 0 && now - scheduled.At < TimeSpan.FromMinutes(15))
+            return;
 
         ClearSchedule();
         if (CannotApplyReason() is { } cannot)
@@ -180,6 +185,9 @@ public sealed class ServerUpdater(UpdaterSetup setup, IReleaseFeed feed, Databas
         Request(scheduled.Version);
         events.Record(EventCategory.Admin, EventLog.System, null, $"Started the scheduled upgrade of the server to {scheduled.Version}.");
     }
+
+    private int ReleasingJobs() =>
+        Convert.ToInt32(database.Scalar("SELECT COUNT(*) FROM jobs WHERE status = $s", ("$s", JobStatus.Releasing)));
 
     /// <summary>Writes the request in one go (a temp file renamed over it) so the updater never reads half of it.</summary>
     private void Request(string version)
