@@ -8,8 +8,14 @@ namespace TapQueue.Client;
 /// </summary>
 public sealed class ClientConfig
 {
-    /// <summary>The TapQueue server, e.g. http://tapqueue.example.local:8631.</summary>
+    /// <summary>The TapQueue server, e.g. https://tapqueue.example.local:8632.</summary>
     public string ServerUrl { get; set; } = "";
+
+    /// <summary>
+    /// SHA-256 fingerprint of the server's self-signed certificate (see <see cref="ServerCertificatePin"/>).
+    /// Empty: trust the certificate the TapQueue service sees the first time it connects.
+    /// </summary>
+    public string ServerCertFingerprint { get; set; } = "";
 
     /// <summary>TapQueue username. Leave empty to use the name the person signed in to the PC with.</summary>
     public string Username { get; set; } = "";
@@ -34,6 +40,20 @@ public sealed class ClientConfig
     /// </summary>
     public static string StateDirectory { get; } = OperatingSystem.IsWindows() ? ConfigDirectory : "/var/lib/tapqueue-client";
 
+    /// <summary>The server's certificate as the TapQueue service first saw it, for the tray apps to check against.</summary>
+    public static string SavedCertificatePath { get; } = System.IO.Path.Combine(StateDirectory, "server-certificate.pem");
+
+    /// <summary>
+    /// How to trust the server's https:// certificate. Only the TapQueue service (<paramref name="learn"/>)
+    /// saves the one it sees first; the tray apps use what it saved.
+    /// </summary>
+    public ServerCertificatePin CertificatePin(bool learn) =>
+        new(ServerUrl, ServerCertFingerprint, SavedCertificatePath, learn);
+
+    /// <summary>An HttpClient for the server that checks its certificate with <paramref name="pin"/>.</summary>
+    public HttpClient CreateHttpClient(ServerCertificatePin pin, TimeSpan timeout) =>
+        new(pin.CreateHandler()) { BaseAddress = new Uri(ServerUrl.TrimEnd('/') + "/"), Timeout = timeout };
+
     public string EffectiveUsername => string.IsNullOrWhiteSpace(Username) ? Environment.UserName : Username.Trim();
 
     public static (ClientConfig Config, string Path) Load(string[] args)
@@ -44,6 +64,7 @@ public sealed class ClientConfig
         var config = TomlConfig.Load<ClientConfig>(path);
         if (!Uri.TryCreate(config.ServerUrl, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
             throw new InvalidDataException($"server_url in {path} must be an http:// or https:// address.");
+        ServerCertificatePin.Normalize(config.ServerCertFingerprint); // throws if it isn't one
         return (config, path);
     }
 

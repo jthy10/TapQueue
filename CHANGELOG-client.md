@@ -11,6 +11,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ## [Unreleased]
 
 ### Added
+- TLS: with `server_url = "https://<server>:8632"` (server 0.8.0 and later) everything, printing
+  included, is encrypted. The TapQueue service trusts the server's self-signed certificate the
+  first time it connects and the tray app trusts the same one, or set `server_cert_fingerprint` in
+  `client.toml`. On Windows the service adds that certificate to the PC's trusted roots so the
+  built-in IPP driver can print over `https://`, refusing one that could stand in for other sites.
+  The installers offer the server's `https://` address when it has one. See [tls.md](docs/tls.md).
 - **Refresh printers** in the tray menu (Windows and Linux): the TapQueue service checks with the
   server straight away and removes and adds each TapQueue printer again, for when one has gone
   missing or stopped working.

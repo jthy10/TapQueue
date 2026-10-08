@@ -1,7 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
 using Microsoft.AspNetCore.Hosting.Server;
-using Microsoft.AspNetCore.Hosting.Server.Features;
 using TapQueue.Server.Config;
 using TapQueue.Shared;
 
@@ -38,7 +37,8 @@ public sealed class DiscoveryResponder(ServerConfig config, IServer server, ILog
                 var result = await socket.ReceiveFromAsync(buffer, SocketFlags.None, new IPEndPoint(listen.Address, 0), stoppingToken);
                 if (!ServerDiscovery.IsRequest(buffer.AsSpan(0, result.ReceivedBytes)))
                     continue;
-                var reply = new DiscoveryReply(ServerDiscovery.ServiceName, Dns.GetHostName(), HttpPort(listen), TapQueueVersion.Current);
+                var reply = new DiscoveryReply(ServerDiscovery.ServiceName, Dns.GetHostName(), HttpPort(listen), TapQueueVersion.Current,
+                    ServerApp.BoundPort(server, "https") ?? 0);
                 await socket.SendToAsync(ServerDiscovery.EncodeReply(reply), SocketFlags.None, result.RemoteEndPoint, stoppingToken);
             }
             catch (OperationCanceledException)
@@ -58,7 +58,6 @@ public sealed class DiscoveryResponder(ServerConfig config, IServer server, ILog
     {
         if (listen.Port != 0)
             return listen.Port;
-        var address = server.Features.Get<IServerAddressesFeature>()?.Addresses.FirstOrDefault();
-        return address is null ? listen.Port : new Uri(address).Port;
+        return ServerApp.BoundPort(server, "http") ?? listen.Port;
     }
 }

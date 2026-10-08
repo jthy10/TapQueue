@@ -3,8 +3,14 @@ namespace TapQueue.Station;
 /// <summary>/etc/tapqueue/station.toml</summary>
 public sealed class StationConfig
 {
-    /// <summary>The TapQueue server, e.g. http://tapqueue-server:8631.</summary>
+    /// <summary>The TapQueue server, e.g. https://tapqueue-server:8632.</summary>
     public string ServerUrl { get; set; } = "";
+
+    /// <summary>
+    /// SHA-256 fingerprint of the server's self-signed certificate. Empty: trust the one seen the
+    /// first time the station connects.
+    /// </summary>
+    public string ServerCertFingerprint { get; set; } = "";
 
     /// <summary>From `tapqueue-admin stations add`.</summary>
     public string Token { get; set; } = "";
@@ -33,7 +39,8 @@ public sealed class StationConfig
         if (needServer)
         {
             if (!Uri.TryCreate(ServerUrl, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
-                throw new InvalidDataException("server_url must be an http:// or https:// URL, e.g. http://tapqueue-server:8631.");
+                throw new InvalidDataException("server_url must be an http:// or https:// URL, e.g. https://tapqueue-server:8632.");
+            TapQueue.Shared.ServerCertificatePin.Normalize(ServerCertFingerprint); // throws if it isn't one
             if (string.IsNullOrWhiteSpace(Token))
                 throw new InvalidDataException("Set token to the station token from `tapqueue-admin stations add`.");
         }

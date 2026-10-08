@@ -35,7 +35,7 @@ const string Usage = """
       tapqueue-admin queues                          List queues (the printers users see in Windows)
       tapqueue-admin queues add <queue-id> --name "TapQueue Secure Print" [--description ...] [--location ...]
                                 [--color] [--duplex] [--media iso_a4_210x297mm]
-                                                     Add a queue; clients print to ipp://<server>:8631/ipp/<queue-id>
+                                                     Add a queue; clients print to ipps://<server>:8632/ipp/<queue-id>
       tapqueue-admin queues edit <queue-id> [--name ...] [--description ...] [--location ...]
                                 [--color on|off] [--duplex on|off] [--media ...]
       tapqueue-admin queues remove <queue-id>
@@ -102,6 +102,8 @@ const string Usage = """
     Connection (flag > environment > ~/.config/tapqueue/admin.toml > /etc/tapqueue/server.toml):
       --server <url>    TAPQUEUE_SERVER       default http://localhost:8631
       --token <token>   TAPQUEUE_ADMIN_TOKEN  admin.token from server.toml
+      --fingerprint <sha256>  TAPQUEUE_SERVER_FINGERPRINT
+                        the server's self-signed certificate, for an https:// server (see `server`)
     """;
 
 var positional = new List<string>();
@@ -120,7 +122,7 @@ for (var i = 0; i < args.Length; i++)
     }
     if (args[i].StartsWith("--"))
     {
-        var takesValue = args[i] is "--server" or "--token" or "--name" or "--status" or "--uri" or "--location" or "--description" or "--media" or "--version-name" or "--platform" or "--area";
+        var takesValue = args[i] is "--server" or "--token" or "--fingerprint" or "--name" or "--status" or "--uri" or "--location" or "--description" or "--media" or "--version-name" or "--platform" or "--area";
         var switchWithValue = args[i] is "--tls-skip-verify" or "--color" or "--duplex" && i + 1 < args.Length && ParseSwitch(args[i + 1]) is not null;
         options[args[i]] = (takesValue || switchWithValue) && i + 1 < args.Length ? args[++i] : null;
     }
@@ -146,7 +148,19 @@ if (string.IsNullOrEmpty(token))
     return 2;
 }
 
-using var http = new HttpClient { BaseAddress = new Uri(serverUrl.TrimEnd('/') + "/api/v1/admin/"), Timeout = TimeSpan.FromMinutes(10) };
+ServerCertificatePin pin;
+try
+{
+    pin = new ServerCertificatePin(serverUrl,
+        options.GetValueOrDefault("--fingerprint") ?? Environment.GetEnvironmentVariable("TAPQUEUE_SERVER_FINGERPRINT") ?? fileConfig.ServerCertFingerprint,
+        savedPath: null, learn: false);
+}
+catch (Exception ex) when (ex is InvalidDataException or UriFormatException)
+{
+    Console.Error.WriteLine(ex.Message);
+    return 2;
+}
+using var http = new HttpClient(pin.CreateHandler()) { BaseAddress = new Uri(serverUrl.TrimEnd('/') + "/api/v1/admin/"), Timeout = TimeSpan.FromMinutes(10) };
 http.DefaultRequestHeaders.Authorization = new("Bearer", token);
 
 try
@@ -223,7 +237,7 @@ catch (FormatException)
 
 async Task<int> Status()
 {
-    using var root = new HttpClient { BaseAddress = new Uri(serverUrl.TrimEnd('/') + "/"), Timeout = TimeSpan.FromSeconds(15) };
+    using var root = new HttpClient(pin.CreateHandler()) { BaseAddress = new Uri(serverUrl.TrimEnd('/') + "/"), Timeout = TimeSpan.FromSeconds(15) };
     var server = (await root.GetStringAsync("")).Trim();
     var queues = await Get<List<QueueAdminDto>>("queues");
     var printers = await Get<List<PrinterAdminDto>>("printers");
@@ -779,6 +793,18 @@ async Task<int> ShowServer()
     Console.WriteLine($"session-timeout  {server.SessionTimeoutMinutes,-6} minutes ({Source("sessionTimeoutMinutes")})");
     Console.WriteLine($"quota-overrun    {server.QuotaOverrun,-6} ({(server.ChangedSettings?.Contains("quotaOverrun") == true ? "set here" : "default")})");
     Console.WriteLine($"auth.mode        {server.AuthMode,-6} (server.toml; restart to change)");
+    if (server.Tls is not { } tls)
+    {
+        Console.WriteLine("tls              off    (tls.listen in server.toml is empty; nothing is encrypted)");
+        return 0;
+    }
+    Console.WriteLine($"tls              https:// and ipps:// on port {tls.Port}{(tls.Require ? ", plain HTTP refused from other machines" : ", plain HTTP still allowed")}");
+    Console.WriteLine($"  certificate    {tls.Subject}, {(tls.SelfSigned ? "self-signed" : "from tls.cert_file")}, until {tls.NotAfter.ToLocalTime():yyyy-MM-dd}");
+    Console.WriteLine($"  names          {string.Join(", ", tls.Names)}");
+    Console.WriteLine($"  file           {tls.CertFile}");
+    Console.WriteLine($"  SHA-256        {tls.Fingerprint}");
+    if (tls.SelfSigned)
+        Console.WriteLine("  PCs and stations trust it the first time they connect, or set server_cert_fingerprint to the SHA-256 above.");
     return 0;
 }
 

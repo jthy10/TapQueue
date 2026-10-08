@@ -96,8 +96,12 @@ ownership, so it can be swapped out without touching the rest of the server.
 
 ## Security notes
 
-- TLS isn't implemented yet. Client, station and admin traffic, including tokens and documents,
-  crosses the network in the clear. Run TapQueue on a network you trust until TLS lands.
+- Clients, stations and the admin console reach the server over TLS (`https://` and `ipps://` on
+  port 8632), with a self-signed certificate they pin the first time they connect, or your own;
+  see [TLS](tls.md). Plain HTTP on port 8631 still works until `tls.require` is on, and anything
+  sent that way, tokens and documents included, crosses the network in the clear.
+- Releasing to a printer uses whatever its `uri` says: `ipps://` encrypts it, and
+  `--tls-skip-verify` accepts the printer's own self-signed certificate.
 - Tokens (user, station, session) are stored hashed. Badge numbers are stored hashed, with only
   the last four characters kept so admins can tell badges apart.
 - Held documents live in `/var/lib/tapqueue/spool`, readable only by the `tapqueue` user.

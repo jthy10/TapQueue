@@ -27,6 +27,35 @@ public sealed class ServerConfigTests
         Assert.Throws<InvalidDataException>(config.Validate);
     }
 
+    [Fact]
+    public void TlsIsOnByDefaultWithASelfSignedCertificate()
+    {
+        var config = TapQueue.Shared.TomlConfig.Load<ServerConfig>(Path.Combine(RepoRoot(), "config", "server.example.toml"));
+        Assert.Equal("0.0.0.0:8632", config.Tls.Listen);
+        Assert.Equal("", config.Tls.CertFile);
+        Assert.False(config.Tls.Require);
+        Assert.Equal("0.0.0.0:8632", new ServerConfig().Tls.Listen);
+    }
+
+    [Theory]
+    [InlineData("0.0.0.0:8631", "", "", false)] // same port as plain HTTP
+    [InlineData("8632", "", "", false)]
+    [InlineData("0.0.0.0:8632", "/etc/tapqueue/cert.pem", "", false)] // a certificate without its key
+    [InlineData("", "", "", true)] // requiring TLS with no TLS
+    public void TlsSettingsMustMakeSense(string listen, string certFile, string keyFile, bool require)
+    {
+        var config = new ServerConfig { Admin = { Token = "secret" }, Tls = { Listen = listen, CertFile = certFile, KeyFile = keyFile, Require = require } };
+        Assert.Throws<InvalidDataException>(config.Validate);
+    }
+
+    [Fact]
+    public void TlsCanBeTurnedOff()
+    {
+        var config = new ServerConfig { Admin = { Token = "secret" }, Tls = { Listen = "" } };
+        config.Validate();
+        Assert.False(config.Tls.Enabled);
+    }
+
     private static string RepoRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

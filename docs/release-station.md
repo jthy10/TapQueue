@@ -34,6 +34,8 @@ finds the badge reader (a pcProx is detected automatically; for other readers it
 keyboard-style devices to pick from), and starts the `tapqueue-station` service. For unattended
 installs, set `TAPQUEUE_SERVER`, `TAPQUEUE_STATION_TOKEN` and `TAPQUEUE_READER_DEVICE`
 (`... | sudo TAPQUEUE_SERVER=... bash -s station`). Run it again to upgrade; the config is kept.
+With an `https://` server address the station trusts the server's self-signed certificate the
+first time it connects, or set `server_cert_fingerprint` in `station.toml`; see [TLS](tls.md).
 
 Check the reader and logs:
 

@@ -8,7 +8,7 @@
 ;   the tray app, started for every user at sign-in
 ;
 ; Silent install for many PCs:
-;   TapQueue_client_0.3.0.exe /VERYSILENT /SERVER=http://tapqueue-server:8631
+;   TapQueue_client_0.3.0.exe /VERYSILENT /SERVER=https://tapqueue-server:8632
 ; Without /SERVER, a first install uses the one TapQueue server it finds on the network (and fails if
 ; it finds none, or more than one). The wizard lists the servers it finds (TapQueueClient.exe --discover).
 
@@ -224,7 +224,7 @@ procedure InitializeWizard;
 begin
   ServerPage := CreateInputQueryPage(wpWelcome,
     'TapQueue server', 'Which TapQueue server should this PC use?',
-    'Pick a server found on this network, or enter its address including the port, for example http://tapqueue-server:8631');
+    'Pick a server found on this network, or enter its address including the port, for example https://tapqueue-server:8632');
   ServerPage.Add('Server address:', False);
   ServerPage.Values[0] := ExpandConstant('{param:SERVER|}');
   if ServerPage.Values[0] = '' then
@@ -276,7 +276,7 @@ begin
   Result := True;
   if (CurPageID = ServerPage.ID) and not IsValidServerUrl(ServerPage.Values[0]) then
   begin
-    MsgBox('Enter an address starting with http:// or https://, for example http://tapqueue-server:8631', mbError, MB_OK);
+    MsgBox('Enter an address starting with http:// or https://, for example https://tapqueue-server:8632', mbError, MB_OK);
     Result := False;
   end;
 end;
@@ -290,10 +290,10 @@ begin
   begin
     { First install with no server given: use the TapQueue server on this network, if there's exactly one. }
     case DiscoverServers(Urls, Labels) of
-      0: Log('No TapQueue server found on this network. Run setup with /SERVER=http://your-server:8631');
+      0: Log('No TapQueue server found on this network. Run setup with /SERVER=https://your-server:8632');
       1: DiscoveredServerUrl := Urls[0];
     else
-      Log('More than one TapQueue server on this network. Pick one with /SERVER=http://your-server:8631');
+      Log('More than one TapQueue server on this network. Pick one with /SERVER=https://your-server:8632');
     end;
     Result := DiscoveredServerUrl <> '';
   end;

@@ -5,7 +5,7 @@
 #
 # A first install finds the TapQueue server on the network; to name it (or move the PC to another):
 #
-#   $env:TAPQUEUE_SERVER = "http://tapqueue-server:8631"; irm https://raw.githubusercontent.com/jthy10/TapQueue/main/install.ps1 | iex
+#   $env:TAPQUEUE_SERVER = "https://tapqueue-server:8632"; irm https://raw.githubusercontent.com/jthy10/TapQueue/main/install.ps1 | iex
 #
 # $env:TAPQUEUE_VERSION = "0.6.0" installs that release instead of the newest. Before installing it
 # prints what state the client is in (service, version, server address, whether the server answers),
