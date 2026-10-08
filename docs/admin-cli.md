@@ -114,14 +114,17 @@ tapqueue-admin users password alice --clear
 
 The first of these that's set wins:
 
-1. `--server <url>` and `--token <token>`
-2. `TAPQUEUE_SERVER` and `TAPQUEUE_ADMIN_TOKEN`
+1. `--server <url>`, `--token <token>` and `--fingerprint <sha256>`
+2. `TAPQUEUE_SERVER`, `TAPQUEUE_ADMIN_TOKEN` and `TAPQUEUE_SERVER_FINGERPRINT`
 3. `~/.config/tapqueue/admin.toml`:
    ```toml
-   server_url = "http://tapqueue-server:8631"
+   server_url = "https://tapqueue-server:8632"
    token = "<admin.token from server.toml>"
+   # The server's self-signed certificate (`sudo tapqueue-admin server` on the server shows it)
+   server_cert_fingerprint = "AF:EF:98:35:…"
    ```
-4. `/etc/tapqueue/server.toml`, when it can be read (on the server, with `sudo`).
+4. `/etc/tapqueue/server.toml`, when it can be read (on the server, with `sudo`). This talks to
+   the server on `localhost`.
 
-The admin token can do anything, so treat it like a root password. The API has no TLS yet (see the
-roadmap), so use the admin CLI from the server itself or over a network you trust.
+The admin token can do anything, so treat it like a root password. From another machine use the
+`https://` address, so the token isn't sent in the clear; see [TLS](tls.md).

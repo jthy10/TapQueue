@@ -9,6 +9,9 @@ public sealed class AdminConfig
     public string ServerUrl { get; set; } = "http://localhost:8631";
     public string Token { get; set; } = "";
 
+    /// <summary>SHA-256 fingerprint of an https:// server's self-signed certificate.</summary>
+    public string ServerCertFingerprint { get; set; } = "";
+
     /// <summary>
     /// On the server itself (e.g. under sudo), fall back to the server's own config, so
     /// tapqueue-admin works there without copying the admin token anywhere.

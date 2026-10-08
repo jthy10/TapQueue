@@ -26,8 +26,9 @@ curl -fsSL https://raw.githubusercontent.com/jthy10/TapQueue/main/install.sh | s
 That downloads the newest `client-v` release's `TapQueue_client_X.Y.Z_linux-x64.tar.gz`, checks its
 SHA-256 and runs the `install-client.sh` inside (you can also download it, extract it and run
 `sudo ./install-client.sh`). It searches the network for TapQueue servers: pick yours from the list,
-or type its address, e.g. `http://tapqueue-server:8631`. The search only reaches the PC's own
-network; a server behind a router has to be typed in.
+or type its address, e.g. `https://tapqueue-server:8632`. The search only reaches the PC's own
+network; a server behind a router has to be typed in. Over `https://`, the TapQueue service trusts
+the server's self-signed certificate the first time it connects; see [TLS](tls.md).
 
 Within a minute the **TapQueue Secure Print** printer (or whatever the queue is called) appears in
 every print dialog. The tray app starts the next time someone signs in to the desktop; to start it
@@ -56,7 +57,7 @@ printers on the network.
 To install on many PCs without questions, set the server:
 
 ```
-curl -fsSL https://raw.githubusercontent.com/jthy10/TapQueue/main/install.sh | sudo TAPQUEUE_SERVER=http://tapqueue-server:8631 bash -s client
+curl -fsSL https://raw.githubusercontent.com/jthy10/TapQueue/main/install.sh | sudo TAPQUEUE_SERVER=https://tapqueue-server:8632 bash -s client
 ```
 
 Upgrades (run it again) keep the server already set. To remove TapQueue:

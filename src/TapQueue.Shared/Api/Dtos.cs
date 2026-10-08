@@ -15,7 +15,22 @@ public sealed record ServerInfoDto(
     int HeldJobs,
     IReadOnlyList<string>? ChangedSettings = null,
     bool CanRestart = false,
-    string QuotaOverrun = Api.QuotaOverrun.Allow);
+    string QuotaOverrun = Api.QuotaOverrun.Allow,
+    ServerTlsDto? Tls = null);
+
+/// <summary>The server's HTTPS listener, so admins can check the fingerprint clients see.</summary>
+/// <param name="Fingerprint">SHA-256 of the certificate, "AB:CD:…". What server_cert_fingerprint in client.toml and station.toml expects.</param>
+/// <param name="CertFile">The certificate file in use: tls.cert_file, or the self-signed one in data_dir/tls.</param>
+public sealed record ServerTlsDto(
+    string Listen,
+    int Port,
+    string Fingerprint,
+    bool SelfSigned,
+    string CertFile,
+    string Subject,
+    IReadOnlyList<string> Names,
+    DateTimeOffset NotAfter,
+    bool Require);
 
 /// <summary>One line of the server's log, for the live log in the console.</summary>
 /// <param name="Level">debug, info, warning or error.</param>

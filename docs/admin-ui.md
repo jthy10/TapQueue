@@ -1,6 +1,6 @@
 # Admin console
 
-The admin console is a web page served by `tapqueue-server` at `http://<server>:8631/admin`. It
+The admin console is a web page served by `tapqueue-server` at `https://<server>:8632/admin` (or `http://<server>:8631/admin`). It
 covers everything `tapqueue-admin` does, and adds the things a CLI is bad at: live status,
 tap-to-enroll, logs, and remote control of stations and clients.
 

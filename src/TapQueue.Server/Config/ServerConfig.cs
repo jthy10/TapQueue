@@ -8,6 +8,7 @@ public sealed class ServerConfig
     public AuthSection Auth { get; set; } = new();
     public AdminSection Admin { get; set; } = new();
     public JobsSection Jobs { get; set; } = new();
+    public TlsSection Tls { get; set; } = new();
 
     /// <summary>
     /// Queues and printers used to live in server.toml (before v0.2). The TOML loader ignores sections it
@@ -29,6 +30,12 @@ public sealed class ServerConfig
             throw new InvalidDataException($"server.listen \"{Server.Listen}\" must look like 0.0.0.0:8631.");
         if (Server.DiscoveryPort is < 0 or > 65535)
             throw new InvalidDataException($"server.discovery_port must be a port number, or 0 to turn discovery off.");
+        if (Tls.Enabled && (!System.Net.IPEndPoint.TryParse(Tls.Listen, out var tls) || tls.Port == 0 || tls.Port == listen.Port))
+            throw new InvalidDataException($"tls.listen \"{Tls.Listen}\" must look like 0.0.0.0:8632, on a different port from server.listen, or \"\" for no HTTPS.");
+        if (string.IsNullOrWhiteSpace(Tls.CertFile) != string.IsNullOrWhiteSpace(Tls.KeyFile))
+            throw new InvalidDataException("Set both tls.cert_file and tls.key_file, or neither for a self-signed certificate.");
+        if (Tls.Require && !Tls.Enabled)
+            throw new InvalidDataException("tls.require needs tls.listen: there'd be no way in but plain HTTP.");
         if (Auth.Mode is not ("dev" or "token"))
             throw new InvalidDataException($"auth.mode must be \"dev\" or \"token\", not \"{Auth.Mode}\".");
         if (string.IsNullOrWhiteSpace(Admin.Token) || Admin.Token == "change-me")
@@ -69,4 +76,27 @@ public sealed class JobsSection
 {
     /// <summary>Held jobs that are not released within this many hours are deleted.</summary>
     public int HoldHours { get; set; } = 24;
+}
+
+public sealed class TlsSection
+{
+    /// <summary>Address and port for HTTPS and IPPS (IPP over TLS). Empty = no TLS.</summary>
+    public string Listen { get; set; } = "0.0.0.0:8632";
+
+    /// <summary>PEM certificate (with any intermediates after it). Empty = a self-signed one in data_dir/tls.</summary>
+    public string CertFile { get; set; } = "";
+
+    /// <summary>PEM private key for <see cref="CertFile"/>.</summary>
+    public string KeyFile { get; set; } = "";
+
+    /// <summary>More host names or addresses for the self-signed certificate, besides this machine's own.</summary>
+    public List<string> Names { get; set; } = [];
+
+    /// <summary>
+    /// Refuse plain HTTP from other machines, except what finding the server needs (<c>/</c> and
+    /// <c>/healthz</c>). For once every client and station uses https://.
+    /// </summary>
+    public bool Require { get; set; }
+
+    public bool Enabled => !string.IsNullOrWhiteSpace(Listen);
 }

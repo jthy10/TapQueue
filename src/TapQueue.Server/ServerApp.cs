@@ -1,5 +1,8 @@
 using System.Net;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.AspNetCore.Server.Kestrel.Https;
 using TapQueue.Server.ActiveDirectory;
 using TapQueue.Server.Admin;
 using TapQueue.Server.Admins;
@@ -11,6 +14,7 @@ using TapQueue.Server.Ipp;
 using TapQueue.Server.Jobs;
 using TapQueue.Server.Logging;
 using TapQueue.Server.Printers;
+using TapQueue.Server.Tls;
 using TapQueue.Server.Users;
 using TapQueue.Shared;
 
@@ -26,10 +30,19 @@ public static class ServerApp
         var database = new Database(Path.Combine(config.Server.DataDir, "tapqueue.db"));
         database.Migrate();
 
+        var certificate = config.Tls.Enabled ? new ServerCertificate(config.Tls, config.Server.DataDir) : null;
+
         var builder = WebApplication.CreateSlimBuilder(args ?? []);
+        builder.WebHost.UseKestrelHttpsConfiguration();
         builder.WebHost.ConfigureKestrel(kestrel =>
         {
             kestrel.Listen(ParseEndpoint(config.Server.Listen));
+            // The same endpoints over TLS: https:// for the API and console, ipps:// for printing.
+            if (certificate is not null)
+                kestrel.Listen(ParseEndpoint(config.Tls.Listen), listen => listen.UseHttps(new TlsHandshakeCallbackOptions
+                {
+                    OnConnection = _ => ValueTask.FromResult(certificate.HandshakeOptions()),
+                }));
             kestrel.Limits.MaxRequestBodySize = 512L * 1024 * 1024; // big scanned PDFs
         });
         builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
@@ -41,6 +54,8 @@ public static class ServerApp
         builder.Services.AddSingleton(logBuffer);
         builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.PropertyNamingPolicy = TapQueueJson.Options.PropertyNamingPolicy);
         builder.Services.AddSingleton(config);
+        if (certificate is not null)
+            builder.Services.AddSingleton(certificate);
         builder.Services.AddSingleton(database);
         builder.Services.AddSingleton(new Spool(config.Server.DataDir));
         builder.Services.AddSingleton(services => new ClientBuildStore(services.GetRequiredService<Database>(), config.Server.DataDir));
@@ -89,6 +104,10 @@ public static class ServerApp
                 limit.MaxRequestBodySize = SmallBodyLimit;
             return next(http);
         });
+        if (certificate is not null)
+            certificate.Logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger<ServerCertificate>();
+        if (config.Tls.Require)
+            app.UseTlsRequirement(() => BoundPort(app.Services.GetRequiredService<IServer>(), "https") ?? 0);
 
         app.MapPost("/ipp/{queueId}", (HttpContext http, string queueId, IppPrinterEndpoint ipp) => ipp.HandleAsync(http, queueId));
         app.MapGet("/", () => "TapQueue server " + TapQueueVersion.Current);
@@ -96,7 +115,8 @@ public static class ServerApp
             typeof(ServerApp).Assembly.GetManifestResourceStream($"TapQueue.Server.Assets.icon-{size}.png") is { } png
                 ? Results.Stream(png, "image/png")
                 : Results.NotFound());
-        app.MapGet("/healthz", () => Results.Ok(new { status = "ok", version = TapQueueVersion.Current }));
+        app.MapGet("/healthz", (IServer server) =>
+            Results.Ok(new { status = "ok", version = TapQueueVersion.Current, tlsPort = BoundPort(server, "https") }));
         app.MapClientApi();
         app.MapAdminApi();
         app.MapAdminAuthApi();
@@ -113,6 +133,11 @@ public static class ServerApp
         || path.StartsWithSegments("/api/v1/admin/client-builds")
         || path.StartsWithSegments("/api/v1/admin/station-builds")
         || path.StartsWithSegments("/api/v1/admin/users/import");
+    /// <summary>The port Kestrel actually listens on for http or https (the config may say 0, as in tests). Null if it doesn't.</summary>
+    public static int? BoundPort(IServer server, string scheme) =>
+        server.Features.Get<IServerAddressesFeature>()?.Addresses
+            .Select(a => new Uri(a))
+            .FirstOrDefault(a => a.Scheme == scheme)?.Port;
 
     public static IPEndPoint ParseEndpoint(string listen)
     {

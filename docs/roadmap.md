@@ -14,8 +14,8 @@ checklist; [admin-ui.md](admin-ui.md#roadmap) has the admin console's own phases
    console available with `auth.mode = "token"`. Single sign-on is item 15.
 3. **Directory sync.** *(Active Directory done in 0.6.0, see [active-directory.md](active-directory.md).)*
    Users and groups from AD, by OU, group (nested) and single user, daily. Entra ID is still to do.
-4. **TLS everywhere.** IPP, the client API and the admin console over HTTPS, so print data and
-   tokens aren't readable on the network.
+4. **TLS everywhere.** *(Done in 0.8.0, see [tls.md](tls.md).)* IPP, the client API and the admin
+   console over HTTPS, so print data and tokens aren't readable on the network.
 5. **Per-job identity instead of IP-based ownership.** Jobs are matched to a person by the PC's
    address today ([how-it-works.md](how-it-works.md)), which breaks on shared PCs, terminal
    servers and behind NAT. Per-job credentials (IPP authentication, or a token the client adds)

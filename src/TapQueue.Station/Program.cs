@@ -57,7 +57,15 @@ try
         return 0;
     }
 
-    using var http = new HttpClient { BaseAddress = new Uri(config.ServerUrl.TrimEnd('/') + "/api/v1/station/"), Timeout = TimeSpan.FromMinutes(2) };
+    // A self-signed server certificate is trusted the first time, and kept in the state directory
+    // (when run by systemd); or set server_cert_fingerprint.
+    var stateDir = Environment.GetEnvironmentVariable("STATE_DIRECTORY");
+    var pin = new ServerCertificatePin(config.ServerUrl, config.ServerCertFingerprint,
+        string.IsNullOrEmpty(stateDir) ? null : Path.Combine(stateDir, "server-certificate.pem"), learn: true)
+    {
+        Learned = certificate => Log($"Trusting the server's certificate from now on: {certificate.Subject}, SHA-256 {ServerCertificatePin.FingerprintOf(certificate)}"),
+    };
+    using var http = new HttpClient(pin.CreateHandler()) { BaseAddress = new Uri(config.ServerUrl.TrimEnd('/') + "/api/v1/station/"), Timeout = TimeSpan.FromMinutes(2) };
     http.DefaultRequestHeaders.Authorization = new("Bearer", config.Token);
 
     Log($"tapqueue-station {TapQueueVersion.Current}, server {config.ServerUrl}");

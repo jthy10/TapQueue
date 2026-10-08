@@ -35,7 +35,8 @@ public static class QueueAttributes
 
     private static readonly HashSet<string> GroupKeywords = ["all", "printer-description", "job-template"];
 
-    /// <param name="httpBaseUrl">The server's http:// address as the client sees it, e.g. http://192.0.2.1:8631</param>
+    /// <param name="printerUri">ipp:// or, over TLS, ipps://</param>
+    /// <param name="httpBaseUrl">The server's http:// or https:// address as the client sees it, e.g. http://192.0.2.1:8631</param>
     public static IppGroup Build(QueueRecord queue, string printerUri, string httpBaseUrl, int upTimeSeconds, int queuedJobCount, IReadOnlyCollection<string>? requested)
     {
         var all = new IppGroup(IppTag.PrinterAttributes);
@@ -43,7 +44,7 @@ public static class QueueAttributes
 
         // Identity
         all.Add("printer-uri-supported", IppValue.Uri(printerUri))
-            .Add("uri-security-supported", IppValue.Keyword("none"))
+            .Add("uri-security-supported", IppValue.Keyword(printerUri.StartsWith("ipps:", StringComparison.Ordinal) ? "tls" : "none"))
             .Add("uri-authentication-supported", IppValue.Keyword("requesting-user-name"))
             .Add("printer-name", IppValue.Name(queue.Name))
             .Add("printer-info", IppValue.Text(queue.Description))

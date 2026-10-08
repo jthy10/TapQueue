@@ -22,6 +22,25 @@ session_timeout_minutes = 10
 # Used by tapqueue-admin. Generate one with: openssl rand -hex 32
 token = "change-me"
 
+[tls]
+# HTTPS and IPPS (IPP over TLS) for clients, stations and the admin console, so print jobs and
+# tokens aren't readable on the network. Plain HTTP stays on server.listen until tls.require is on.
+# "" turns TLS off.
+listen = "0.0.0.0:8632"
+# Your own certificate and its private key, in PEM format (e.g. from your company CA or Let's
+# Encrypt; put any intermediate certificates after the server's in cert_file). The server picks up
+# renewed files by itself. Leave both empty for a self-signed certificate made on first start in
+# data_dir/tls: PCs and stations trust it the first time they connect, or pin its fingerprint
+# (`tapqueue-admin server` shows it) with server_cert_fingerprint in client.toml and station.toml.
+cert_file = ""
+key_file = ""
+# More names or addresses PCs reach this server by, for the self-signed certificate. This
+# machine's own name and addresses are always in it.
+names = []
+# Refuse plain HTTP from other machines (this machine itself, "/" and "/healthz" still answer).
+# Turn on once every client and station uses https://.
+require = false
+
 [jobs]
 # Held jobs not released within this many hours are deleted.
 hold_hours = 24
