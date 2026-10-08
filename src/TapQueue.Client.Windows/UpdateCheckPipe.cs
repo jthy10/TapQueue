@@ -1,5 +1,7 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Win32.SafeHandles;
 using System.IO.Pipes;
+using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Threading.Channels;
@@ -53,24 +55,65 @@ public sealed class UpdateCheckPipe : IUpdateCheckListener
     /// </summary>
     private static string? PcUser(NamedPipeServerStream pipe, ILogger logger)
     {
-        SecurityIdentifier? sid = null;
         try
         {
-            pipe.RunAsClient(() =>
-            {
-                using var identity = WindowsIdentity.GetCurrent(TokenAccessLevels.Query);
-                if (!identity.IsAnonymous && !identity.IsSystem)
-                    sid = identity.User;
-            });
-            // Looked up once back to the service's own account: an identification token can't be used to ask the domain.
-            return sid?.Translate(typeof(NTAccount)).Value;
+            using var token = ClientToken(pipe);
+            using var identity = new WindowsIdentity(token.DangerousGetHandle());
+            if (identity.IsAnonymous || identity.IsSystem || identity.User is not { } sid)
+                return null;
+            // Looked up as the service's own account: an identification token can't be used to ask the domain.
+            return sid.Translate(typeof(NTAccount)).Value;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or IdentityNotMappedException or System.ComponentModel.Win32Exception)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or IdentityNotMappedException or System.ComponentModel.Win32Exception
+                                       or ArgumentException or System.Security.SecurityException)
         {
             logger.LogWarning("Couldn't tell which PC user the tray app on the pipe runs as: {Kind} 0x{Code:X8} {Error}", ex.GetType().Name, ex.HResult, ex.Message);
             return null;
         }
     }
+
+    /// <summary>
+    /// The pipe client's token. While the service acts as the client it holds a token that's only good
+    /// for identifying them and can't open files, so nothing may be loaded for the first time in
+    /// there: .NET code that hadn't run yet failed with FileNotFoundException on real PCs. Only
+    /// these calls happen as the client, all of them used once beforehand (the static constructor);
+    /// the token is read afterwards, as the service.
+    /// </summary>
+    private static SafeAccessTokenHandle ClientToken(NamedPipeServerStream pipe)
+    {
+        var handle = pipe.SafePipeHandle.DangerousGetHandle();
+        if (!ImpersonateNamedPipeClient(handle))
+            throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+        var opened = OpenThreadToken(GetCurrentThread(), TokenQuery, true, out var token);
+        var error = Marshal.GetLastWin32Error();
+        if (!RevertToSelf())
+            Environment.FailFast("The TapQueue service couldn't stop acting as a tray app's user.");
+        GC.KeepAlive(pipe);
+        return opened ? new SafeAccessTokenHandle(token) : throw new System.ComponentModel.Win32Exception(error);
+    }
+
+    static UpdateCheckPipe()
+    {
+        // See ClientToken: the first call of each binds it, which mustn't happen while acting as a client.
+        if (OpenThreadToken(GetCurrentThread(), TokenQuery, true, out var token))
+            new SafeAccessTokenHandle(token).Dispose();
+        Marshal.GetLastWin32Error();
+        RevertToSelf();
+    }
+
+    private const uint TokenQuery = 0x0008;
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern bool ImpersonateNamedPipeClient(IntPtr pipe);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern bool OpenThreadToken(IntPtr thread, uint access, bool openAsSelf, out IntPtr token);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern bool RevertToSelf();
+
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr GetCurrentThread();
 
     /// <summary>SYSTEM and administrators own the pipe; any signed-in user may connect to ask for a check.</summary>
     private static PipeSecurity Security()
