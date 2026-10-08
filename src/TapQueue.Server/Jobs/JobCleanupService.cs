@@ -2,7 +2,10 @@ using TapQueue.Server.Data;
 
 namespace TapQueue.Server.Jobs;
 
-/// <summary>Deletes held jobs nobody released in time, half-received jobs, dead client sessions and old activity.</summary>
+/// <summary>
+/// Deletes held jobs nobody released in time, half-received jobs, dead client sessions and old activity.
+/// At startup it first puts back on hold jobs a restart interrupted mid-release.
+/// </summary>
 public sealed class JobCleanupService(JobStore jobs, SessionStore sessions, Spool spool, EventLog events, ServerSettings settings, ILogger<JobCleanupService> logger)
     : BackgroundService
 {
@@ -11,6 +14,16 @@ public sealed class JobCleanupService(JobStore jobs, SessionStore sessions, Spoo
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        try
+        {
+            if (jobs.RecoverInterruptedReleases() is > 0 and var recovered)
+                logger.LogWarning("{Count} jobs were being released when the server stopped; they're held again", recovered);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Couldn't put interrupted releases back on hold");
+        }
+
         using var timer = new PeriodicTimer(TimeSpan.FromMinutes(5));
         do
         {

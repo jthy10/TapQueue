@@ -78,6 +78,50 @@ public sealed class PageCounterTests : IDisposable
         Assert.Equal(expected, PageCounter.ApplyPageRanges(pages, ranges));
     }
 
+    [Fact]
+    public void PageRangesDontCostMemoryOrTimeForHugeCounts() =>
+        Assert.Equal(int.MaxValue - 1, PageCounter.ApplyPageRanges(int.MaxValue, [new IppRange(2, int.MaxValue), new IppRange(5, 9)]));
+
+    [Fact]
+    public void ImplausiblePageCountsAreCapped()
+    {
+        var pdf = """
+            %PDF-1.4
+            1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
+            2 0 obj << /Type /Pages /Kids [3 0 R] /Count 2000000000 >> endobj
+            trailer << /Root 1 0 R >>
+            """;
+
+        Assert.Equal(PageCounter.MaxPages, PageCounter.Count(Write("huge.pdf", Encoding.Latin1.GetBytes(pdf))));
+    }
+
+    [Fact]
+    public void ObjectStreamsThatInflateTooFarAreSkipped()
+    {
+        // A few hundred KB that inflate past the limit; the page objects outside it still count.
+        var compressed = new MemoryStream();
+        using (var deflate = new System.IO.Compression.ZLibStream(compressed, System.IO.Compression.CompressionLevel.Optimal, leaveOpen: true))
+        {
+            var zeros = new byte[1024 * 1024];
+            for (var written = 0L; written <= PageCounter.MaxInflatedBytes; written += zeros.Length)
+                deflate.Write(zeros);
+        }
+        var pdf = new MemoryStream();
+        pdf.Write(Encoding.Latin1.GetBytes("%PDF-1.5\n3 0 obj << /Type /Page >> endobj\n7 0 obj << /Type /ObjStm /N 1 /First 4 /Filter /FlateDecode >>\nstream\n"));
+        compressed.WriteTo(pdf);
+        pdf.Write(Encoding.Latin1.GetBytes("\nendstream\nendobj\n"));
+
+        Assert.Equal(1, PageCounter.Count(Write("bomb.pdf", pdf.ToArray())));
+    }
+
+    [Fact]
+    public void PdfsThatMakeThePatternsBacktrackAreNotCounted()
+    {
+        // Every "n 0 obj" with no endobj after it would scan the rest of the file: quadratic without a timeout.
+        var pdf = "%PDF-1.4\n" + string.Concat(Enumerable.Repeat("1 0 obj ", 2_000_000));
+        Assert.Null(PageCounter.Count(Write("slow.pdf", Encoding.Latin1.GetBytes(pdf))));
+    }
+
     private string Write(string name, byte[] bytes)
     {
         var path = Path.Combine(_dir, name);
