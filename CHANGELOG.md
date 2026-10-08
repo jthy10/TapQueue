@@ -19,6 +19,10 @@ breaking changes; they're listed under **Changed** with what to do.
 - Changing the Active Directory domain controller, its port or its CA certificate takes the bind
   account's password again, so the saved password can't be sent to another server.
 - The admin console can't be shown in a frame on another site.
+- A remembered tray sign-in with a domain account is forgotten after 30 days without use (a tray
+  that stays signed in counts as using it), so a copied sign-in file doesn't work for ever.
+- The sign-in throttle forgets names with no recent wrong passwords, so trying many names can't
+  slowly use up the server's memory.
 - Signing in to the tray with a domain password is throttled like the console's sign-in: after
   5 wrong passwords for a name, or 20 from one address, within 15 minutes, wait 15 minutes.
 

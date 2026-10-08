@@ -153,14 +153,20 @@ public static class AdminAuthApi
 /// <summary>
 /// Slows down password guessing: after 5 wrong passwords for a name, or 20 from one address, within
 /// 15 minutes, sign-in is refused until 15 minutes after the last one. Kept in memory; a restart forgets it.
+/// Names nobody tries again are swept out now and then, so guessing at many names doesn't use up memory.
 /// </summary>
 public sealed class SignInThrottle
 {
     private const int PerName = 5;
     private const int PerAddress = 20;
     private static readonly TimeSpan Window = TimeSpan.FromMinutes(15);
+    private static readonly TimeSpan SweepEvery = TimeSpan.FromMinutes(1);
 
     private readonly ConcurrentDictionary<string, List<DateTimeOffset>> _failures = new();
+    private long _lastSweepTicks;
+
+    /// <summary>How many names and addresses have recent failures (for tests).</summary>
+    internal int Tracked => _failures.Count;
 
     public bool IsLocked(string name, string ip) =>
         Recent("name:" + name.ToLowerInvariant()) >= PerName || Recent("ip:" + ip) >= PerAddress;
@@ -175,9 +181,36 @@ public sealed class SignInThrottle
 
     private void Add(string key)
     {
-        var list = _failures.GetOrAdd(key, _ => []);
-        lock (list)
-            list.Add(DateTimeOffset.UtcNow);
+        while (true)
+        {
+            var list = _failures.GetOrAdd(key, _ => []);
+            lock (list)
+            {
+                // A sweep may have just taken this list out; then start a new one.
+                if (!_failures.TryGetValue(key, out var current) || current != list)
+                    continue;
+                list.Add(DateTimeOffset.UtcNow);
+            }
+            break;
+        }
+        Sweep(DateTimeOffset.UtcNow);
+    }
+
+    /// <summary>Drops the names and addresses with no failures left in the window, at most once a minute.</summary>
+    internal void Sweep(DateTimeOffset now, bool force = false)
+    {
+        var last = Interlocked.Read(ref _lastSweepTicks);
+        if (!force && (now.UtcTicks - last < SweepEvery.Ticks || Interlocked.CompareExchange(ref _lastSweepTicks, now.UtcTicks, last) != last))
+            return;
+        foreach (var (key, list) in _failures)
+        {
+            lock (list)
+            {
+                list.RemoveAll(t => t < now - Window);
+                if (list.Count == 0)
+                    _failures.TryRemove(new KeyValuePair<string, List<DateTimeOffset>>(key, list));
+            }
+        }
     }
 
     private int Recent(string key)
