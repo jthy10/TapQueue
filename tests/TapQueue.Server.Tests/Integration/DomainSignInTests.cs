@@ -140,6 +140,18 @@ public sealed class DomainSignInTests
     }
 
     [Fact]
+    public async Task WrongPasswordsAreThrottled()
+    {
+        await using var server = await StartAsync();
+
+        for (var i = 0; i < 5; i++)
+            Assert.Equal(HttpStatusCode.Unauthorized, (await SignIn(server, "alice", "nope")).StatusCode);
+        var locked = await SignIn(server, "alice", "alice-pw");
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, locked.StatusCode);
+    }
+
+    [Fact]
     public async Task UnreachableDomainControllerIsNotAWrongPassword()
     {
         await using var server = await StartAsync();

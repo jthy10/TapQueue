@@ -43,7 +43,7 @@ public static class ClientApi
 
     private static async Task<IResult> CreateSession(ClientSessionRequest request, HttpContext http, ServerConfig config, EventLog events, AccessPolicy access,
         UserStore users, SessionStore sessions, ClientLoginStore logins, DirectoryStore directory, IDirectorySourceFactory ad,
-        QueueStore queues, PrinterRegistry printers, ClientBuildStore builds, ILoggerFactory loggers)
+        QueueStore queues, PrinterRegistry printers, ClientBuildStore builds, SignInThrottle throttle, ILoggerFactory loggers)
     {
         var logger = loggers.CreateLogger("TapQueue.Server.Api.ClientApi");
         var username = request.Username?.Trim();
@@ -69,6 +69,10 @@ public static class ClientApi
             }
             else if (!string.IsNullOrEmpty(request.Password))
             {
+                // Each try is a bind to AD, so unthrottled guessing would also lock people out of their domain account.
+                if (throttle.IsLocked(username, http.ClientIp()))
+                    return Results.Json(new ErrorResponse("Too many wrong passwords. Wait 15 minutes and try again."),
+                        statusCode: StatusCodes.Status429TooManyRequests);
                 DirectoryEntry? entry;
                 try
                 {
@@ -82,10 +86,12 @@ public static class ClientApi
                 }
                 if (entry is null)
                 {
+                    throttle.Failed(username, http.ClientIp());
                     logger.LogWarning("Rejected domain sign-in for \"{User}\" from {Ip}", username, http.ClientIp());
                     events.Record(EventCategory.SignIn, username, null, $"Domain sign-in as {username} on {pc} rejected: wrong name or password, or the account is disabled in AD.");
                     return Results.Json(new ErrorResponse("Wrong username or password."), statusCode: StatusCodes.Status401Unauthorized);
                 }
+                throttle.Succeeded(username, http.ClientIp());
                 user = users.FindByExternalId(UserSource.ActiveDirectory, entry.Guid);
                 if (user is null)
                 {
