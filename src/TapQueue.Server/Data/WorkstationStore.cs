@@ -12,7 +12,8 @@ public sealed record WorkstationRecord(
     string? PendingCommand,
     DateTimeOffset FirstSeenAt,
     DateTimeOffset LastSeenAt,
-    string Platform)
+    string Platform,
+    string? KeyHash = null)
 {
     public bool Online => DateTimeOffset.UtcNow - LastSeenAt < TimeSpan.FromSeconds(WorkstationStatus.OfflineAfterSeconds);
 }
@@ -24,7 +25,7 @@ public sealed record WorkstationRecord(
 /// </summary>
 public sealed class WorkstationStore(Database database)
 {
-    private const string Columns = "hostname, last_ip, version, binary_sha256, update_error, pending_command, first_seen_at, last_seen_at, platform";
+    private const string Columns = "hostname, last_ip, version, binary_sha256, update_error, pending_command, first_seen_at, last_seen_at, platform, key_hash";
 
     public List<WorkstationRecord> List() =>
         database.Query($"SELECT {Columns} FROM workstations ORDER BY hostname", Map);
@@ -48,16 +49,34 @@ public sealed class WorkstationStore(Database database)
         return command;
     }
 
+    /// <summary>The PC whose print key (<see cref="Tokens.PrintKey"/>) hashes to <paramref name="printKeyHash"/>, if any.</summary>
+    public WorkstationRecord? FindByPrintKey(string printKeyHash) =>
+        database.QueryOne($"SELECT {Columns} FROM workstations WHERE print_key_hash = $k", Map, ("$k", printKeyHash));
+
+    /// <summary>
+    /// Gives a PC that has no key yet <paramref name="key"/> (stored hashed, with its print key). False
+    /// if it has one already (another check-in got there first), or isn't known.
+    /// </summary>
+    public bool SetKey(string hostname, string key) =>
+        database.Execute("UPDATE workstations SET key_hash = $k, print_key_hash = $p WHERE hostname = $h AND key_hash IS NULL",
+            ("$k", Tokens.Hash(key)), ("$p", Tokens.Hash(Tokens.PrintKey(key))), ("$h", hostname)) == 1;
+
     /// <summary>Queues a command for the PC's next check-in, replacing any it hasn't picked up.</summary>
     public WorkstationRecord? SetCommand(string hostname, string? command) =>
         database.QueryOne($"UPDATE workstations SET pending_command = $c WHERE hostname = $h RETURNING {Columns}",
             Map, ("$c", command), ("$h", hostname));
 
-    /// <summary>Forgets a PC, e.g. one that was retired. It comes back if its TapQueue service checks in again.</summary>
-    public bool Delete(string hostname) =>
-        database.Execute("DELETE FROM workstations WHERE hostname = $h", ("$h", hostname)) == 1;
+    /// <summary>
+    /// Forgets a PC, e.g. one that was retired, along with its key and which sessions it vouched for.
+    /// It comes back, with a new key, if its TapQueue service checks in again.
+    /// </summary>
+    public bool Delete(string hostname)
+    {
+        database.Execute("UPDATE sessions SET workstation = NULL, pc_user = NULL WHERE workstation = $h", ("$h", hostname));
+        return database.Execute("DELETE FROM workstations WHERE hostname = $h", ("$h", hostname)) == 1;
+    }
 
     private static WorkstationRecord Map(SqliteDataReader r) => new(
         r.GetString(0), r.GetString(1), r.GetStringOrNull(2), r.GetStringOrNull(3), r.GetStringOrNull(4), r.GetStringOrNull(5),
-        r.GetTime(6), r.GetTime(7), r.GetString(8));
+        r.GetTime(6), r.GetTime(7), r.GetString(8), r.GetStringOrNull(9));
 }

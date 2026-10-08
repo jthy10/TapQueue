@@ -87,16 +87,18 @@ public sealed class TestServer : IAsyncDisposable
     }
 
     /// <summary>Prints a document to the hold queue the way Windows does, with a single Print-Job.</summary>
-    public async Task<IppMessage> PrintAsync(string jobName, byte[] document, string? requestingUser = null, int copies = 1)
+    /// <param name="ippPath">Another path to print to, like a keyed queue's from a service check-in.</param>
+    public async Task<IppMessage> PrintAsync(string jobName, byte[] document, string? requestingUser = null, int copies = 1, string? ippPath = null)
     {
-        var request = IppMessage.CreateRequest(IppOperation.PrintJob, IppClient.NextRequestId(), QueueUri);
+        var queueUri = ippPath is null ? QueueUri : $"ipp://{BaseUri.Authority}{ippPath}";
+        var request = IppMessage.CreateRequest(IppOperation.PrintJob, IppClient.NextRequestId(), queueUri);
         request.Group(IppTag.OperationAttributes)
             .Add("requesting-user-name", IppValue.Name(requestingUser ?? "someone"))
             .Add("job-name", IppValue.Name(jobName))
             .Add("document-format", IppValue.MimeType("application/pdf"));
         request.Group(IppTag.JobAttributes).Add("copies", IppValue.Integer(copies));
         using var ipp = new IppClient(tlsSkipVerify: false, TimeSpan.FromSeconds(30));
-        return await ipp.SendAsync(QueueUri, request, new MemoryStream(document));
+        return await ipp.SendAsync(queueUri, request, new MemoryStream(document));
     }
 
     public static async Task<T> ReadAsync<T>(HttpResponseMessage response)

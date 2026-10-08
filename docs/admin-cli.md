@@ -62,6 +62,9 @@ tapqueue-admin server set hold-hours|session-timeout <number|default>
                                                Change a setting now, or go back to server.toml's
 tapqueue-admin server set quota-overrun allow|deny|default
                                                Whether a job may take someone over their page limit
+tapqueue-admin server set address-matching on|off|default
+                                               Whether jobs without a PC key are matched by address
+                                               (see how-it-works.md)
 tapqueue-admin server log [--follow]           Recent server log lines; --follow keeps printing new ones
 tapqueue-admin server restart                  Restart tapqueue-server (only when systemd runs it)
 ```

@@ -41,13 +41,14 @@ curl -fsSL https://raw.githubusercontent.com/jthy10/TapQueue/main/install.sh | s
    to install on the PC but the TapQueue client.
 2. **Jobs are held, not printed.** The server keeps the document and the print options chosen.
 3. **The job is matched to a person** through the tray app, which is signed in on the PC the
-   job came from. The username inside a print job is easy to fake, so it isn't trusted on its own.
+   job came from. Each PC's printers carry a key, and the PC's TapQueue service vouches for which
+   PC user runs each tray app, so this works on terminal servers and behind NAT too. The username
+   inside a print job is easy to fake, so it isn't trusted on its own.
 4. **The user releases it at a printer** by tapping their badge at the release station next to it,
    or from the tray app.
 5. **Unreleased jobs expire** after 24 hours (configurable) and are deleted.
 
-More in [how TapQueue works](docs/how-it-works.md), including what matching jobs to people by
-IP address can't handle.
+More in [how TapQueue works](docs/how-it-works.md), including how jobs are matched to people.
 
 ## Getting started
 
@@ -76,7 +77,8 @@ Reference: [admin console](docs/admin-ui.md) · [TLS](docs/tls.md) · [admin sig
 - [x] Printer health monitoring (state, problems, toner levels)
 - [x] Admin sign-in and roles (SSO later)
 - [x] Active Directory sync (Entra ID later)
-- [ ] TLS for client and IPP connections, and per-job identity instead of IP-based ownership
+- [ ] TLS for client and IPP connections
+- [x] Per-job identity instead of IP-based ownership
 - [ ] Feedback at the printer (screen or status light) for "nothing to print" and errors
 - [ ] Follow-me printing, reports and cost accounting
 - [ ] Self-service badge enrollment from the tray app

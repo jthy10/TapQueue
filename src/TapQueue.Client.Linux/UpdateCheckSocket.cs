@@ -1,5 +1,7 @@
 using Microsoft.Extensions.Logging;
+using System.Buffers.Binary;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using System.Threading.Channels;
 
 namespace TapQueue.Client.Linux;
@@ -12,7 +14,7 @@ public sealed class UpdateCheckSocket : IUpdateCheckListener
 {
     public const string SocketPath = "/run/tapqueue-client/update.sock";
 
-    public async Task ServeAsync(ChannelWriter<UpdateCheck.Request> requests, ILogger logger, CancellationToken ct)
+    public async Task ServeAsync(ChannelWriter<UpdateCheck.Request> requests, UpdateCheck.SessionVerifier verify, ILogger logger, CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
         {
@@ -51,7 +53,8 @@ public sealed class UpdateCheckSocket : IUpdateCheckListener
                         logger.LogWarning("Update check listener failed: {Error}", ex.Message);
                         break;
                     }
-                    _ = UpdateCheck.HandleAsync(new NetworkStream(connection, ownsSocket: true), requests, logger, ct);
+                    var peer = connection;
+                    _ = UpdateCheck.HandleAsync(new NetworkStream(connection, ownsSocket: true), requests, logger, ct, () => PcUser(peer, logger), verify);
                 }
             }
             try
@@ -62,6 +65,58 @@ public sealed class UpdateCheckSocket : IUpdateCheckListener
             {
             }
         }
+    }
+
+    private const int SolSocket = 1;
+    private const int SoPeerCred = 17;
+
+    /// <summary>The user at the other end of the socket, from the kernel (SO_PEERCRED), not from anything they sent.</summary>
+    private static string? PcUser(Socket connection, ILogger logger)
+    {
+        try
+        {
+            Span<byte> credentials = stackalloc byte[12]; // struct ucred { pid_t pid; uid_t uid; gid_t gid; }
+            if (connection.GetRawSocketOption(SolSocket, SoPeerCred, credentials) < 12)
+                return null;
+            var uid = BinaryPrimitives.ReadUInt32LittleEndian(credentials[4..]);
+            return UserName(uid);
+        }
+        catch (Exception ex) when (ex is SocketException or ObjectDisposedException or PlatformNotSupportedException)
+        {
+            logger.LogWarning("Couldn't tell which user the tray app on the socket runs as: {Error}", ex.Message);
+            return null;
+        }
+    }
+
+    /// <summary>The login name of <paramref name="uid"/> (from /etc/passwd, LDAP or wherever NSS looks), or null.</summary>
+    private static string? UserName(uint uid)
+    {
+        var passwd = Marshal.AllocHGlobal(128); // struct passwd is 48 bytes on 64-bit glibc and musl
+        var buffer = Marshal.AllocHGlobal(16 * 1024);
+        try
+        {
+            return getpwuid_r(uid, passwd, buffer, 16 * 1024, out var result) == 0 && result != IntPtr.Zero
+                ? Marshal.PtrToStringUTF8(Marshal.ReadIntPtr(result)) // pw_name comes first
+                : null;
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+            Marshal.FreeHGlobal(passwd);
+        }
+    }
+
+    [DllImport("libc", SetLastError = false)]
+    private static extern int getpwuid_r(uint uid, IntPtr pwd, IntPtr buf, nuint buflen, out IntPtr result);
+
+    /// <summary>
+    /// Tray side: asks the service to vouch for this tray app's session with the server. Throws
+    /// <see cref="TimeoutException"/> if the service isn't running.
+    /// </summary>
+    public static async Task<SessionVerifyReply> VerifySessionAsync(string sessionToken, CancellationToken ct)
+    {
+        await using var stream = await ConnectAsync(ct);
+        return await UpdateCheck.AskVerifySessionAsync(stream, sessionToken, ct);
     }
 
     /// <summary>

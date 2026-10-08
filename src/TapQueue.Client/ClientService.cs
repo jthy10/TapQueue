@@ -14,6 +14,9 @@ namespace TapQueue.Client;
 /// client build, keeps the PC's printers in step, and installs a newly published client, straight
 /// away when someone chooses "Check for updates" in the tray menu (<see cref="UpdateCheck"/>).
 /// "Refresh printers" in the tray menu makes it check in straight away and reinstall every printer.
+/// The server gives the PC a key on its first check-in (<see cref="WorkstationKey"/>); the printers
+/// then carry a print key made from it, and the service vouches for each tray app on the PC that
+/// signs in (<see cref="UpdateCheck.VerifySessionCommand"/>), so jobs are matched by PC and PC user.
 /// The platform's program sets up the host (logging, service manager) around it.
 /// </summary>
 public sealed class ClientService(
@@ -52,7 +55,8 @@ public sealed class ClientService(
 
         var checks = Channel.CreateUnbounded<UpdateCheck.Request>();
         using var stopListening = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-        var listening = Task.Run(() => listener.ServeAsync(checks.Writer, logger, stopListening.Token), CancellationToken.None);
+        var listening = Task.Run(() => listener.ServeAsync(checks.Writer, (token, pcUser, ct) => VerifySessionAsync(http, token, pcUser, ct),
+            logger, stopListening.Token), CancellationToken.None);
 
         string? lastError = null;
         while (!stoppingToken.IsCancellationRequested)
@@ -99,7 +103,7 @@ public sealed class ClientService(
                 var outcome = await updater.InstallIfDifferentAsync(build, stoppingToken);
                 reply = new UpdateCheckReply(outcome, build?.Version, outcome == UpdateOutcome.Failed ? updater.LastError : null);
             }
-            catch (Exception ex) when ((ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException or InvalidDataException or IOException)
+            catch (Exception ex) when ((ex is HttpRequestException or TaskCanceledException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidDataException or IOException)
                                        && !stoppingToken.IsCancellationRequested)
             {
                 if (ex.Message != lastError) // log each new problem once, not every minute
@@ -158,18 +162,67 @@ public sealed class ClientService(
 
     /// <summary>
     /// Says which PC this is and what it runs, and gets the queues, the client build and any command
-    /// back. Servers older than 0.3 only have the anonymous GET.
+    /// back. Servers older than 0.3 only have the anonymous GET. Sends this PC's key ("" asks for one;
+    /// servers older than 0.8 ignore it) and keeps the one it's given.
     /// </summary>
-    private static async Task<ClientSetupResponse> CheckInAsync(HttpClient http, ClientUpdater updater, CancellationToken ct)
+    private async Task<ClientSetupResponse> CheckInAsync(HttpClient http, ClientUpdater updater, CancellationToken ct)
     {
+        var key = WorkstationKey.Load(config.ServerUrl) ?? "";
         var report = new ClientSetupRequest(Environment.MachineName, TapQueueVersion.Current, await updater.OwnSha256Async(ct), updater.LastError,
-            ClientPlatform.Current);
+            ClientPlatform.Current, key);
         using var response = await http.PostAsJsonAsync("api/v1/client/setup", report, TapQueueJson.Options, ct);
         if (response.StatusCode is System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.MethodNotAllowed)
             return await http.GetFromJsonAsync<ClientSetupResponse>("api/v1/client/setup", TapQueueJson.Options, ct)
                    ?? throw new InvalidDataException("Empty response from the server.");
+        if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+            throw new HttpRequestException(await ErrorAsync(response, ct), null, response.StatusCode);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<ClientSetupResponse>(TapQueueJson.Options, ct)
-               ?? throw new InvalidDataException("Empty response from the server.");
+        var setup = await response.Content.ReadFromJsonAsync<ClientSetupResponse>(TapQueueJson.Options, ct)
+                    ?? throw new InvalidDataException("Empty response from the server.");
+        if (setup.WorkstationKey is { Length: > 0 } given)
+        {
+            new WorkstationKey(config.ServerUrl, given).Save();
+            logger.LogInformation("The server gave this PC its key; re-adding printers with it, so jobs from here are matched by PC user");
+        }
+        return setup;
+    }
+
+    /// <summary>A tray app on this PC signed in as <paramref name="pcUser"/>: vouches for its session with the server (see <see cref="UpdateCheck"/>).</summary>
+    private async Task<SessionVerifyReply> VerifySessionAsync(HttpClient http, string sessionToken, string pcUser, CancellationToken ct)
+    {
+        if (WorkstationKey.Load(config.ServerUrl) is not { } key)
+            return new SessionVerifyReply(false, "This PC hasn't got its TapQueue key from the server yet.");
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromSeconds(15));
+            using var response = await http.PostAsJsonAsync("api/v1/client/workstation-session",
+                new WorkstationSessionRequest(Environment.MachineName, key, sessionToken, pcUser), TapQueueJson.Options, timeout.Token);
+            if (response.IsSuccessStatusCode)
+            {
+                logger.LogInformation("Vouched for {PcUser}'s TapQueue sign-in on this PC", pcUser);
+                return new SessionVerifyReply(true, null);
+            }
+            var error = await ErrorAsync(response, timeout.Token);
+            logger.LogWarning("Couldn't vouch for {PcUser}'s TapQueue sign-in: {Error}", pcUser, error);
+            return new SessionVerifyReply(false, error);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException)
+        {
+            return new SessionVerifyReply(false, $"Can't reach the TapQueue server: {ex.Message}");
+        }
+    }
+
+    private static async Task<string> ErrorAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        try
+        {
+            if ((await response.Content.ReadFromJsonAsync<ErrorResponse>(TapQueueJson.Options, ct))?.Error is { } error)
+                return error;
+        }
+        catch (Exception ex) when (ex is System.Text.Json.JsonException or NotSupportedException)
+        {
+        }
+        return $"Server returned {(int)response.StatusCode} {response.ReasonPhrase}";
     }
 }

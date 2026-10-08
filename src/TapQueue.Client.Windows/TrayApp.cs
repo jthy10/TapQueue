@@ -41,7 +41,7 @@ public sealed class TrayApp : ApplicationContext
     public TrayApp(ClientConfig config, string[] args, string? updatedFrom)
     {
         _args = args;
-        _api = new TapQueueApi(config);
+        _api = new TapQueueApi(config) { VerifySession = UpdateCheckPipe.VerifySessionAsync };
         _tray = new NotifyIcon
         {
             Icon = _disconnectedIcon,

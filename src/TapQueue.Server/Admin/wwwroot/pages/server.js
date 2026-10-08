@@ -36,6 +36,10 @@ export async function render(root, ctx) {
         h("span", { class: "sub" }, s.quotaOverrun === "deny"
           ? "A job prints only if it fits in the pages someone has left."
           : "A job prints in full if someone is under their limit when it starts, even if it takes them over.")]],
+      ["Jobs without a PC key", [s.addressMatching === "off" ? "Not matched to anyone" : "Matched by address",
+        h("span", { class: "sub" }, s.addressMatching === "off"
+          ? "Only jobs from PCs whose TapQueue client has a key (0.8 on) go to someone."
+          : "Jobs from clients older than 0.8 go to whoever is signed in at that address. Turn this off once every PC under Workstations has a key.")]],
       ["Client sign-in", s.authMode === "dev"
         ? [pill("Dev", "bad"), h("span", { class: "sub" }, "Anyone can sign in as any username, and this console is open. Set auth.mode in server.toml and restart to change it.")]
         : [pill("Tokens", "ok"), h("span", { class: "sub" }, "Clients need the token from Users.")]],
@@ -61,12 +65,18 @@ export async function render(root, ctx) {
           ["allow", "Print it if they're under the limit when it starts"],
           ["deny", "Only print jobs that fit in what's left"],
         ], s.quotaOverrun)),
+        field("Jobs that arrive without a PC key", select("addressMatching", [
+          ["on", "Match them to whoever is signed in at that address"],
+          ["off", "Don't match them to anyone"],
+        ], s.addressMatching),
+          "Clients from 0.8 on give each PC a key, so its jobs are matched by PC and PC user, not address."),
       ],
       onSubmit: async (v) => {
         const body = { reset: [] };
         if (v.holdHoursSource === "file") body.reset.push("holdHours"); else body.holdHours = Number(v.holdHours);
         if (v.sessionTimeoutSource === "file") body.reset.push("sessionTimeoutMinutes"); else body.sessionTimeoutMinutes = Number(v.sessionTimeoutMinutes);
         if (v.quotaOverrun !== s.quotaOverrun) body.quotaOverrun = v.quotaOverrun;
+        if (v.addressMatching !== s.addressMatching) body.addressMatching = v.addressMatching;
         s = await api.patch("server/settings", body);
         draw();
         toast("Settings saved");

@@ -21,11 +21,22 @@ breaking changes; they're listed under **Changed** with what to do.
   the one `server_cert_fingerprint` in `station.toml` names; `tapqueue-admin` takes `--fingerprint`.
   Queues are advertised as `ipps://` over TLS, and the installers' server search offers the
   `https://` address. See [tls.md](docs/tls.md).
+- Per-job identity instead of IP-based ownership. Each PC's TapQueue service (client 0.8) gets a key,
+  and its printers carry a print key made from it, so the server knows which PC a job came from
+  whatever its address. The service vouches for which PC user runs each signed-in tray app, and a
+  job goes to the session of the PC user who printed it, also on terminal servers and behind NAT.
+  Workstations show whether each PC has a key, and clients whether their PC vouched for them. See
+  [how-it-works.md](docs/how-it-works.md#how-a-job-is-matched-to-a-person).
+- **Jobs without a PC key** setting (Server page, `tapqueue-admin server set address-matching on|off`):
+  whether jobs from older clients are still matched by address. On by default; turn it off once
+  every PC has a key.
 
 ### Changed
 - The server listens on a second port, 8632, by default. Open it in the firewall
   (`sudo ufw allow 8632/tcp`), or set `tls.listen = ""` to keep TLS off. Plain HTTP on 8631 is
   unchanged.
+- Once a PC has a key, check-ins for its computer name need that key. A reinstalled PC is turned
+  away until it's forgotten under Workstations, which gives it a new key. Database schema 15.
 
 ### Fixed
 - A domain sign-in at the same moment as the Active Directory sync could fail its LDAPS check:
