@@ -6,7 +6,8 @@
 #
 # First install: creates the tapqueue user, /opt/tapqueue, /etc/tapqueue/server.toml (with a fresh
 # admin token) and the systemd service. Upgrade: replaces the programs and restarts the service;
-# the config and data are left alone.
+# the config and data are left alone. Either way it also installs tapqueue-update.path and
+# tapqueue-update.service, which let an admin upgrade the server from the console.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -19,7 +20,8 @@ if [ "$(id -u)" -ne 0 ]; then
     echo "Run this as root: sudo $0" >&2
     exit 1
 fi
-for f in tapqueue-server tapqueue-admin libe_sqlite3.so server.example.toml tapqueue-server.service; do
+for f in tapqueue-server tapqueue-admin libe_sqlite3.so server.example.toml tapqueue-server.service \
+    update-server.sh tapqueue-update.service tapqueue-update.path; do
     if [ ! -e "$here/$f" ]; then
         echo "$here/$f is missing. Run this from an extracted TapQueue server release archive." >&2
         exit 1
@@ -44,6 +46,7 @@ systemctl stop tapqueue-server 2>/dev/null || true
 install -d -m 755 "$prefix"
 install -m 755 "$here/tapqueue-server" "$here/tapqueue-admin" "$prefix/"
 install -m 644 "$here/libe_sqlite3.so" "$prefix/"
+install -m 755 "$here/update-server.sh" "$prefix/"
 ln -sf "$prefix/tapqueue-admin" /usr/local/bin/tapqueue-admin
 
 install -d -m 755 "$confdir"
@@ -58,8 +61,11 @@ else
 fi
 
 install -m 644 "$here/tapqueue-server.service" "$unit"
+install -m 644 "$here/tapqueue-update.service" "$here/tapqueue-update.path" /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now tapqueue-server
+# Upgrades asked for from the console. Enabling the path unit doesn't start an upgrade by itself.
+systemctl enable --now tapqueue-update.path
 
 for _ in $(seq 1 20); do
     if curl -fsS http://127.0.0.1:"$(sed -n 's/^listen = ".*:\([0-9]*\)"/\1/p' "$config" | head -1)"/healthz >/dev/null 2>&1; then

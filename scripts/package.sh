@@ -3,7 +3,7 @@
 #
 #   scripts/package.sh server    server and station (they share <Version>):
 #     TapQueue_server_<version>_linux-x64.tar.gz    tapqueue-server, tapqueue-admin, libe_sqlite3.so, example config,
-#                                                   systemd units, install-server.sh
+#                                                   systemd units, install-server.sh, update-server.sh
 #     TapQueue_station_<version>_linux-x64.tar.gz   tapqueue-station, example config, systemd unit, udev rule,
 #                                                   install-station.sh
 #   scripts/package.sh client    the Windows and Linux clients (<TapQueueClientVersion>):
@@ -45,7 +45,8 @@ if [ "$what" != client ]; then
     publish TapQueue.Admin linux-x64 server
     rm -f "$out/server/"*.staticwebassets.*   # ASP.NET build leftover; the server serves no static files
     cp config/server.example.toml deploy/systemd/tapqueue-server.service deploy/systemd/tapqueue-console.service \
-        deploy/install-server.sh "$out/server/"
+        deploy/systemd/tapqueue-update.service deploy/systemd/tapqueue-update.path \
+        deploy/install-server.sh deploy/update-server.sh "$out/server/"
     tarball server "TapQueue_server_${version}_linux-x64"
 
     publish TapQueue.Station linux-x64 station
