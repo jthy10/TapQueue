@@ -133,6 +133,7 @@ public static class ServerApp
         || path.StartsWithSegments("/api/v1/admin/client-builds")
         || path.StartsWithSegments("/api/v1/admin/station-builds")
         || path.StartsWithSegments("/api/v1/admin/users/import");
+
     /// <summary>The port Kestrel actually listens on for http or https (the config may say 0, as in tests). Null if it doesn't.</summary>
     public static int? BoundPort(IServer server, string scheme) =>
         server.Features.Get<IServerAddressesFeature>()?.Addresses
