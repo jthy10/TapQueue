@@ -196,4 +196,31 @@ public sealed class WorkstationKeyTests : IAsyncLifetime
         own.Group(Ipp.IppTag.OperationAttributes).Add("job-id", Ipp.IppValue.Integer(jobId));
         Assert.Equal(Ipp.IppStatus.Ok, (await ipp.SendAsync(keyedUri, own)).Code);
     }
+
+    [Fact]
+    public async Task AKeyedPrinterWorksOverIpps()
+    {
+        await using var server = await TestServer.StartAsync(tls: true);
+        using var service = server.NewClient();
+        var setup = await TestServer.ReadAsync<ClientSetupResponse>(await service.PostAsJsonAsync("/api/v1/client/setup",
+            new ClientSetupRequest("LAB-PC", "0.8.0+test", "aaaa", null, ClientPlatform.Linux, ""), TapQueueJson.Options));
+        using var alice = await server.SignInAsync("alice");
+        using (var vouch = await service.PostAsJsonAsync("/api/v1/client/workstation-session",
+                   new WorkstationSessionRequest("LAB-PC", setup.WorkstationKey!, alice.DefaultRequestHeaders.Authorization!.Parameter!, "alice"), TapQueueJson.Options))
+            Assert.Equal(HttpStatusCode.NoContent, vouch.StatusCode);
+
+        var uri = $"ipps://{server.HttpsUri!.Authority}{Assert.Single(setup.Queues).IppPath}";
+        var request = Ipp.IppMessage.CreateRequest(Ipp.IppOperation.PrintJob, Ipp.IppClient.NextRequestId(), uri);
+        request.Group(Ipp.IppTag.OperationAttributes)
+            .Add("requesting-user-name", Ipp.IppValue.Name("alice"))
+            .Add("job-name", Ipp.IppValue.Name("secure.pdf"))
+            .Add("document-format", Ipp.IppValue.MimeType("application/pdf"));
+        using var ipp = new Ipp.IppClient(tlsSkipVerify: true, TimeSpan.FromSeconds(30));
+        var printed = await ipp.SendAsync(uri, request, new MemoryStream("%PDF-1.4 test"u8.ToArray()));
+        Assert.Equal(Ipp.IppStatus.Ok, printed.Code);
+        Assert.StartsWith("ipps://", printed.Find(Ipp.IppTag.JobAttributes, "job-printer-uri")!.First?.AsString());
+
+        var job = Assert.Single((await server.Admin.GetFromJsonAsync<List<JobDto>>("/api/v1/admin/jobs", TapQueueJson.Options))!);
+        Assert.Equal("alice", job.Owner);
+    }
 }
