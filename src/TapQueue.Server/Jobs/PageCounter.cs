@@ -10,13 +10,26 @@ namespace TapQueue.Server.Jobs;
 /// Counts the pages in a spooled document, for quotas. Knows PDF, PWG raster, Apple raster (URF)
 /// and JPEG, recognised by their first bytes rather than the document-format the client claimed.
 /// Returns null for anything else, or a file it can't make sense of (an encrypted PDF, say).
+/// Documents come from anyone who can reach the server, so the work is bounded: patterns give up
+/// after <see cref="PatternTimeoutMs"/> ms, compressed streams stop at <see cref="MaxInflatedBytes"/>, and
+/// a count over <see cref="MaxPages"/> is taken as <see cref="MaxPages"/>.
 /// </summary>
 public static partial class PageCounter
 {
     /// <summary>Bigger PDFs than this aren't read into memory to be counted.</summary>
     private const long MaxPdfBytes = 512L * 1024 * 1024;
 
-    public static int? Count(string path)
+    /// <summary>More pages than anyone prints in one job; keeps pages times copies well inside an int.</summary>
+    public const int MaxPages = 100_000;
+
+    /// <summary>The most a PDF's compressed object streams may unpack to, all together.</summary>
+    internal const long MaxInflatedBytes = 64L * 1024 * 1024;
+
+    private const int PatternTimeoutMs = 5_000;
+
+    public static int? Count(string path) => CountUnbounded(path) is { } pages ? Math.Min(pages, MaxPages) : null;
+
+    private static int? CountUnbounded(string path)
     {
         try
         {
@@ -36,7 +49,7 @@ public static partial class PageCounter
                 return 1;
             return null;
         }
-        catch (Exception ex) when (ex is IOException or InvalidDataException or FormatException or OverflowException)
+        catch (Exception ex) when (ex is IOException or InvalidDataException or FormatException or OverflowException or RegexMatchTimeoutException)
         {
             return null;
         }
@@ -47,11 +60,20 @@ public static partial class PageCounter
     {
         if (ranges is null || ranges.Count == 0)
             return pages;
-        var selected = new bool[pages];
-        foreach (var range in ranges)
-            for (var page = Math.Max(range.Lower, 1); page <= Math.Min(range.Upper, pages); page++)
-                selected[page - 1] = true;
-        return selected.Count(s => s);
+        // Overlapping ranges count each page once. Merged rather than marked page by page, since both
+        // the page count and the ranges come from the client.
+        long selected = 0;
+        long next = 1; // the first page not counted yet
+        foreach (var range in ranges.OrderBy(r => r.Lower))
+        {
+            var from = Math.Max(Math.Max(range.Lower, 1L), next);
+            long to = Math.Min(range.Upper, pages);
+            if (to < from)
+                continue;
+            selected += to - from + 1;
+            next = to + 1;
+        }
+        return (int)selected;
     }
 
     // ---- PDF ----
@@ -61,34 +83,35 @@ public static partial class PageCounter
     // and later definitions (incremental updates) replace earlier ones. When that chain can't be
     // followed, count the page objects instead.
 
-    [GeneratedRegex(@"(\d+)\s+\d+\s+obj\b(.*?)endobj", RegexOptions.Singleline)]
+    [GeneratedRegex(@"(\d+)\s+\d+\s+obj\b(.*?)endobj", RegexOptions.Singleline, PatternTimeoutMs)]
     private static partial Regex PdfObject();
 
-    [GeneratedRegex(@"/Root\s+(\d+)\s+\d+\s+R")]
+    [GeneratedRegex(@"/Root\s+(\d+)\s+\d+\s+R", RegexOptions.None, PatternTimeoutMs)]
     private static partial Regex PdfRoot();
 
-    [GeneratedRegex(@"/Pages\s+(\d+)\s+\d+\s+R")]
+    [GeneratedRegex(@"/Pages\s+(\d+)\s+\d+\s+R", RegexOptions.None, PatternTimeoutMs)]
     private static partial Regex PdfPagesRef();
 
-    [GeneratedRegex(@"/Count\s+(\d+)(?!\s+\d+\s+R)")]
+    [GeneratedRegex(@"/Count\s+(\d+)(?!\s+\d+\s+R)", RegexOptions.None, PatternTimeoutMs)]
     private static partial Regex PdfCount();
 
-    [GeneratedRegex(@"/Type\s*/Page(?![A-Za-z])")]
+    [GeneratedRegex(@"/Type\s*/Page(?![A-Za-z])", RegexOptions.None, PatternTimeoutMs)]
     private static partial Regex PdfPageType();
 
-    [GeneratedRegex(@"/Type\s*/ObjStm\b")]
+    [GeneratedRegex(@"/Type\s*/ObjStm\b", RegexOptions.None, PatternTimeoutMs)]
     private static partial Regex PdfObjStmType();
 
-    [GeneratedRegex(@"/(N|First)\s+(\d+)")]
+    [GeneratedRegex(@"/(N|First)\s+(\d+)", RegexOptions.None, PatternTimeoutMs)]
     private static partial Regex PdfObjStmHeader();
 
-    [GeneratedRegex(@"stream\r?\n")]
+    [GeneratedRegex(@"stream\r?\n", RegexOptions.None, PatternTimeoutMs)]
     private static partial Regex PdfStreamStart();
 
     internal static int? CountPdf(byte[] bytes)
     {
         var text = Encoding.Latin1.GetString(bytes);
         var objects = new Dictionary<int, string>();
+        var inflateBudget = MaxInflatedBytes;
         foreach (Match m in PdfObject().Matches(text))
         {
             var number = int.Parse(m.Groups[1].ValueSpan);
@@ -96,7 +119,7 @@ public static partial class PageCounter
             var dictionary = DictionaryPart(body);
             objects[number] = dictionary;
             if (PdfObjStmType().IsMatch(dictionary))
-                foreach (var (packed, packedBody) in UnpackObjectStream(dictionary, body))
+                foreach (var (packed, packedBody) in UnpackObjectStream(dictionary, body, ref inflateBudget))
                     objects[packed] = packedBody;
         }
 
@@ -118,10 +141,11 @@ public static partial class PageCounter
         return stream.Success ? body[..stream.Index] : body;
     }
 
-    private static IEnumerable<(int Number, string Body)> UnpackObjectStream(string dictionary, string body)
+    private static List<(int Number, string Body)> UnpackObjectStream(string dictionary, string body, ref long budget)
     {
+        var objects = new List<(int Number, string Body)>();
         if (!dictionary.Contains("/FlateDecode"))
-            yield break;
+            return objects;
         int? n = null, first = null;
         foreach (Match m in PdfObjStmHeader().Matches(dictionary))
         {
@@ -130,8 +154,8 @@ public static partial class PageCounter
         }
         var start = PdfStreamStart().Match(body);
         var end = body.LastIndexOf("endstream", StringComparison.Ordinal);
-        if (n is null || first is null || !start.Success || end < start.Index)
-            yield break;
+        if (n is null || first is null || !start.Success || end < start.Index || budget <= 0)
+            return objects;
 
         string content;
         try
@@ -139,12 +163,24 @@ public static partial class PageCounter
             var compressed = Encoding.Latin1.GetBytes(body[(start.Index + start.Length)..end]);
             using var inflate = new ZLibStream(new MemoryStream(compressed), CompressionMode.Decompress);
             using var output = new MemoryStream();
-            inflate.CopyTo(output);
-            content = Encoding.Latin1.GetString(output.ToArray());
+            // A few KB can inflate to gigabytes; stop at what's left of the budget.
+            var buffer = new byte[81920];
+            int read;
+            while ((read = inflate.Read(buffer)) > 0)
+            {
+                if (output.Length + read > budget)
+                {
+                    budget = 0;
+                    return objects;
+                }
+                output.Write(buffer, 0, read);
+            }
+            budget -= output.Length;
+            content = Encoding.Latin1.GetString(output.GetBuffer(), 0, (int)output.Length);
         }
         catch (InvalidDataException)
         {
-            yield break; // encrypted, or another filter first
+            return objects; // encrypted, or another filter first
         }
 
         // The stream starts with N pairs of "object-number offset", offsets counted from First.
@@ -158,8 +194,9 @@ public static partial class PageCounter
             var from = Math.Min(entries[i].Offset, content.Length);
             var to = i + 1 < entries.Count ? Math.Min(entries[i + 1].Offset, content.Length) : content.Length;
             if (to > from)
-                yield return (entries[i].Number, content[from..to]);
+                objects.Add((entries[i].Number, content[from..to]));
         }
+        return objects;
     }
 
     // ---- PWG raster (PWG 5102.4) ----

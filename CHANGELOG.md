@@ -11,6 +11,19 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+### Security
+- Print jobs can no longer take the server down: the IPP attributes in a request are limited to
+  4 MB and collections to 16 levels deep, and counting a PDF's pages gives up on documents built to
+  take forever or to unpack to gigabytes. Page counts over 100,000 count as 100,000.
+- Request bodies are limited to 4 MB, except print jobs, client and station builds and user imports.
+- Changing the Active Directory domain controller, its port or its CA certificate takes the bind
+  account's password again, so the saved password can't be sent to another server.
+- The admin console can't be shown in a frame on another site.
+
+### Fixed
+- Jobs being sent to a printer when the server stopped (a restart from the console, an update)
+  are held again when it starts, instead of staying "releasing" for good.
+
 ## [0.7.0] - 2026-09-25
 
 ### Added

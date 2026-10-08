@@ -99,6 +99,16 @@ public sealed class JobStore(Database database)
         database.Execute("UPDATE jobs SET status = $to, error = $err WHERE id = $id AND status = $from",
             ("$to", to), ("$err", error), ("$id", id), ("$from", from)) == 1;
 
+    /// <summary>
+    /// Puts jobs that were being sent to a printer when the server stopped back on hold, so their owner
+    /// can release them again (the printer may or may not have got them). Run once at startup, when no
+    /// release can be under way. Returns how many.
+    /// </summary>
+    public int RecoverInterruptedReleases() =>
+        database.Execute("UPDATE jobs SET status = $held, error = $err WHERE status = $releasing",
+            ("$held", JobStatus.Held), ("$err", "The server restarted while this job was being sent to the printer."),
+            ("$releasing", JobStatus.Releasing));
+
     /// <param name="pages">Pages per copy, or null if they couldn't be counted.</param>
     public void MarkReceived(long id, long sizeBytes, int? pages) =>
         database.Execute("UPDATE jobs SET status = $held, size_bytes = $size, pages = $pages WHERE id = $id AND status = $receiving",

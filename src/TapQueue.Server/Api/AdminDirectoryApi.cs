@@ -56,6 +56,11 @@ public static class AdminDirectoryApi
         };
         if (config == old)
             return Results.Ok(Status(store, sync, schedule));
+        // The saved bind password goes to whatever server these name, and that server then decides who
+        // may sign in with a domain account. So pointing them somewhere else takes the password again.
+        var elsewhere = config.Host != old.Host || config.Port != old.Port || Pem(config.CaCertificate) != Pem(old.CaCertificate);
+        if (elsewhere && old.Password.Length > 0 && string.IsNullOrEmpty(request.Password))
+            return Results.BadRequest(new ErrorResponse("Enter the bind account's password again to change the domain controller or its CA certificate."));
         if (config.DomainSignIn && (config.Host.Length == 0 || config.BindDn.Length == 0 || config.Password.Length == 0))
             return Results.BadRequest(new ErrorResponse("Set the domain controller and bind account before asking people to sign in with their domain account."));
 
@@ -175,6 +180,9 @@ public static class AdminDirectoryApi
                 return Results.Conflict(new ErrorResponse(ex.Message));
             }
         });
+
+    /// <summary>Browsers send a textarea's line breaks as CRLF, the CLI and API as they were typed.</summary>
+    private static string Pem(string pem) => pem.Replace("\r\n", "\n").Trim();
 
     private static string Describe(string kind) => kind switch
     {

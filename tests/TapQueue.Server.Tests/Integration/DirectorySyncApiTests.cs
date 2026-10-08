@@ -53,6 +53,31 @@ public sealed class DirectorySyncApiTests
     }
 
     [Fact]
+    public async Task PointingTheSyncAtAnotherServerTakesThePasswordAgain()
+    {
+        await using var server = await StartAsync();
+        await Patch(server, new UpdateDirectoryConfigRequest(Host: "dc01.lab", BindDn: "svc@lab", Password: "secret",
+            CaCertificate: "-----BEGIN CERTIFICATE-----\r\nAAAA\r\n-----END CERTIFICATE-----"));
+
+        var newHost = await Patch(server, new UpdateDirectoryConfigRequest(Host: "evil.example"));
+        var newPort = await Patch(server, new UpdateDirectoryConfigRequest(Port: 6360));
+        var noCa = await Patch(server, new UpdateDirectoryConfigRequest(CaCertificate: ""));
+        // The console sends the form back as it was, with the textarea's line breaks as LF.
+        var sameAgain = await Patch(server, new UpdateDirectoryConfigRequest(Host: "dc01.lab", Port: 636,
+            CaCertificate: "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----", SyncTime: "02:00"));
+        var withPassword = await Patch(server, new UpdateDirectoryConfigRequest(Host: "dc02.lab", Password: "secret"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, newHost.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, newPort.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, noCa.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, sameAgain.StatusCode);
+        Assert.Equal("dc02.lab", (await TestServer.ReadAsync<DirectoryStatusDto>(withPassword)).Config.Host);
+    }
+
+    private static Task<HttpResponseMessage> Patch(TestServer server, UpdateDirectoryConfigRequest request) =>
+        server.Admin.PatchAsJsonAsync("/api/v1/admin/directory/config", request, TapQueueJson.Options);
+
+    [Fact]
     public async Task AdminsCantChangeWhatAdOwns()
     {
         var staff = _ad.Ou("Staff");
