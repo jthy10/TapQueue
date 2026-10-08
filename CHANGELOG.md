@@ -28,6 +28,9 @@ breaking changes; they're listed under **Changed** with what to do.
   unchanged.
 
 ### Fixed
+- A domain sign-in at the same moment as the Active Directory sync could fail its LDAPS check:
+  each connection rewrote the trusted CA file the other was reading. It's now only written when
+  the CA certificate changes.
 - Jobs being sent to a printer when the server stopped (a restart from the console, an update)
   are held again when it starts, instead of staying "releasing" for good.
 
