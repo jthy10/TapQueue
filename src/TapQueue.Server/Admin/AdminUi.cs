@@ -45,9 +45,11 @@ public static class AdminUi
     private static Stream? Embedded(string path) =>
         typeof(AdminUi).Assembly.GetManifestResourceStream(ResourcePrefix + path);
 
-    private static Stream? FromDisk(string dir, string path)
+    internal static Stream? FromDisk(string dir, string path)
     {
+        // With the separator, so /srv/wwwroot doesn't also let through /srv/wwwroot-old.
+        var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(dir)) + Path.DirectorySeparatorChar;
         var file = Path.GetFullPath(Path.Combine(dir, path));
-        return file.StartsWith(Path.GetFullPath(dir)) && File.Exists(file) ? File.OpenRead(file) : null;
+        return file.StartsWith(root, StringComparison.Ordinal) && File.Exists(file) ? File.OpenRead(file) : null;
     }
 }

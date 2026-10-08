@@ -112,13 +112,35 @@ public sealed class LdapDirectorySourceFactory(ServerConfig serverConfig) : IDir
 
         // OpenLDAP (under System.DirectoryServices.Protocols on Linux) reads trusted CAs from a directory.
         var directory = Path.Combine(serverConfig.Server.DataDir, "directory-ca");
-        Directory.CreateDirectory(directory);
-        foreach (var old in Directory.GetFiles(directory))
-            File.Delete(old);
-        // OpenSSL builds of libldap only find it under its subject hash; GnuTLS builds read any file.
-        File.WriteAllText(Path.Combine(directory, OpenSslSubjectHash.Of(ca) + ".0"), ca.ExportCertificatePem() + "\n");
+        WriteTrustedCa(directory, ca);
         connection.SessionOptions.TrustedCertificatesDirectory = directory;
         connection.SessionOptions.StartNewTlsSessionContext();
+    }
+
+    private static readonly Lock CaFolderGate = new();
+
+    /// <summary>
+    /// Leaves <paramref name="ca"/> as the only certificate in <paramref name="directory"/>. Every bind
+    /// (the sync, each domain sign-in) comes through here, so the file is only rewritten when the
+    /// certificate changed: rewriting it each time could leave another connection a moment with none.
+    /// OpenSSL builds of libldap only find it under its subject hash; GnuTLS builds read any file.
+    /// </summary>
+    internal static void WriteTrustedCa(string directory, X509Certificate2 ca)
+    {
+        var path = Path.Combine(directory, OpenSslSubjectHash.Of(ca) + ".0");
+        var pem = ca.ExportCertificatePem() + "\n";
+        lock (CaFolderGate)
+        {
+            Directory.CreateDirectory(directory);
+            if (!File.Exists(path) || File.ReadAllText(path) != pem)
+            {
+                var temp = path + ".tmp";
+                File.WriteAllText(temp, pem);
+                File.Move(temp, path, overwrite: true);
+            }
+            foreach (var other in Directory.GetFiles(directory).Where(f => f != path))
+                File.Delete(other);
+        }
     }
 }
 
