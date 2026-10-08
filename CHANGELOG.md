@@ -43,6 +43,8 @@ breaking changes; they're listed under **Changed** with what to do.
   that stays signed in counts as using it), so a copied sign-in file doesn't work for ever.
 - The sign-in throttle forgets names with no recent wrong passwords, so trying many names can't
   slowly use up the server's memory.
+- In the user CSV export, a name that would start a spreadsheet formula (=, +, -, @) gets a
+  leading `'`, so opening the file can't run it. Importing the file takes the `'` off again.
 - Signing in to the tray with a domain password is throttled like the console's sign-in: after
   5 wrong passwords for a name, or 20 from one address, within 15 minutes, wait 15 minutes.
 

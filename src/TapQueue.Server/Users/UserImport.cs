@@ -51,7 +51,7 @@ public sealed class UserImport(UserStore users, GroupStore groups, BadgeStore ba
         var planned = new List<Planned>();
         for (var r = 1; r < rows.Count; r++)
         {
-            string? Cell(string name) => column.TryGetValue(name, out var i) ? (i < rows[r].Length ? rows[r][i].Trim() : "") : null;
+            string? Cell(string name) => column.TryGetValue(name, out var i) ? (i < rows[r].Length ? Csv.Unguard(rows[r][i].Trim()) : "") : null;
             planned.Add(PlanRow(r + 1, Cell, seen, cardsInFile, allGroups, memberships));
         }
 
@@ -189,6 +189,6 @@ public sealed class UserImport(UserStore users, GroupStore groups, BadgeStore ba
                     u.Disabled ? "true" : "false",
                     string.Join(';', (cards.GetValueOrDefault(u.Id) ?? []).Select(b => b.Label.Length > 0 ? $"{b.CardHint} ({b.Label})" : b.CardHint)),
                     u.CreatedAt.ToString("yyyy-MM-dd"),
-                })));
+                })), guardFormulas: true);
     }
 }
