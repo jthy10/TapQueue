@@ -33,7 +33,8 @@ public sealed record JobRecord(
     string? ReleasedPrinterId,
     string? Error,
     string? FormerOwner,
-    int? Pages)
+    int? Pages,
+    string? Workstation = null)
 {
     /// <summary>What the job counts against a quota: its pages times copies, and 1 page if it couldn't be counted.</summary>
     public int ChargedPages => (Pages ?? 1) * Copies;
@@ -44,6 +45,7 @@ public sealed record JobRecord(
 }
 
 /// <param name="JobAttributes">The encoded IPP job-attributes group from the client (copies, media, page-ranges…).</param>
+/// <param name="Workstation">The PC whose keyed printer it came through, or null for a keyless job.</param>
 public sealed record NewJob(
     long? UserId,
     string? OwnerHint,
@@ -53,27 +55,29 @@ public sealed record NewJob(
     int Copies,
     string SourceIp,
     DateTimeOffset ExpiresAt,
-    byte[]? JobAttributes);
+    byte[]? JobAttributes,
+    string? Workstation = null);
 
 public sealed class JobStore(Database database)
 {
     private const string SelectColumns = """
         SELECT j.id, j.user_id, u.username, j.owner_hint, j.queue_id, j.name, j.document_format, j.copies,
                j.size_bytes, j.status, j.source_ip, j.submitted_at, j.expires_at, j.released_at,
-               j.released_printer_id, j.error, j.former_owner, j.pages
+               j.released_printer_id, j.error, j.former_owner, j.pages, j.workstation
         FROM jobs j LEFT JOIN users u ON u.id = j.user_id
         """;
 
     public JobRecord Create(NewJob job)
     {
         var id = (long)database.Scalar("""
-            INSERT INTO jobs (user_id, owner_hint, queue_id, name, document_format, copies, job_attributes, status, source_ip, submitted_at, expires_at)
-            VALUES ($user, $hint, $queue, $name, $format, $copies, $attrs, $status, $ip, $now, $expires)
+            INSERT INTO jobs (user_id, owner_hint, queue_id, name, document_format, copies, job_attributes, status, source_ip, submitted_at, expires_at, workstation)
+            VALUES ($user, $hint, $queue, $name, $format, $copies, $attrs, $status, $ip, $now, $expires, $ws)
             RETURNING id
             """,
             ("$user", job.UserId), ("$hint", job.OwnerHint), ("$queue", job.QueueId), ("$name", job.Name),
             ("$format", job.DocumentFormat), ("$copies", job.Copies), ("$attrs", job.JobAttributes),
-            ("$status", JobStatus.Receiving), ("$ip", job.SourceIp), ("$now", DateTimeOffset.UtcNow), ("$expires", job.ExpiresAt))!;
+            ("$status", JobStatus.Receiving), ("$ip", job.SourceIp), ("$now", DateTimeOffset.UtcNow), ("$expires", job.ExpiresAt),
+            ("$ws", job.Workstation))!;
         return Get(id)!;
     }
 
@@ -88,8 +92,10 @@ public sealed class JobStore(Database database)
         database.Query(SelectColumns + (status is null ? "" : " WHERE j.status = $s") + " ORDER BY j.id DESC LIMIT $limit",
             Map, ("$s", status), ("$limit", limit));
 
-    public List<JobRecord> ListFromIp(string sourceIp, int limit) =>
-        database.Query(SelectColumns + " WHERE j.source_ip = $ip ORDER BY j.id DESC LIMIT $limit", Map, ("$ip", sourceIp), ("$limit", limit));
+    /// <summary>Jobs sent through <paramref name="workstation"/>'s keyed printers, or with null, keyless jobs from <paramref name="sourceIp"/>.</summary>
+    public List<JobRecord> ListFrom(string? workstation, string sourceIp, int limit) => workstation is null
+        ? database.Query(SelectColumns + " WHERE j.source_ip = $ip AND j.workstation IS NULL ORDER BY j.id DESC LIMIT $limit", Map, ("$ip", sourceIp), ("$limit", limit))
+        : database.Query(SelectColumns + " WHERE j.workstation = $w ORDER BY j.id DESC LIMIT $limit", Map, ("$w", workstation), ("$limit", limit));
 
     public int CountHeld() =>
         Convert.ToInt32(database.Scalar("SELECT COUNT(*) FROM jobs WHERE status = $held", ("$held", JobStatus.Held)));
@@ -142,5 +148,6 @@ public sealed class JobStore(Database database)
         ReleasedPrinterId: r.GetStringOrNull(14),
         Error: r.GetStringOrNull(15),
         FormerOwner: r.GetStringOrNull(16),
-        Pages: r.IsDBNull(17) ? null : r.GetInt32(17));
+        Pages: r.IsDBNull(17) ? null : r.GetInt32(17),
+        Workstation: r.GetStringOrNull(18));
 }

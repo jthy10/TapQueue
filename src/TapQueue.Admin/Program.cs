@@ -96,6 +96,9 @@ const string Usage = """
       tapqueue-admin server set quota-overrun allow|deny|default
                                                      allow (default): a job prints in full if they're under their
                                                      page limit when it starts; deny: only jobs that fit
+      tapqueue-admin server set address-matching on|off|default
+                                                     on (default): jobs without a PC key (clients before 0.8)
+                                                     go to whoever is signed in at their address; off: nobody
       tapqueue-admin server log [--follow]           The server's recent log lines, and new ones with --follow
       tapqueue-admin server restart                  Restart tapqueue-server (only when systemd runs it)
 
@@ -778,6 +781,7 @@ async Task<int> ShowServer()
     Console.WriteLine($"hold-hours       {server.HoldHours,-6} ({Source("holdHours")})");
     Console.WriteLine($"session-timeout  {server.SessionTimeoutMinutes,-6} minutes ({Source("sessionTimeoutMinutes")})");
     Console.WriteLine($"quota-overrun    {server.QuotaOverrun,-6} ({(server.ChangedSettings?.Contains("quotaOverrun") == true ? "set here" : "default")})");
+    Console.WriteLine($"address-matching {server.AddressMatching,-6} ({(server.ChangedSettings?.Contains("addressMatching") == true ? "set here" : "default")})");
     Console.WriteLine($"auth.mode        {server.AuthMode,-6} (server.toml; restart to change)");
     return 0;
 }
@@ -789,17 +793,24 @@ async Task<int> SetServerSetting(string name, string value)
         "hold-hours" => "holdHours",
         "session-timeout" => "sessionTimeoutMinutes",
         "quota-overrun" => "quotaOverrun",
+        "address-matching" => "addressMatching",
         _ => null,
     };
     if (key is null)
     {
-        Console.Error.WriteLine("Settings are hold-hours, session-timeout and quota-overrun.");
+        Console.Error.WriteLine("Settings are hold-hours, session-timeout, quota-overrun and address-matching.");
         return 2;
     }
     if (key == "quotaOverrun")
     {
         var overrun = value == "default" ? new UpdateServerSettingsRequest(Reset: [key]) : new UpdateServerSettingsRequest(QuotaOverrun: value);
         if (await Send<ServerInfoDto>(HttpMethod.Patch, "server/settings", overrun) is null) return 1;
+        return await ShowServer();
+    }
+    if (key == "addressMatching")
+    {
+        var matching = value == "default" ? new UpdateServerSettingsRequest(Reset: [key]) : new UpdateServerSettingsRequest(AddressMatching: value);
+        if (await Send<ServerInfoDto>(HttpMethod.Patch, "server/settings", matching) is null) return 1;
         return await ShowServer();
     }
     int? number = value == "default" ? null : int.Parse(value);

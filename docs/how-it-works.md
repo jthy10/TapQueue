@@ -60,10 +60,42 @@ recorded in the activity log under **Printers**, logged by the server, and liste
 IPP jobs carry a username (`requesting-user-name`), but it's just a string the sending computer
 fills in, and anyone can put anything there. TapQueue doesn't trust it on its own.
 
-Instead, the **tray app signs in** with the user's token (or, if the server asks for it, their
-[domain account](active-directory.md#tray-sign-in)) and keeps a session open with a heartbeat.
-When a job arrives, the server looks at the **IP address it came from** and finds the signed-in
-session(s) on that address:
+### By PC and PC user (clients 0.8 and later)
+
+1. **The PC gets a key.** The first time the TapQueue service on a PC checks in, the server gives
+   that PC a key. The service keeps it in `workstation-key.json` (in `%ProgramData%\TapQueue` on
+   Windows, `/var/lib/tapqueue-client` on Linux), readable only by SYSTEM and administrators, or
+   root. From then on the server only accepts check-ins for that computer name with that key.
+2. **Its printers carry a print key.** The service adds the PC's printers with a path like
+   `/ipp/secure/pc/<print key>`. The print key is made from the PC's key but can't be turned back
+   into it, so although anyone on the PC can read a printer's path, it only tells the server which
+   PC a job came from, whatever address the job arrives from.
+3. **The service vouches for each tray app.** When someone's tray app signs in, it asks the
+   service on the same PC (over the local pipe or socket it already uses for "Check for updates")
+   to vouch for its session. The service asks the operating system which PC user is on the other
+   end (Windows tells it the account behind the pipe; Linux the user behind the socket), and tells
+   the server, with the PC's key: this session belongs to PC user `CORP\jake` on this PC. The tray
+   app's own word for who it runs as isn't used.
+4. **A job goes to the session of the PC user who printed it.** Windows' spooler and CUPS fill in
+   the job's username with the PC user who printed. The server looks among the sessions this PC
+   vouched for and gives the job to the one whose PC user matches (`CORP\jake`, `jake` and
+   `jake@corp.local` all count as `jake`).
+
+| Signed-in sessions this PC vouched for | Result |
+|---|---|
+| one for the PC user who printed | The job is theirs. |
+| none for that PC user (even if someone else is signed in there) | The job is held with no owner. |
+| the job has no username at all | It goes to the one person signed in there, if there's exactly one. |
+
+This works the same on a terminal server with dozens of people, on PCs behind NAT or a VPN, and
+on PCs whose address changes: neither the address nor the username alone decides anything.
+
+### By address (keyless jobs)
+
+Printers that clients older than 0.8 added, and jobs sent straight to the server, have no print
+key. While **Jobs without a PC key** (Server page, or `tapqueue-admin server set address-matching`)
+is on, the default, they're matched the old way: the server finds the signed-in session(s) at the
+**IP address the job came from**:
 
 | Signed-in users at that address | Result |
 |---|---|
@@ -71,28 +103,36 @@ session(s) on that address:
 | several (e.g. a terminal server) | The one whose Windows username matches the job's username. |
 | none | The job is held with no owner. With `auth.mode = "dev"` only, the job's username is trusted. |
 
+That breaks down behind NAT (many PCs share an address), on terminal servers (matching falls back
+to a username the tray app reports itself) and when someone sets `requesting-user-name` by hand.
+Once every PC under **Workstations** shows a key, turn address matching off: keyless jobs are then
+held with no owner.
+
+### Moving over
+
+Nothing to do but update. A PC's service gets its key at its first check-in on client 0.8 with a
+0.8 server, re-adds its printers with the print key (once, like **Refresh printers**), and tray
+apps are vouched for at their next sign-in or heartbeat. Jobs already held keep their owner.
+
+- A PC that was **reinstalled** loses its key, and its service is then turned away ("already has a
+  TapQueue key"). Forget it under **Workstations** (or `tapqueue-admin workstations forget`); it
+  gets a new key at its next check-in. Forgetting a PC also stops its old printers' jobs from being
+  accepted until the service has re-added them.
+- Going back to a client older than 0.8 on a PC that has a key needs the same: forget the PC.
+
+### Limits
+
+- **The tray app isn't running** (not started, crashed, not installed): that PC user's jobs have no
+  owner.
+- **Anyone on a PC can print into another signed-in PC user's queue there**, by sending a job
+  straight to the server with that PC's print key (readable from the printer) and the other
+  person's username. They can't release or read anyone else's jobs, and can't do it from another PC.
+- Until [TLS](roadmap.md) is in, keys and print keys cross the network in the clear like
+  everything else.
+
 Jobs with no owner show up in `tapqueue-admin jobs` as "unowned" and expire normally. The logic
-lives in [`JobOwnerResolver`](../src/TapQueue.Server/Jobs/JobOwnerResolver.cs).
-
-### Limits of matching by address
-
-Matching by address works when each PC reaches the server from its own IP, which is true on a normal
-office LAN. It breaks down when that isn't the case:
-
-- **NAT between clients and the server** (a VPN concentrator, a remote site behind one public IP,
-  a guest network): many PCs share one address. Jobs are matched by Windows username among the
-  users signed in behind that address, so two people with the same Windows username behind the same
-  NAT can't be told apart.
-- **Terminal servers / VDI hosts**: every session shares the host's IP. Matching falls back to
-  the Windows username, which works as long as each user runs the tray app in their own session.
-- **The tray app isn't running** (not started, crashed, not installed): the job has no owner.
-- **Someone sets `requesting-user-name` by hand on a shared host** and happens to match another
-  signed-in user's Windows username: they can put a job in that user's queue. They can't release
-  or read anyone else's jobs, though.
-
-Proper per-job authentication (IPP over TLS with each user's own credentials) is on the roadmap
-and would replace address matching. In the meantime, the resolver is the only place that decides
-ownership, so it can be swapped out without touching the rest of the server.
+lives in [`JobOwnerResolver`](../src/TapQueue.Server/Jobs/JobOwnerResolver.cs), the only place that
+decides ownership.
 
 ## Security notes
 

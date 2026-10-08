@@ -98,7 +98,7 @@ public static class AdminApi
     private static ServerInfoDto ServerInfo(ServerConfig config, ServerSettings settings, Database database, JobStore jobs) => new(
         TapQueueVersion.Current, ServerClock.StartedAt, config.Auth.Mode, config.Server.Listen, config.Server.DataDir,
         database.SchemaVersion(), settings.HoldHours, settings.SessionTimeoutMinutes, jobs.CountHeld(),
-        ServerSettings.Keys.Where(settings.IsSaved).ToList(), AdminServerApi.CanRestart, settings.QuotaOverrun);
+        ServerSettings.Keys.Where(settings.IsSaved).ToList(), AdminServerApi.CanRestart, settings.QuotaOverrun, settings.AddressMatching);
 
     private static IResult UpdateServerSettings(UpdateServerSettingsRequest request, ServerConfig config, ServerSettings settings,
         Database database, JobStore jobs, EventLog events)
@@ -110,6 +110,8 @@ public static class AdminApi
             return Results.BadRequest(new ErrorResponse("sessionTimeoutMinutes must be 2 to 1440 (a day)."));
         if (request.QuotaOverrun is { } overrun && !QuotaOverrun.All.Contains(overrun))
             return Results.BadRequest(new ErrorResponse($"quotaOverrun must be {string.Join(" or ", QuotaOverrun.All)}."));
+        if (request.AddressMatching is { } matching && !AddressMatching.All.Contains(matching))
+            return Results.BadRequest(new ErrorResponse($"addressMatching must be {string.Join(" or ", AddressMatching.All)}."));
         foreach (var key in request.Reset ?? [])
             if (!ServerSettings.Keys.Contains(key))
                 return Results.BadRequest(new ErrorResponse($"Can't reset \"{key}\"; only {string.Join(", ", ServerSettings.Keys)}."));
@@ -142,6 +144,17 @@ public static class AdminApi
             changes.Add($"over page limits: {DescribeOverrun(o)}");
         }
 
+        if (request.Reset?.Contains(ServerSettings.AddressMatchingKey) == true)
+        {
+            settings.Reset(ServerSettings.AddressMatchingKey);
+            changes.Add($"jobs without a PC key back to the default ({DescribeMatching(settings.AddressMatching)})");
+        }
+        else if (request.AddressMatching is { } m && (m != settings.AddressMatching || !settings.IsSaved(ServerSettings.AddressMatchingKey)))
+        {
+            settings.Set(ServerSettings.AddressMatchingKey, m);
+            changes.Add($"jobs without a PC key: {DescribeMatching(m)}");
+        }
+
         if (changes.Count > 0)
             events.Admin(null, $"Server settings: {string.Join("; ", changes)}.");
         return Results.Ok(ServerInfo(config, settings, database, jobs));
@@ -149,6 +162,9 @@ public static class AdminApi
         static string DescribeOverrun(string overrun) => overrun == QuotaOverrun.Deny
             ? "only jobs that fit in what's left print"
             : "a job prints in full if they're under the limit when it starts";
+        static string DescribeMatching(string matching) => matching == AddressMatching.Off
+            ? "not matched to anyone"
+            : "matched to whoever is signed in at the address they came from";
         static string Plural(int n, string unit) => n == 1 ? $"1 {unit}" : $"{n} {unit}s";
     }
 

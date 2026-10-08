@@ -4,7 +4,10 @@ using TapQueue.Shared.Api;
 namespace TapQueue.Server.Data;
 
 /// <param name="LoginId">The remembered domain sign-in it came from (<see cref="ClientLoginStore"/>), if any.</param>
-public sealed record SessionRecord(long Id, long UserId, string? WindowsUser, string? Hostname, string RemoteIp, long? LoginId = null);
+/// <param name="Workstation">The PC whose TapQueue service vouched for this session, if one did.</param>
+/// <param name="PcUser">The PC user that service saw running the tray app. Unlike <paramref name="WindowsUser"/>, not the tray app's own word.</param>
+public sealed record SessionRecord(long Id, long UserId, string? WindowsUser, string? Hostname, string RemoteIp, long? LoginId = null,
+    string? Workstation = null, string? PcUser = null);
 
 /// <summary>
 /// A session is a signed-in user client. Sessions are how the server knows which TapQueue user
@@ -12,7 +15,7 @@ public sealed record SessionRecord(long Id, long UserId, string? WindowsUser, st
 /// </summary>
 public sealed class SessionStore(Database database)
 {
-    private const string Columns = "id, user_id, windows_user, hostname, remote_ip, login_id";
+    private const string Columns = "id, user_id, windows_user, hostname, remote_ip, login_id, workstation, pc_user";
 
     public void Create(string tokenHash, long userId, string? windowsUser, string? hostname, string remoteIp, string? clientVersion = null,
         long? loginId = null) =>
@@ -56,6 +59,22 @@ public sealed class SessionStore(Database database)
     /// <summary>Removes a session the client itself signed out of.</summary>
     public void End(long id) => database.Execute("DELETE FROM sessions WHERE id = $id", ("$id", id));
 
+    /// <summary>
+    /// Records that <paramref name="workstation"/>'s TapQueue service vouched for the live session
+    /// <paramref name="tokenHash"/>, run by <paramref name="pcUser"/> there. Null if there's no such live session.
+    /// </summary>
+    public SessionRecord? Verify(string tokenHash, string workstation, string pcUser, TimeSpan timeout) =>
+        database.QueryOne($"""
+            UPDATE sessions SET workstation = $w, pc_user = $u
+            WHERE token_hash = $t AND last_seen_at >= $cutoff AND signed_out_at IS NULL
+            RETURNING {Columns}
+            """, Map, ("$w", workstation), ("$u", pcUser), ("$t", tokenHash), ("$cutoff", DateTimeOffset.UtcNow - timeout));
+
+    /// <summary>Live sessions that <paramref name="workstation"/>'s TapQueue service vouched for, newest first.</summary>
+    public List<SessionRecord> ActiveOnWorkstation(string workstation, TimeSpan timeout) =>
+        database.Query($"SELECT {Columns} FROM sessions WHERE workstation = $w AND last_seen_at >= $cutoff AND signed_out_at IS NULL ORDER BY last_seen_at DESC",
+            Map, ("$w", workstation), ("$cutoff", DateTimeOffset.UtcNow - timeout));
+
     public List<SessionRecord> ActiveForIp(string remoteIp, TimeSpan timeout) =>
         database.Query($"SELECT {Columns} FROM sessions WHERE remote_ip = $ip AND last_seen_at >= $cutoff AND signed_out_at IS NULL", Map,
             ("$ip", remoteIp), ("$cutoff", DateTimeOffset.UtcNow - timeout));
@@ -63,16 +82,18 @@ public sealed class SessionStore(Database database)
     /// <summary>Live sessions, newest first, for `tapqueue-admin clients`.</summary>
     public List<ClientSessionDto> ListActive(TimeSpan timeout) =>
         database.Query("""
-            SELECT s.id, u.username, s.hostname, s.windows_user, s.client_version, s.remote_ip, s.last_seen_at
+            SELECT s.id, u.username, s.hostname, s.windows_user, s.client_version, s.remote_ip, s.last_seen_at, s.workstation IS NOT NULL
             FROM sessions s JOIN users u ON u.id = s.user_id
             WHERE s.last_seen_at >= $cutoff AND s.signed_out_at IS NULL
             ORDER BY s.last_seen_at DESC
-            """, r => new ClientSessionDto(r.GetInt64(0), r.GetString(1), r.GetStringOrNull(2), r.GetStringOrNull(3), r.GetStringOrNull(4), r.GetString(5), r.GetTime(6)),
+            """, r => new ClientSessionDto(r.GetInt64(0), r.GetString(1), r.GetStringOrNull(2), r.GetStringOrNull(3), r.GetStringOrNull(4), r.GetString(5), r.GetTime(6),
+                r.GetBoolean(7)),
             ("$cutoff", DateTimeOffset.UtcNow - timeout));
 
     public int DeleteExpired(TimeSpan timeout) =>
         database.Execute("DELETE FROM sessions WHERE last_seen_at < $cutoff", ("$cutoff", DateTimeOffset.UtcNow - timeout));
 
     private static SessionRecord Map(SqliteDataReader r) =>
-        new(r.GetInt64(0), r.GetInt64(1), r.GetStringOrNull(2), r.GetStringOrNull(3), r.GetString(4), r.IsDBNull(5) ? null : r.GetInt64(5));
+        new(r.GetInt64(0), r.GetInt64(1), r.GetStringOrNull(2), r.GetStringOrNull(3), r.GetString(4), r.IsDBNull(5) ? null : r.GetInt64(5),
+            r.GetStringOrNull(6), r.GetStringOrNull(7));
 }

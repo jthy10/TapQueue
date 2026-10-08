@@ -21,10 +21,12 @@ public static class ClientApi
         // For the TapQueue service on each PC, which runs as the machine rather than a user.
         // Queue names and client builds are not secret: anyone who can reach the server can print to it.
         app.MapGet("/api/v1/client/setup", (QueueStore queues, ClientBuildStore builds) =>
-            new ClientSetupResponse(queues.List().Select(ToDto).ToList(), builds.Latest(ClientPlatform.Windows)?.ToDto()));
+            new ClientSetupResponse(queues.List().Select(q => ToDto(q)).ToList(), builds.Latest(ClientPlatform.Windows)?.ToDto()));
         // The same, from services that say which PC they are and what they run (0.3 on), so they show
         // up under Workstations and can be told to update now.
         app.MapPost("/api/v1/client/setup", CheckIn);
+        // The service vouching for a tray app on its PC, with the key its check-in was given.
+        app.MapPost("/api/v1/client/workstation-session", VerifySession);
         app.MapGet("/api/v1/client/builds/{sha256}", DownloadBuild);
         // Anonymous like the setup check-in: a program that crashes may not have signed in (or be able to).
         app.MapPost("/api/v1/client/crash", ReportCrash);
@@ -144,7 +146,7 @@ public static class ClientApi
             token,
             user.ToDto(),
             // Only what their groups allow, so the client doesn't install queues they can't print to.
-            queues.List().Where(q => access.CanPrintTo(user.Id, q.Id)).Select(ToDto).ToList(),
+            queues.List().Where(q => access.CanPrintTo(user.Id, q.Id)).Select(q => ToDto(q)).ToList(),
             printers.All.Where(p => access.CanReleaseAt(user.Id, p.Id)).Select(printers.ToDto).ToList(),
             HeartbeatSeconds,
             builds.Latest(ClientPlatform.Parse(request.Platform) ?? ClientPlatform.Windows)?.ToDto(),
@@ -165,17 +167,71 @@ public static class ClientApi
         return Results.NoContent();
     }
 
-    private static IResult CheckIn(ClientSetupRequest request, HttpContext http, QueueStore queues, ClientBuildStore builds, WorkstationStore workstations)
+    /// <summary>
+    /// A service that sends a key (0.8 on) gets its queues' IPP paths with the key in them. The first
+    /// time one checks in with an empty key, its PC is given a key, and from then on a check-in for
+    /// that PC needs it: whoever else claims the PC's name can't take over its printers' jobs. A PC
+    /// that lost its key (reinstalled) gets a new one once an admin forgets it under Workstations.
+    /// </summary>
+    private static IResult CheckIn(ClientSetupRequest request, HttpContext http, QueueStore queues, ClientBuildStore builds, WorkstationStore workstations,
+        ILoggerFactory loggers)
     {
         var computer = request.Computer?.Trim();
         if (string.IsNullOrEmpty(computer) || computer.Length > 255)
             return Results.BadRequest(new ErrorResponse("computer is required."));
         if (ClientPlatform.Parse(request.Platform) is not { } platform)
             return Results.BadRequest(new ErrorResponse($"Unknown platform \"{request.Platform}\". Known: {string.Join(", ", ClientPlatform.All)}."));
+
+        var keyHash = workstations.Get(computer)?.KeyHash;
+        if (keyHash is not null && (string.IsNullOrEmpty(request.WorkstationKey) || !Tokens.FixedTimeEquals(keyHash, Tokens.Hash(request.WorkstationKey))))
+        {
+            loggers.CreateLogger("TapQueue.Server.Api.ClientApi").LogWarning(
+                "Turned away a check-in as {Computer} from {Ip}: it didn't have that PC's key", computer, http.ClientIp());
+            return Results.Json(new ErrorResponse(
+                    $"{computer} already has a TapQueue key, and this isn't it. If this PC was reinstalled, forget {computer} under Workstations and it gets a new key."),
+                statusCode: StatusCodes.Status403Forbidden);
+        }
+
         var command = workstations.CheckIn(computer, http.ClientIp(), platform, request with { UpdateError = Clean(request.UpdateError) });
-        return Results.Ok(new ClientSetupResponse(queues.List().Select(ToDto).ToList(), builds.Latest(platform)?.ToDto(), command));
+
+        string? key = keyHash is null ? null : request.WorkstationKey;
+        string? newKey = null;
+        if (key is null && request.WorkstationKey is not null)
+        {
+            newKey = Tokens.New();
+            // Two check-ins at once: only the first gets to set it, and the other asks again next time.
+            key = workstations.SetKey(computer, newKey) ? newKey : null;
+            if (key is null) newKey = null;
+            else loggers.CreateLogger("TapQueue.Server.Api.ClientApi").LogInformation(
+                "Gave {Computer} ({Ip}) its TapQueue key; its jobs are matched by PC user from now on", computer, http.ClientIp());
+        }
+        return Results.Ok(new ClientSetupResponse(queues.List().Select(q => ToDto(q, key)).ToList(), builds.Latest(platform)?.ToDto(), command, newKey));
 
         static string? Clean(string? error) => string.IsNullOrWhiteSpace(error) ? null : error.Trim()[..Math.Min(error.Trim().Length, 500)];
+    }
+
+    /// <summary>
+    /// The PC's service says which PC user runs the tray app with this session. Only a service with
+    /// the PC's key can say so, and it found the PC user from the operating system, so jobs from that
+    /// PC's keyed printers can be matched by PC user without trusting the tray app (or its address).
+    /// </summary>
+    private static IResult VerifySession(WorkstationSessionRequest request, HttpContext http, WorkstationStore workstations, SessionStore sessions,
+        UserStore users, ServerSettings settings, ILoggerFactory loggers)
+    {
+        var computer = request.Computer?.Trim();
+        var pcUser = request.PcUser?.Trim();
+        if (string.IsNullOrEmpty(computer) || string.IsNullOrEmpty(request.WorkstationKey) || string.IsNullOrEmpty(request.SessionToken) ||
+            string.IsNullOrEmpty(pcUser) || pcUser.Length > 255)
+            return Results.BadRequest(new ErrorResponse("computer, workstationKey, sessionToken and pcUser are required."));
+        if (workstations.Get(computer) is not { KeyHash: { } keyHash } || !Tokens.FixedTimeEquals(keyHash, Tokens.Hash(request.WorkstationKey)))
+            return Results.Json(new ErrorResponse($"That isn't {computer}'s TapQueue key."), statusCode: StatusCodes.Status403Forbidden);
+        if (sessions.Verify(Tokens.Hash(request.SessionToken), computer, pcUser, settings.SessionTimeout) is not { } session)
+            return Results.Json(new ErrorResponse("Session expired. Sign in again."), statusCode: StatusCodes.Status401Unauthorized);
+
+        loggers.CreateLogger("TapQueue.Server.Api.ClientApi").LogInformation(
+            "{Computer}'s TapQueue service vouched for {User}'s tray app, run by PC user {PcUser}; jobs {PcUser} prints there go to {User}",
+            computer, users.FindById(session.UserId)?.Username ?? "?", pcUser, pcUser, users.FindById(session.UserId)?.Username ?? "?");
+        return Results.NoContent();
     }
 
     private static IResult ReportCrash(CrashReportRequest report, HttpContext http, CrashStore crashes, EventLog events, ILoggerFactory loggers)
@@ -195,7 +251,12 @@ public static class ClientApi
         return Results.Ok(new { crash.Id });
     }
 
-    private static QueueDto ToDto(QueueRecord q) => new(q.Id, q.Name, q.Description, $"/ipp/{q.Id}");
+    /// <param name="workstationKey">
+    /// The PC's key, for a service that has one: the path then has the PC's print key in it, so its
+    /// printers' jobs are known to come from it. Never the key itself, which anyone on the PC could read there.
+    /// </param>
+    private static QueueDto ToDto(QueueRecord q, string? workstationKey = null) =>
+        new(q.Id, q.Name, q.Description, workstationKey is null ? $"/ipp/{q.Id}" : $"/ipp/{q.Id}/pc/{Tokens.PrintKey(workstationKey)}");
 
     /// <param name="computer">Sent by the client so the log says which PC is updating.</param>
     private static IResult DownloadBuild(string sha256, string? computer, HttpContext http, ClientBuildStore builds, ILoggerFactory loggers)

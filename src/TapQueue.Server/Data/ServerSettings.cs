@@ -14,8 +14,9 @@ public sealed class ServerSettings(Database database, ServerConfig config)
     public const string HoldHoursKey = "holdHours";
     public const string SessionTimeoutKey = "sessionTimeoutMinutes";
     public const string QuotaOverrunKey = "quotaOverrun";
+    public const string AddressMatchingKey = "addressMatching";
 
-    public static readonly string[] Keys = [HoldHoursKey, SessionTimeoutKey, QuotaOverrunKey];
+    public static readonly string[] Keys = [HoldHoursKey, SessionTimeoutKey, QuotaOverrunKey, AddressMatchingKey];
 
     private readonly Lock _lock = new();
     private Dictionary<string, string>? _saved;
@@ -34,6 +35,13 @@ public sealed class ServerSettings(Database database, ServerConfig config)
     /// </summary>
     public string QuotaOverrun =>
         Saved().TryGetValue(QuotaOverrunKey, out var value) && Shared.Api.QuotaOverrun.All.Contains(value) ? value : Shared.Api.QuotaOverrun.Allow;
+
+    /// <summary>
+    /// Whether keyless jobs may be matched by the address they came from (<see cref="Shared.Api.AddressMatching"/>).
+    /// Not in server.toml; on by default, so PCs keep printing while their clients upgrade.
+    /// </summary>
+    public string AddressMatching =>
+        Saved().TryGetValue(AddressMatchingKey, out var value) && Shared.Api.AddressMatching.All.Contains(value) ? value : Shared.Api.AddressMatching.On;
 
     /// <summary>True if <paramref name="key"/> was set here rather than coming from server.toml.</summary>
     public bool IsSaved(string key) => Saved().ContainsKey(key);

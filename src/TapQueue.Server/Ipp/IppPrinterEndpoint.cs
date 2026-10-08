@@ -13,18 +13,36 @@ public sealed class IppPrinterEndpoint(
     JobStore jobs,
     Spool spool,
     JobOwnerResolver owners,
+    WorkstationStore workstations,
     UserStore users,
     AccessPolicy access,
     EventLog events,
     ILogger<IppPrinterEndpoint> logger)
 {
-    public async Task HandleAsync(HttpContext http, string queueId)
+    /// <param name="printKey">
+    /// From printers a TapQueue service (0.8 on) added: the PC's print key (<c>/ipp/{queue}/pc/{printKey}</c>,
+    /// <see cref="Tokens.PrintKey"/>), which says the job comes from that PC whatever its address.
+    /// </param>
+    public async Task HandleAsync(HttpContext http, string queueId, string? printKey = null)
     {
         var queue = queues.Get(queueId);
         if (queue is null)
         {
             http.Response.StatusCode = StatusCodes.Status404NotFound;
             return;
+        }
+        string? workstation = null;
+        if (printKey is not null)
+        {
+            if (workstations.FindByPrintKey(Tokens.Hash(printKey)) is not { } pc)
+            {
+                // The PC was forgotten under Workstations (or the key is made up). Its service gets a new
+                // key and re-adds its printers at its next check-in.
+                logger.LogWarning("Turned away an IPP request from {Ip} with an unknown PC key", http.ClientIp());
+                http.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return;
+            }
+            workstation = pc.Hostname;
         }
         if (!string.Equals(http.Request.ContentType, "application/ipp", StringComparison.OrdinalIgnoreCase))
         {
@@ -46,7 +64,8 @@ public sealed class IppPrinterEndpoint(
             return;
         }
 
-        var context = new RequestContext(http, queue, request, body, $"ipp://{http.Request.Host}/ipp/{queue.Id}");
+        var path = printKey is null ? $"/ipp/{queue.Id}" : $"/ipp/{queue.Id}/pc/{printKey}";
+        var context = new RequestContext(http, queue, request, body, $"ipp://{http.Request.Host}{path}", workstation);
         IppMessage response;
         try
         {
@@ -206,7 +225,7 @@ public sealed class IppPrinterEndpoint(
         var requested = RequestedAttributes(c.Request) ?? ["job-id", "job-uri"]; // RFC 8011 4.2.6.1 default
 
         var response = IppMessage.CreateResponse(c.Request, IppStatus.Ok);
-        foreach (var job in jobs.ListFromIp(c.ClientIp, 200)
+        foreach (var job in jobs.ListFrom(c.Workstation, c.ClientIp, 200)
                      .Where(j => j.QueueId == c.Queue.Id)
                      .Where(j => jobIds is not null ? jobIds.Contains((int)j.Id) : whichJobs == "all" || (whichJobs == "completed") == IsTerminal(j))
                      .Take(limit))
@@ -219,7 +238,7 @@ public sealed class IppPrinterEndpoint(
     /// <summary>Cancels this machine's jobs that are still arriving (held jobs count as completed over IPP).</summary>
     private IppMessage CancelMyJobs(RequestContext c)
     {
-        foreach (var job in jobs.ListFromIp(c.ClientIp, 200).Where(j => j.QueueId == c.Queue.Id))
+        foreach (var job in jobs.ListFrom(c.Workstation, c.ClientIp, 200).Where(j => j.QueueId == c.Queue.Id))
         {
             if (jobs.TryTransition(job.Id, JobStatus.Receiving, JobStatus.Canceled))
                 spool.Delete(job.Id);
@@ -230,7 +249,7 @@ public sealed class IppPrinterEndpoint(
     private JobRecord NewJob(RequestContext c)
     {
         var requestingUser = c.Request.OperationString("requesting-user-name");
-        var (userId, ownerHint) = owners.Resolve(c.ClientIp, requestingUser);
+        var (userId, ownerHint) = owners.Resolve(c.ClientIp, requestingUser, c.Workstation);
         var name = c.Request.OperationString("job-name") ?? c.Request.OperationString("document-name") ?? "Untitled";
         var copies = c.Request.Find(IppTag.JobAttributes, "copies")?.First?.AsInt() ?? 1;
         var jobGroup = c.Request.Groups.FirstOrDefault(g => g.Tag == IppTag.JobAttributes);
@@ -244,12 +263,16 @@ public sealed class IppPrinterEndpoint(
             Copies: Math.Clamp(copies, 1, 999),
             SourceIp: c.ClientIp,
             ExpiresAt: DateTimeOffset.UtcNow.AddHours(settings.HoldHours),
-            JobAttributes: jobGroup is { Attributes.Count: > 0 } ? JobTemplate.Encode(jobGroup) : null));
+            JobAttributes: jobGroup is { Attributes.Count: > 0 } ? JobTemplate.Encode(jobGroup) : null,
+            Workstation: c.Workstation));
 
         if (userId is null)
             logger.LogWarning(
-                "Job {JobId} from {Ip} (\"{User}\") has no owner: no signed-in TapQueue client on that machine",
-                job.Id, c.ClientIp, requestingUser);
+                "Job {JobId} from {Source} (\"{User}\") has no owner: {Why}",
+                job.Id, c.Source, requestingUser,
+                c.Workstation is not null ? "that PC user isn't signed in to the TapQueue tray app there"
+                : settings.AddressMatching == Shared.Api.AddressMatching.On ? "no signed-in TapQueue client on that machine"
+                : "it came without a PC key, and matching by address is off");
         return job;
     }
 
@@ -284,14 +307,21 @@ public sealed class IppPrinterEndpoint(
             job.Username ?? $"nobody yet (client said \"{job.OwnerHint}\")");
         events.Record(EventCategory.Job, job.Username ?? job.OwnerHint ?? job.SourceIp,
             job.Username is null ? EventLog.Job(job.Id) : EventLog.User(job.Username),
-            job.Username is null
+            job.Username is null && job.Workstation is not null
+                ? $"\"{job.Name}\" (job #{job.Id}) arrived from {job.Workstation} as PC user {job.OwnerHint ?? "?"}, who isn't signed in to TapQueue there, so it isn't matched to anyone."
+            : job.Username is null
                 ? $"\"{job.Name}\" (job #{job.Id}) arrived from {job.SourceIp} with no signed-in client there, so it isn't matched to anyone."
                 : $"{job.Username} printed \"{job.Name}\" (job #{job.Id}) to {job.QueueId}; it's held until they release it.");
     }
 
-    /// <summary>Clients may only see and change jobs sent from their own machine.</summary>
+    /// <summary>
+    /// Clients may only see and change jobs sent from their own machine: through the same PC's keyed
+    /// printer, or for keyless jobs, from the same address.
+    /// </summary>
     private JobRecord? FindOwnJob(RequestContext c) =>
-        JobId(c.Request) is { } id && jobs.Get(id) is { } job && job.SourceIp == c.ClientIp && job.QueueId == c.Queue.Id
+        JobId(c.Request) is { } id && jobs.Get(id) is { } job && job.QueueId == c.Queue.Id &&
+        (c.Workstation is null ? job.Workstation is null && job.SourceIp == c.ClientIp
+            : string.Equals(job.Workstation, c.Workstation, StringComparison.OrdinalIgnoreCase))
             ? job
             : null;
 
@@ -311,7 +341,7 @@ public sealed class IppPrinterEndpoint(
     /// </summary>
     private IppMessage? Refused(RequestContext c)
     {
-        var (userId, _) = owners.Resolve(c.ClientIp, c.Request.OperationString("requesting-user-name"));
+        var (userId, _) = owners.Resolve(c.ClientIp, c.Request.OperationString("requesting-user-name"), c.Workstation);
         if (userId is null || users.FindById(userId.Value) is not { } user)
             return null;
         var reason = user.Disabled ? "their account is disabled"
@@ -319,7 +349,7 @@ public sealed class IppPrinterEndpoint(
             : null;
         if (reason is null)
             return null;
-        logger.LogInformation("Refused a job from {User} at {Ip}: {Reason}", user.Username, c.ClientIp, reason);
+        logger.LogInformation("Refused a job from {User} at {Source}: {Reason}", user.Username, c.Source, reason);
         events.Record(EventCategory.Job, user.Username, EventLog.User(user.Username), $"Refused a job from {user.Username}: {reason}.");
         return IppMessage.CreateResponse(c.Request, IppStatus.ClientErrorNotAuthorized,
             user.Disabled ? "Your TapQueue account is disabled." : $"You aren't allowed to print to {c.Queue.Name}.");
@@ -381,8 +411,12 @@ public sealed class IppPrinterEndpoint(
 
     private static bool IsTerminal(JobRecord job) => job.Status != JobStatus.Receiving;
 
-    private sealed record RequestContext(HttpContext Http, QueueRecord Queue, IppMessage Request, Stream Body, string PrinterUri)
+    /// <param name="Workstation">The PC whose keyed printer this came through, or null for a keyless request.</param>
+    private sealed record RequestContext(HttpContext Http, QueueRecord Queue, IppMessage Request, Stream Body, string PrinterUri, string? Workstation)
     {
         public string ClientIp { get; } = Http.ClientIp();
+
+        /// <summary>For the log: the PC, or the address of a keyless request.</summary>
+        public string Source => Workstation is null ? ClientIp : $"{Workstation} ({ClientIp})";
     }
 }

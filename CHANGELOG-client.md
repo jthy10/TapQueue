@@ -14,6 +14,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - **Refresh printers** in the tray menu (Windows and Linux): the TapQueue service checks with the
   server straight away and removes and adds each TapQueue printer again, for when one has gone
   missing or stopped working.
+- Per-job identity (needs server 0.8). The TapQueue service gets a key for the PC from the server,
+  re-adds the printers once with a print key made from it, and vouches for each tray app that signs
+  in on the PC, from the account Windows or Linux says is running it. Jobs are then matched to the
+  PC user who printed them rather than the PC's address. The key is in `workstation-key.json` next
+  to `printers.txt`, readable only by SYSTEM and administrators (root on Linux).
 
 ## [0.7.0] - 2026-09-25
 

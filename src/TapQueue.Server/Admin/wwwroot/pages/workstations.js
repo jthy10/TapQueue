@@ -93,6 +93,9 @@ export async function render(root, ctx) {
         props([
           ["Status", status(pc)],
           pc.platform && ["System", platformName(pc.platform)],
+          pc.service && ["Jobs matched by", pc.hasKey
+            ? ["PC user", h("span", { class: "sub" }, "This PC has a TapQueue key, so its jobs go to the signed-in person who printed them.")]
+            : ["Address", h("span", { class: "sub" }, "No key yet: its client is older than 0.8, or hasn't checked in since the server was updated.")]],
           ["Client", clientVersion(pc, latest)],
           ["Address", h("code", null, pc.lastIp)],
           ["Last seen", pc.lastSeenAt ? [time(pc.lastSeenAt), h("span", { class: "sub" }, dateTime(pc.lastSeenAt))] : "—"],
@@ -112,7 +115,7 @@ export async function render(root, ctx) {
           : h("div", { class: "row-list" }, pc.sessions.map((s) => h("div", { class: "row-item" },
             h("div", null,
               h("a", { class: "cell-strong", href: `users/${enc(s.username)}` }, s.username),
-              h("span", { class: "sub" }, `${pc.platform === "linux-x64" ? "Linux" : "Windows"} user ${s.windowsUser ?? "?"} · client ${s.clientVersion ?? "unknown"} · seen `, time(s.lastSeenAt))),
+              h("span", { class: "sub" }, `${pc.platform === "linux-x64" ? "Linux" : "Windows"} user ${s.windowsUser ?? "?"}${s.verified ? " (vouched for by the PC)" : ""} · client ${s.clientVersion ?? "unknown"} · seen `, time(s.lastSeenAt))),
             button("Sign out", { small: true, onclick: () => signOut(pc, s) })))),
         h("p", { class: "muted", style: "margin:12px 0 0; font-size:12.5px" },
           `A client that stops checking in is signed out after ${timeout} minutes.`),
@@ -149,7 +152,7 @@ export async function render(root, ctx) {
   }
 
   async function forget(pc) {
-    if (!await confirm({ title: `Forget ${pc.hostname}?`, message: "For PCs that are gone. If its TapQueue service checks in again, it comes back.", confirmLabel: "Forget" })) return;
+    if (!await confirm({ title: `Forget ${pc.hostname}?`, message: "For PCs that are gone, or were reinstalled and lost their TapQueue key. If its TapQueue service checks in again, it comes back with a new key.", confirmLabel: "Forget" })) return;
     if (await attempt(() => api.del(`workstations/${enc(pc.hostname)}`), `Forgot ${pc.hostname}`) !== undefined) {
       ctx.setId(null);
       await load();

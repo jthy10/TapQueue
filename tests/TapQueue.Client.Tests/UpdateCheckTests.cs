@@ -41,6 +41,42 @@ public sealed class UpdateCheckTests
         await handling;
     }
 
+    [Fact]
+    public async Task VerifySessionPassesTheTokenAndTheOsUserNotAnythingTheTrayAppSays()
+    {
+        var (service, tray) = Connect();
+        var requests = Channel.CreateUnbounded<UpdateCheck.Request>();
+        (string Token, string PcUser)? asked = null;
+        var handling = UpdateCheck.HandleAsync(service, requests.Writer, NullLogger.Instance, CancellationToken.None,
+            pcUser: () => "CORP\\alice",
+            verify: (token, pcUser, _) =>
+            {
+                asked = (token, pcUser);
+                return Task.FromResult(new SessionVerifyReply(true, null));
+            });
+
+        var reply = await UpdateCheck.AskVerifySessionAsync(tray, "session-token", CancellationToken.None);
+        await handling;
+
+        Assert.True(reply.Success);
+        Assert.Equal(("session-token", "CORP\\alice"), asked);
+        Assert.False(requests.Reader.TryRead(out _)); // not a check-in
+    }
+
+    [Fact]
+    public async Task VerifySessionFailsWhenTheServiceCantTellWhoIsAsking()
+    {
+        var (service, tray) = Connect();
+        var requests = Channel.CreateUnbounded<UpdateCheck.Request>();
+        var handling = UpdateCheck.HandleAsync(service, requests.Writer, NullLogger.Instance, CancellationToken.None,
+            pcUser: () => null,
+            verify: (_, _, _) => throw new InvalidOperationException("must not be called"));
+
+        var reply = await UpdateCheck.AskVerifySessionAsync(tray, "session-token", CancellationToken.None);
+        await handling;
+        Assert.False(reply.Success);
+    }
+
     /// <summary>A connected pair of local sockets: the service's end and the tray app's end.</summary>
     private static (Stream Service, Stream Tray) Connect()
     {

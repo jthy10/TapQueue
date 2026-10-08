@@ -11,6 +11,21 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+### Added
+- Per-job identity instead of IP-based ownership. Each PC's TapQueue service (client 0.8) gets a key,
+  and its printers carry a print key made from it, so the server knows which PC a job came from
+  whatever its address. The service vouches for which PC user runs each signed-in tray app, and a
+  job goes to the session of the PC user who printed it, also on terminal servers and behind NAT.
+  Workstations show whether each PC has a key, and clients whether their PC vouched for them. See
+  [how-it-works.md](docs/how-it-works.md#how-a-job-is-matched-to-a-person).
+- **Jobs without a PC key** setting (Server page, `tapqueue-admin server set address-matching on|off`):
+  whether jobs from older clients are still matched by address. On by default; turn it off once
+  every PC has a key.
+
+### Changed
+- Once a PC has a key, check-ins for its computer name need that key. A reinstalled PC is turned
+  away until it's forgotten under Workstations, which gives it a new key. Database schema 15.
+
 ## [0.7.0] - 2026-09-25
 
 ### Added

@@ -15,7 +15,7 @@ public static class AdminWorkstationsApi
         {
             if (!workstations.Delete(hostname))
                 return NotFound(hostname);
-            events.Admin(null, $"Forgot workstation {hostname}.");
+            events.Admin(null, $"Forgot workstation {hostname}, and its TapQueue key. It gets a new one when it next checks in.");
             return Results.NoContent();
         });
         admin.MapDelete("/clients/{id:long}", SignOut);
@@ -43,7 +43,7 @@ public static class AdminWorkstationsApi
             w.Hostname, w.LastIp, w.Version,
             UpToDate: latest.GetValueOrDefault(w.Platform) is not { } build || string.Equals(build.Sha256, w.BinarySha256, StringComparison.OrdinalIgnoreCase),
             w.UpdateError, w.PendingCommand, w.Online, w.FirstSeenAt, w.LastSeenAt,
-            signedIn[w.Hostname].ToList(), w.Platform)).ToList();
+            signedIn[w.Hostname].ToList(), w.Platform, HasKey: w.KeyHash is not null)).ToList();
     }
 
     private static IResult UpdateNow(string hostname, WorkstationStore workstations, ClientBuildStore builds, EventLog events)

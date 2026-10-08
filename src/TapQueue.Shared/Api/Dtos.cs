@@ -15,7 +15,8 @@ public sealed record ServerInfoDto(
     int HeldJobs,
     IReadOnlyList<string>? ChangedSettings = null,
     bool CanRestart = false,
-    string QuotaOverrun = Api.QuotaOverrun.Allow);
+    string QuotaOverrun = Api.QuotaOverrun.Allow,
+    string AddressMatching = Api.AddressMatching.On);
 
 /// <summary>One line of the server's log, for the live log in the console.</summary>
 /// <param name="Level">debug, info, warning or error.</param>
@@ -23,14 +24,16 @@ public sealed record LogLineDto(long Id, DateTimeOffset At, string Level, string
 
 /// <summary>
 /// Settings that apply while the server runs. Null leaves one as it is; <see cref="Reset"/> names
-/// ones (holdHours, sessionTimeoutMinutes, quotaOverrun) to take from server.toml, or the default, again.
+/// ones (holdHours, sessionTimeoutMinutes, quotaOverrun, addressMatching) to take from server.toml, or the default, again.
 /// </summary>
 /// <param name="QuotaOverrun">One of <see cref="Api.QuotaOverrun"/>.</param>
+/// <param name="AddressMatching">One of <see cref="Api.AddressMatching"/>.</param>
 public sealed record UpdateServerSettingsRequest(
     int? HoldHours = null,
     int? SessionTimeoutMinutes = null,
     IReadOnlyList<string>? Reset = null,
-    string? QuotaOverrun = null);
+    string? QuotaOverrun = null,
+    string? AddressMatching = null);
 
 /// <summary>What happens when a job would take someone past their page limit.</summary>
 public static class QuotaOverrun
@@ -41,6 +44,21 @@ public static class QuotaOverrun
     public const string Deny = "deny";
 
     public static readonly string[] All = [Allow, Deny];
+}
+
+/// <summary>
+/// Whether a job that arrives without a workstation key (sent to a printer added by a client older
+/// than 0.8, or straight to the server) may still be matched to whoever is signed in at the address
+/// it came from. Jobs sent through a keyed printer are always matched by the PC they came from instead.
+/// </summary>
+public static class AddressMatching
+{
+    /// <summary>Keyless jobs go to the client signed in at their address, as before 0.8. The default, while PCs upgrade.</summary>
+    public const string On = "on";
+    /// <summary>Keyless jobs aren't matched to anyone. For once every PC has a key.</summary>
+    public const string Off = "off";
+
+    public static readonly string[] All = [On, Off];
 }
 
 /// <summary>How often a page limit starts over: at midnight, on Monday, or on the 1st, in the server's time zone.</summary>
@@ -330,11 +348,29 @@ public sealed record ClientHeartbeatResponse(ClientBuildDto? ClientBuild);
 
 /// <summary>What the TapQueue service on each PC needs: the printers to add and the client build to run.</summary>
 /// <param name="Command">One of <see cref="WorkstationCommand"/>, sent once.</param>
-public sealed record ClientSetupResponse(IReadOnlyList<QueueDto> Queues, ClientBuildDto? ClientBuild, string? Command = null);
+/// <param name="WorkstationKey">
+/// A new key for this PC, handed out once, the first time a service that asks for one checks in. The
+/// queues' IPP paths then carry the key, so jobs printed through them are known to come from this PC.
+/// </param>
+public sealed record ClientSetupResponse(IReadOnlyList<QueueDto> Queues, ClientBuildDto? ClientBuild, string? Command = null,
+    string? WorkstationKey = null);
 
 /// <summary>The TapQueue service checking in: which PC it is, what it runs, and why its last update failed.</summary>
 /// <param name="Platform">A <see cref="ClientPlatform"/>; services older than 0.5 don't send it (they're all Windows).</param>
-public sealed record ClientSetupRequest(string Computer, string? Version, string? Sha256, string? UpdateError, string? Platform = null);
+/// <param name="WorkstationKey">
+/// The key the server gave this PC, or "" from a service (0.8 on) that has none yet and wants one.
+/// Null from older services, which don't know about keys.
+/// </param>
+public sealed record ClientSetupRequest(string Computer, string? Version, string? Sha256, string? UpdateError, string? Platform = null,
+    string? WorkstationKey = null);
+
+/// <summary>
+/// The TapQueue service vouching for a tray app on its PC: the tray app with session
+/// <paramref name="SessionToken"/> runs as the PC user <paramref name="PcUser"/>, which the service
+/// checked from the operating system rather than taking the tray app's word for it. Jobs printed
+/// through this PC's keyed printers by that PC user then go to that session's TapQueue user.
+/// </summary>
+public sealed record WorkstationSessionRequest(string Computer, string WorkstationKey, string SessionToken, string PcUser);
 
 public static class WorkstationCommand
 {
@@ -366,11 +402,14 @@ public sealed record WorkstationDto(
     DateTimeOffset FirstSeenAt,
     DateTimeOffset LastSeenAt,
     IReadOnlyList<ClientSessionDto> Sessions,
-    string Platform = ClientPlatform.Windows);
+    string Platform = ClientPlatform.Windows,
+    bool HasKey = false);
 
 /// <summary>A signed-in client, for `tapqueue-admin clients`.</summary>
 /// <param name="Id">The session, for signing it out.</param>
-public sealed record ClientSessionDto(long Id, string Username, string? Hostname, string? WindowsUser, string? ClientVersion, string RemoteIp, DateTimeOffset LastSeenAt);
+/// <param name="Verified">The PC's TapQueue service vouched for it (<see cref="WorkstationSessionRequest"/>), so jobs from that PC are matched to it by key, not address.</param>
+public sealed record ClientSessionDto(long Id, string Username, string? Hostname, string? WindowsUser, string? ClientVersion, string RemoteIp, DateTimeOffset LastSeenAt,
+    bool Verified = false);
 
 /// <summary>Release held jobs to a printer. A null <see cref="JobIds"/> releases every held job.</summary>
 public sealed record ReleaseRequest(string PrinterId, IReadOnlyList<long>? JobIds = null);

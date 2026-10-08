@@ -19,6 +19,16 @@ public sealed class TapQueueApi(ClientConfig config) : IDisposable
     /// <summary>How the server wants the tray to sign in (<see cref="ClientSignIn"/>), as of the last sign-in.</summary>
     public string SignInMode { get; private set; } = ClientSignIn.Pc;
 
+    /// <summary>
+    /// Asks this PC's TapQueue service to vouch for a session (<see cref="UpdateCheck.VerifySessionCommand"/>),
+    /// so the server matches the jobs this PC user prints to it. Set by the tray app; null leaves it to
+    /// address matching.
+    /// </summary>
+    public Func<string, CancellationToken, Task<SessionVerifyReply>>? VerifySession { get; init; }
+
+    /// <summary>The session the service last vouched for. Until it's the current one, every heartbeat asks again.</summary>
+    private string? _verifiedToken;
+
     /// <summary>With <see cref="ClientSignIn.Domain"/>: the domain account this PC user signed in with, if any.</summary>
     public SavedSignIn? Remembered { get; private set; } = SavedSignIn.Load(config.ServerUrl);
 
@@ -122,11 +132,37 @@ public sealed class TapQueueApi(ClientConfig config) : IDisposable
         using var response = await _http.PostAsJsonAsync("api/v1/client/session", request, TapQueueJson.Options, ct);
         await EnsureSuccessAsync(response, ct);
         Session = (await response.Content.ReadFromJsonAsync<ClientSessionResponse>(TapQueueJson.Options, ct))!;
+        // Not waited for: signing in shouldn't hang on the service. The next heartbeat tries again if it didn't work.
+        _ = VerifyAsync();
         return Session;
     }
 
-    public Task HeartbeatAsync(CancellationToken ct = default) =>
-        SendAsync<object>(HttpMethod.Post, "api/v1/client/heartbeat", null, ct);
+    public async Task HeartbeatAsync(CancellationToken ct = default)
+    {
+        await SendAsync<object>(HttpMethod.Post, "api/v1/client/heartbeat", null, ct);
+        if (Session is not null && Session.SessionToken != _verifiedToken)
+            await VerifyAsync();
+    }
+
+    /// <summary>
+    /// Asks the service to vouch for the current session. Quietly does nothing when it can't: the
+    /// service isn't running or is older than 0.8, the PC has no key yet, or the server is older than 0.8.
+    /// </summary>
+    private async Task VerifyAsync()
+    {
+        if (VerifySession is null || Session?.SessionToken is not { } token)
+            return;
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            if ((await VerifySession(token, timeout.Token)).Success)
+                _verifiedToken = token;
+        }
+        catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException or UnauthorizedAccessException
+                                       or System.Text.Json.JsonException or InvalidDataException or System.Net.Sockets.SocketException)
+        {
+        }
+    }
 
     public async Task<List<JobDto>> GetHeldJobsAsync(CancellationToken ct = default) =>
         await SendAsync<List<JobDto>>(HttpMethod.Get, "api/v1/me/jobs", null, ct) ?? [];

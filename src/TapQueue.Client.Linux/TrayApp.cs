@@ -62,7 +62,7 @@ public sealed class TrayApp : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
-        _api = new TapQueueApi(Start.Config);
+        _api = new TapQueueApi(Start.Config) { VerifySession = UpdateCheckSocket.VerifySessionAsync };
         _connectedIcon = TrayIconImage.Create(connected: true);
         _disconnectedIcon = TrayIconImage.Create(connected: false);
         _tray = new TrayIcon

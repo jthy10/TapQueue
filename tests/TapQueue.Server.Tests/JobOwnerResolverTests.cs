@@ -84,6 +84,64 @@ public sealed class JobOwnerResolverTests : IDisposable
         Assert.Null(Resolver.Resolve("10.0.0.70", "jake").UserId);
     }
 
+    [Fact]
+    public void KeyedJobsGoToTheSessionThePcVouchedForWithThatPcUser()
+    {
+        var alice = _users.Create("alice", "Alice", null);
+        var bob = _users.Create("bob", "Bob", null);
+        _sessions.Create("h1", alice.Id, "alice", "TS1", "10.0.0.60");
+        _sessions.Create("h2", bob.Id, "bob", "TS1", "10.0.0.60");
+        _sessions.Verify("h1", "TS1", @"CORP\alice", _settings.SessionTimeout);
+        _sessions.Verify("h2", "TS1", @"CORP\bob", _settings.SessionTimeout);
+
+        Assert.Equal(bob.Id, Resolver.Resolve("192.0.2.1", "bob", "TS1").UserId);
+        Assert.Equal(alice.Id, Resolver.Resolve("192.0.2.1", "alice@corp.local", "ts1").UserId);
+        Assert.Null(Resolver.Resolve("192.0.2.1", "mallory", "TS1").UserId);
+        Assert.Null(Resolver.Resolve("10.0.0.60", "bob", "OTHER-PC").UserId);
+    }
+
+    [Fact]
+    public void KeyedJobsNeedTheirPcUserSignedInEvenWithOneSessionThere()
+    {
+        var alice = _users.Create("alice", "Alice", null);
+        _sessions.Create("h1", alice.Id, "alice", "PC1", "10.0.0.50");
+        _sessions.Verify("h1", "PC1", "alice", _settings.SessionTimeout);
+
+        Assert.Null(Resolver.Resolve("10.0.0.50", "someone-else", "PC1").UserId);
+        // Only a job with no user name at all goes to the one person there.
+        Assert.Equal(alice.Id, Resolver.Resolve("10.0.0.50", null, "PC1").UserId);
+    }
+
+    [Fact]
+    public void KeyedJobsIgnoreSessionsTheServiceDidntVouchFor()
+    {
+        var alice = _users.Create("alice", "Alice", null);
+        _sessions.Create("h1", alice.Id, "alice", "PC1", "10.0.0.50");
+        Assert.Null(Resolver.Resolve("10.0.0.50", "alice", "PC1").UserId);
+    }
+
+    [Fact]
+    public void KeylessJobsArentMatchedByAddressWhenThatIsOff()
+    {
+        var alice = _users.Create("alice", "Alice", null);
+        _sessions.Create("hash1", alice.Id, "alice", "PC1", "10.0.0.50");
+        _settings.Set(ServerSettings.AddressMatchingKey, Shared.Api.AddressMatching.Off);
+        Assert.Null(Resolver.Resolve("10.0.0.50", "alice").UserId);
+    }
+
+    [Fact]
+    public void ForgettingAWorkstationDropsWhatItVouchedFor()
+    {
+        var workstations = new WorkstationStore(new Database(Path.Combine(_dir, "test.db")));
+        var alice = _users.Create("alice", "Alice", null);
+        workstations.CheckIn("PC1", "10.0.0.50", Shared.ClientPlatform.Windows, new Shared.Api.ClientSetupRequest("PC1", null, null, null));
+        _sessions.Create("h1", alice.Id, "alice", "PC1", "10.0.0.50");
+        _sessions.Verify("h1", "PC1", "alice", _settings.SessionTimeout);
+
+        Assert.True(workstations.Delete("pc1"));
+        Assert.Null(Resolver.Resolve("10.0.0.50", "alice", "PC1").UserId);
+    }
+
     public void Dispose()
     {
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();

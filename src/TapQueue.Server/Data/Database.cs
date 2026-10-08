@@ -416,6 +416,20 @@ public sealed class Database
             );
             CREATE INDEX ix_admin_sessions_user ON admin_sessions(user_id);
         """,
+
+        // 15: per-job identity. A PC's TapQueue service gets a key (kept private on the PC, stored
+        // hashed here) and its printers' IPP paths carry a print key made from it, so a job is known to
+        // come from that PC whatever its address. A session the PC's service vouched for says which PC
+        // (workstation) and which PC user (pc_user) it's on. Jobs remember the PC they came through.
+        """
+            ALTER TABLE workstations ADD COLUMN key_hash TEXT;
+            ALTER TABLE workstations ADD COLUMN print_key_hash TEXT;
+            CREATE UNIQUE INDEX ix_workstations_print_key ON workstations(print_key_hash) WHERE print_key_hash IS NOT NULL;
+            ALTER TABLE sessions ADD COLUMN workstation TEXT COLLATE NOCASE;
+            ALTER TABLE sessions ADD COLUMN pc_user TEXT;
+            CREATE INDEX ix_sessions_workstation ON sessions(workstation) WHERE workstation IS NOT NULL;
+            ALTER TABLE jobs ADD COLUMN workstation TEXT COLLATE NOCASE;
+        """,
     ];
 
     public void Migrate()

@@ -82,6 +82,9 @@ public static class ServerApp
         var app = builder.Build();
 
         app.MapPost("/ipp/{queueId}", (HttpContext http, string queueId, IppPrinterEndpoint ipp) => ipp.HandleAsync(http, queueId));
+        // The same queue through a printer a TapQueue service added, with its PC's print key (JobOwnerResolver).
+        app.MapPost("/ipp/{queueId}/pc/{printKey}", (HttpContext http, string queueId, string printKey, IppPrinterEndpoint ipp) =>
+            ipp.HandleAsync(http, queueId, printKey));
         app.MapGet("/", () => "TapQueue server " + TapQueueVersion.Current);
         app.MapGet("/icons/{size:int}.png", (int size) =>
             typeof(ServerApp).Assembly.GetManifestResourceStream($"TapQueue.Server.Assets.icon-{size}.png") is { } png

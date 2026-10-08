@@ -16,10 +16,12 @@ checklist; [admin-ui.md](admin-ui.md#roadmap) has the admin console's own phases
    Users and groups from AD, by OU, group (nested) and single user, daily. Entra ID is still to do.
 4. **TLS everywhere.** IPP, the client API and the admin console over HTTPS, so print data and
    tokens aren't readable on the network.
-5. **Per-job identity instead of IP-based ownership.** Jobs are matched to a person by the PC's
-   address today ([how-it-works.md](how-it-works.md)), which breaks on shared PCs, terminal
-   servers and behind NAT. Per-job credentials (IPP authentication, or a token the client adds)
-   fix it, and belong with the auth and TLS work.
+5. **Per-job identity instead of IP-based ownership.** *(Done in 0.8.0, see
+   [how-it-works.md](how-it-works.md#how-a-job-is-matched-to-a-person).)* Each PC gets a key and
+   its printers a print key, so the server knows which PC a job came from; the PC's service vouches
+   for which PC user runs each tray app, so the job goes to the person who printed it. Works on
+   shared PCs, terminal servers and behind NAT. Address matching stays for older clients until
+   it's turned off.
 6. **Feedback at the station.** A tap with nothing to print, a refused release and an
    over-limit user all look the same today: nothing happens. A USB status light or a small
    kiosk screen; the `feedback` station setting is reserved for it.
