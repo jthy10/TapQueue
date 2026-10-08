@@ -3,10 +3,11 @@ using TapQueue.Server.Data;
 namespace TapQueue.Server.Jobs;
 
 /// <summary>
-/// Deletes held jobs nobody released in time, half-received jobs, dead client sessions and old activity.
+/// Deletes held jobs nobody released in time, half-received jobs, dead client sessions, remembered
+/// sign-ins nobody uses any more and old activity.
 /// At startup it first puts back on hold jobs a restart interrupted mid-release.
 /// </summary>
-public sealed class JobCleanupService(JobStore jobs, SessionStore sessions, Spool spool, EventLog events, ServerSettings settings, ILogger<JobCleanupService> logger)
+public sealed class JobCleanupService(JobStore jobs, SessionStore sessions, ClientLoginStore logins, Spool spool, EventLog events, ServerSettings settings, ILogger<JobCleanupService> logger)
     : BackgroundService
 {
     private static readonly TimeSpan ReceivingTimeout = TimeSpan.FromHours(1);
@@ -52,6 +53,9 @@ public sealed class JobCleanupService(JobStore jobs, SessionStore sessions, Spoo
                     $"\"{job.Name}\" (job #{job.Id}) expired after {settings.HoldHours} hours without being released.");
         }
         sessions.DeleteExpired(settings.SessionTimeout);
+        // After the sessions, so a login whose last session just lapsed can go too.
+        if (logins.DeleteUnusedSince(now - ClientLoginStore.UnusedLifetime) is > 0 and var forgotten)
+            logger.LogInformation("Forgot {Count} remembered domain sign-ins nobody used for {Days} days", forgotten, ClientLoginStore.UnusedLifetime.Days);
         events.DeleteOlderThan(now - EventRetention);
     }
 }
