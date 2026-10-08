@@ -2,7 +2,9 @@
 
 The admin console is a web page served by `tapqueue-server` at `https://<server>:8632/admin` (or `http://<server>:8631/admin`). It
 covers everything `tapqueue-admin` does, and adds the things a CLI is bad at: live status,
-tap-to-enroll, logs, and remote control of stations and clients.
+tap-to-enroll, logs, and remote control of stations and clients. When HTTPS is on, the http:// address
+sends browsers on other machines to the https:// one (on the server itself, http://localhost keeps
+working).
 
 > **Sign-in.** With `auth.mode = "token"` the console asks for a sign-in, and each admin sees and
 > does what their roles allow. In dev mode it's open to anyone on the network, so you can set up

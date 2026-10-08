@@ -35,6 +35,9 @@ breaking changes; they're listed under **Changed** with what to do.
   are held again when it starts, instead of staying "releasing" for good.
 
 ### Security
+- With HTTPS on, opening the admin console over plain HTTP from another machine moves the browser
+  to HTTPS, and the console tells browsers to keep using HTTPS, so admin passwords and sign-in
+  cookies don't cross the network unencrypted. On the server itself, http://localhost still works.
 - Print jobs can no longer take the server down: the IPP attributes in a request are limited to
   4 MB and collections to 16 levels deep, and counting a PDF's pages gives up on documents built to
   take forever or to unpack to gigabytes. Page counts over 100,000 count as 100,000.
