@@ -67,7 +67,7 @@ public sealed class UpdateCheckPipe : IUpdateCheckListener
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or IdentityNotMappedException or System.ComponentModel.Win32Exception)
         {
-            logger.LogWarning("Couldn't tell which PC user the tray app on the pipe runs as: {Error}", ex.Message);
+            logger.LogWarning("Couldn't tell which PC user the tray app on the pipe runs as: {Kind} 0x{Code:X8} {Error}", ex.GetType().Name, ex.HResult, ex.Message);
             return null;
         }
     }
