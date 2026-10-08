@@ -86,7 +86,9 @@ try {
             $held = @()
             while ((Get-Date) -lt $deadline -and -not $held) {
                 Start-Sleep -Seconds 3
-                $held = @(Invoke-RestMethod http://127.0.0.1:18631/api/v1/admin/jobs -Headers @{ Authorization = "Bearer $token" } | Where-Object status -eq 'held')
+                # In its own statement: piped straight on, Invoke-RestMethod hands the whole list over as one object.
+                $jobs = Invoke-RestMethod http://127.0.0.1:18631/api/v1/admin/jobs -Headers @{ Authorization = "Bearer $token" }
+                $held = @($jobs | Where-Object status -eq 'held')
             }
             Admin jobs | Write-Host
             if (-not $held) {
