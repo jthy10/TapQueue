@@ -45,7 +45,7 @@ try {
         ForEach-Object { Write-Host "--- $($_.TimeCreated) $($_.ProviderName)"; Write-Host $_.Message }
 
     if ($state -ne 'Running') { throw "The TapQueue service didn't stay running ($state)." }
-    if ($answer -notmatch "hasn't got its TapQueue key") { throw "The TapQueue service couldn't tell which Windows user asked it to vouch: $answer" }
+    if (($answer | ConvertFrom-Json).error -notmatch "hasn't got its TapQueue key") { throw "The TapQueue service couldn't tell which Windows user asked it to vouch: $answer" }
 }
 finally {
     sc.exe stop $name | Out-Null
