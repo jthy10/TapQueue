@@ -19,6 +19,8 @@ breaking changes; they're listed under **Changed** with what to do.
 - Changing the Active Directory domain controller, its port or its CA certificate takes the bind
   account's password again, so the saved password can't be sent to another server.
 - The admin console can't be shown in a frame on another site.
+- Signing in to the tray with a domain password is throttled like the console's sign-in: after
+  5 wrong passwords for a name, or 20 from one address, within 15 minutes, wait 15 minutes.
 
 ### Fixed
 - Jobs being sent to a printer when the server stopped (a restart from the console, an update)
