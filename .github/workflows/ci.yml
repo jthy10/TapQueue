@@ -105,7 +105,8 @@ jobs:
         run: |
           dotnet build -c Release src/TapQueue.Server
           dotnet build -c Release src/TapQueue.Admin
-          dotnet publish src/TapQueue.Client.Windows -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o out/ipps-client
+          # Published the way scripts/package.sh does, so this tests the program that ships.
+          dotnet publish src/TapQueue.Client.Windows -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:DebugType=none -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o out/ipps-client
 
       - name: Print over https://
         shell: pwsh
