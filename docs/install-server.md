@@ -30,8 +30,10 @@ The script:
 - writes `/etc/tapqueue/server.toml` with a freshly generated admin token (first install only);
 - installs and starts the `tapqueue-server` systemd service.
 
-The server listens on port 8631 for both IPP (printing) and its REST API. Open it in the firewall
-if you use one: `sudo ufw allow 8631/tcp`. It also answers the Windows installer's search for
+The server listens on port 8632 for IPP (printing), its REST API and the admin console over TLS,
+with a self-signed certificate it makes on first start, and on port 8631 for the same without
+encryption. See [TLS](tls.md) for using your own certificate and turning plain HTTP off. Open both
+in the firewall if you use one: `sudo ufw allow 8631:8632/tcp`. It also answers the Windows installer's search for
 servers on UDP port 8631 (`sudo ufw allow 8631/udp`); with only TCP open, the installer still
 finds servers on its own subnet, just more slowly.
 
@@ -41,7 +43,7 @@ Run `tapqueue-admin` with `sudo` on the server and it reads the admin token from
 `/etc/tapqueue/server.toml`. From another machine, see [admin CLI](admin-cli.md#connecting).
 
 ```sh
-# The printer users see in Windows. They print to ipp://<server>:8631/ipp/secure
+# The printer users see in Windows. They print to ipps://<server>:8632/ipp/secure
 sudo tapqueue-admin queues add secure --name "TapQueue Secure Print"
 
 # Each physical printer jobs can be released to
@@ -66,7 +68,8 @@ Then set up the [Windows client](windows-client.md) and a [release station](rele
 
 | Setting | Default | |
 |---|---|---|
-| `server.listen` | `0.0.0.0:8631` | Address and port for IPP and the API |
+| `server.listen` | `0.0.0.0:8631` | Address and port for IPP and the API without TLS |
+| `tls.listen` | `0.0.0.0:8632` | The same over TLS (HTTPS and IPPS). `""` = off. More `tls.` settings in [tls.md](tls.md#settings) |
 | `server.data_dir` | `/var/lib/tapqueue` | Database and held jobs |
 | `server.discovery_port` | `8631` | UDP port the Windows installer's server search is answered on. `0` = off |
 | `auth.mode` | `token` | `token`: users need the token from `users add`, and the admin console needs a sign-in. `dev`: a username is enough, and the console is open to anyone (setup and testing only; see [admin-roles.md](admin-roles.md)) |

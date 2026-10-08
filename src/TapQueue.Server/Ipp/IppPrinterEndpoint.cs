@@ -46,7 +46,7 @@ public sealed class IppPrinterEndpoint(
             return;
         }
 
-        var context = new RequestContext(http, queue, request, body, $"ipp://{http.Request.Host}/ipp/{queue.Id}");
+        var context = new RequestContext(http, queue, request, body, $"{(http.Request.IsHttps ? "ipps" : "ipp")}://{http.Request.Host}/ipp/{queue.Id}");
         IppMessage response;
         try
         {
@@ -102,7 +102,7 @@ public sealed class IppPrinterEndpoint(
         var requested = RequestedAttributes(c.Request);
         var response = IppMessage.CreateResponse(c.Request, IppStatus.Ok);
         response.Groups.Add(QueueAttributes.Build(
-            c.Queue, c.PrinterUri, $"http://{c.Http.Request.Host}", ServerClock.UpTimeSeconds, jobs.CountHeld(), requested));
+            c.Queue, c.PrinterUri, $"{c.Http.Request.Scheme}://{c.Http.Request.Host}", ServerClock.UpTimeSeconds, jobs.CountHeld(), requested));
         return response;
     }
 

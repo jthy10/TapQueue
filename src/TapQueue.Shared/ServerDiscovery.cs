@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Net;
+using System.Net.Http.Json;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Text;
@@ -8,7 +9,9 @@ using System.Text.Json;
 namespace TapQueue.Shared;
 
 /// <summary>What a server says about itself when asked on the discovery port.</summary>
-public sealed record DiscoveryReply(string Service, string Name, int Port, string Version);
+/// <param name="Port">Its plain HTTP port.</param>
+/// <param name="TlsPort">Its HTTPS port, or 0 when it has none (and from servers older than 0.8).</param>
+public sealed record DiscoveryReply(string Service, string Name, int Port, string Version, int TlsPort = 0);
 
 /// <summary>A TapQueue server found on the network.</summary>
 public sealed record DiscoveredServer(string Url, string Name, string Version);
@@ -20,6 +23,7 @@ public sealed record DiscoveredServer(string Url, string Name, string Version);
 ///   2. A sweep of every address on the local subnets for an HTTP server on <see cref="DefaultHttpPort"/>
 ///      that says it's TapQueue, for servers whose firewall only lets TCP 8631 in.
 /// Neither crosses routers, so servers on another subnet still have to be typed in.
+/// A server with HTTPS is offered at its https:// address.
 /// </summary>
 public static class ServerDiscovery
 {
@@ -56,7 +60,7 @@ public static class ServerDiscovery
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancel);
         deadline.CancelAfter(timeout);
-        var found = new ConcurrentDictionary<IPAddress, (string Name, int Port, string Version)>();
+        var found = new ConcurrentDictionary<IPAddress, (string Name, int Port, string Version, int TlsPort)>();
         var subnets = LocalSubnets();
 
         await Task.WhenAll(BroadcastAsync(subnets, found, deadline.Token), SweepAsync(subnets, found, deadline.Token));
@@ -64,7 +68,8 @@ public static class ServerDiscovery
         var servers = await Task.WhenAll(found.Select(async entry =>
         {
             var host = await HostNameAsync(entry.Key, entry.Value.Name) ?? entry.Key.ToString();
-            return new DiscoveredServer($"http://{host}:{entry.Value.Port}", entry.Value.Name, entry.Value.Version);
+            var url = entry.Value.TlsPort > 0 ? $"https://{host}:{entry.Value.TlsPort}" : $"http://{host}:{entry.Value.Port}";
+            return new DiscoveredServer(url, entry.Value.Name, entry.Value.Version);
         }));
         return [.. servers.DistinctBy(s => s.Url).OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase).ThenBy(s => s.Url)];
     }
@@ -90,7 +95,7 @@ public static class ServerDiscovery
         return subnets;
     }
 
-    private static async Task BroadcastAsync(List<Subnet> subnets, ConcurrentDictionary<IPAddress, (string, int, string)> found, CancellationToken cancel)
+    private static async Task BroadcastAsync(List<Subnet> subnets, ConcurrentDictionary<IPAddress, (string, int, string, int)> found, CancellationToken cancel)
     {
         // One socket per local address, so the broadcast goes out of every network the PC is on.
         var listeners = new List<Task>();
@@ -113,7 +118,7 @@ public static class ServerDiscovery
         await Task.WhenAll(listeners);
     }
 
-    private static async Task ReceiveRepliesAsync(Socket socket, ConcurrentDictionary<IPAddress, (string, int, string)> found, CancellationToken cancel)
+    private static async Task ReceiveRepliesAsync(Socket socket, ConcurrentDictionary<IPAddress, (string, int, string, int)> found, CancellationToken cancel)
     {
         using var _ = socket;
         var buffer = new byte[2048];
@@ -124,7 +129,7 @@ public static class ServerDiscovery
                 var result = await socket.ReceiveFromAsync(buffer, SocketFlags.None, new IPEndPoint(IPAddress.Any, 0), cancel);
                 var from = ((IPEndPoint)result.RemoteEndPoint).Address;
                 if (ParseReply(buffer.AsSpan(0, result.ReceivedBytes)) is { } reply)
-                    found[from] = (reply.Name, reply.Port, reply.Version);
+                    found[from] = (reply.Name, reply.Port, reply.Version, reply.TlsPort is > 0 and <= 65535 ? reply.TlsPort : 0);
             }
         }
         catch (Exception ex) when (ex is SocketException or OperationCanceledException)
@@ -133,7 +138,7 @@ public static class ServerDiscovery
         }
     }
 
-    private static async Task SweepAsync(List<Subnet> subnets, ConcurrentDictionary<IPAddress, (string, int, string)> found, CancellationToken cancel)
+    private static async Task SweepAsync(List<Subnet> subnets, ConcurrentDictionary<IPAddress, (string, int, string, int)> found, CancellationToken cancel)
     {
         var hosts = subnets
             .Where(s => (1L << (32 - s.PrefixLength)) - 2 <= MaxSweepHosts)
@@ -153,7 +158,7 @@ public static class ServerDiscovery
                     var body = await http.GetStringAsync($"http://{host}:{DefaultHttpPort}/", cancel);
                     const string prefix = "TapQueue server ";
                     if (body.StartsWith(prefix, StringComparison.Ordinal))
-                        found.TryAdd(host, (host.ToString(), DefaultHttpPort, body[prefix.Length..].Trim()));
+                        found.TryAdd(host, (host.ToString(), DefaultHttpPort, body[prefix.Length..].Trim(), await TlsPortAsync(http, host, cancel)));
                 }
                 finally
                 {
@@ -165,6 +170,20 @@ public static class ServerDiscovery
                 // Nothing there, or not TapQueue.
             }
         }));
+    }
+
+    /// <summary>The HTTPS port /healthz reports, or 0 for none.</summary>
+    private static async Task<int> TlsPortAsync(HttpClient http, IPAddress host, CancellationToken cancel)
+    {
+        try
+        {
+            var health = await http.GetFromJsonAsync<JsonElement>($"http://{host}:{DefaultHttpPort}/healthz", cancel);
+            return health.TryGetProperty("tlsPort", out var port) && port.TryGetInt32(out var value) && value is > 0 and <= 65535 ? value : 0;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or OperationCanceledException or InvalidOperationException)
+        {
+            return 0;
+        }
     }
 
     /// <summary>

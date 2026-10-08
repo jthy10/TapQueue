@@ -64,7 +64,7 @@ udevadm control --reload-rules && udevadm trigger --subsystem-match=hidraw || tr
 
 install -d -m 755 "$confdir"
 if [ ! -e "$config" ]; then
-    server=${TAPQUEUE_SERVER:-$(ask "TapQueue server address" "http://tapqueue-server:8631")}
+    server=${TAPQUEUE_SERVER:-$(ask "TapQueue server address" "https://tapqueue-server:8632")}
     token=${TAPQUEUE_STATION_TOKEN:-$(ask "Station token (from 'sudo tapqueue-admin stations add <station-id> <printer-id>' on the server)" "")}
 
     # RFIDeas pcProx: USB vendor 0c27. Anything else is treated as a keyboard-style reader.

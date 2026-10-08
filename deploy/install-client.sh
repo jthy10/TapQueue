@@ -80,7 +80,7 @@ if [ ! -e "$config" ]; then
     if [ -z "$server" ]; then
         echo "Looking for TapQueue servers on the network..."
         mapfile -t found < <("$here/tapqueue-client" --discover 2>/dev/null || true)
-        default=http://tapqueue-server:8631
+        default=https://tapqueue-server:8632
         if [ "${#found[@]}" -gt 0 ]; then
             for i in "${!found[@]}"; do
                 IFS='|' read -r url name version <<<"${found[$i]}"

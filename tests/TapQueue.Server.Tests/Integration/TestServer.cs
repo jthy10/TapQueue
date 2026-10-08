@@ -24,6 +24,10 @@ public sealed class TestServer : IAsyncDisposable
 
     public FakePrinter Printer { get; }
     public Uri BaseUri { get; }
+
+    /// <summary>The HTTPS listener, when started with tls.</summary>
+    public Uri? HttpsUri { get; }
+
     public string QueueUri => $"ipp://{BaseUri.Authority}/ipp/{QueueId}";
     public HttpClient Admin { get; }
 
@@ -32,11 +36,15 @@ public sealed class TestServer : IAsyncDisposable
         _app = app;
         _dataDir = dataDir;
         Printer = printer;
-        BaseUri = new Uri(app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First());
+        var addresses = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Select(a => new Uri(a)).ToList();
+        BaseUri = addresses.First(a => a.Scheme == "http");
+        HttpsUri = addresses.FirstOrDefault(a => a.Scheme == "https");
         Admin = NewClient(AdminToken);
     }
 
-    public static async Task<TestServer> StartAsync(string authMode = "token", int discoveryPort = 0, Action<IServiceCollection>? configureServices = null)
+    /// <param name="tls">Also listen for HTTPS, with a self-signed certificate (or <paramref name="configureTls"/>'s).</param>
+    public static async Task<TestServer> StartAsync(string authMode = "token", int discoveryPort = 0, Action<IServiceCollection>? configureServices = null,
+        bool tls = false, Action<TlsSection>? configureTls = null)
     {
         var printer = await FakePrinter.StartAsync();
         var dataDir = Directory.CreateTempSubdirectory("tapqueue-it").FullName;
@@ -45,7 +53,9 @@ public sealed class TestServer : IAsyncDisposable
             Server = { Listen = "127.0.0.1:0", DataDir = dataDir, DiscoveryPort = discoveryPort },
             Auth = { Mode = authMode },
             Admin = { Token = AdminToken },
+            Tls = { Listen = tls ? "127.0.0.1:0" : "" },
         };
+        configureTls?.Invoke(config.Tls);
         var app = ServerApp.Build(config, configureServices: configureServices);
         await app.StartAsync();
         var server = new TestServer(app, dataDir, printer);

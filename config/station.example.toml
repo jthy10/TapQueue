@@ -2,7 +2,11 @@
 # Default location: /etc/tapqueue/station.toml (override with --config or TAPQUEUE_STATION_CONFIG).
 
 # The TapQueue server.
-server_url = "http://tapqueue-server:8631"
+server_url = "https://tapqueue-server:8632"
+
+# For a server with a self-signed certificate: its SHA-256 fingerprint (`tapqueue-admin server`
+# shows it). Leave empty to trust the certificate seen the first time the station connects.
+server_cert_fingerprint = ""
 
 # From `tapqueue-admin stations add <station-id> <printer-id>`. The server decides which printer
 # this station releases to.
