@@ -75,17 +75,22 @@ public sealed class UpdateCheckSocket : IUpdateCheckListener
     {
         try
         {
-            Span<byte> credentials = stackalloc byte[12]; // struct ucred { pid_t pid; uid_t uid; gid_t gid; }
-            if (connection.GetRawSocketOption(SolSocket, SoPeerCred, credentials) < 12)
-                return null;
-            var uid = BinaryPrimitives.ReadUInt32LittleEndian(credentials[4..]);
-            return UserName(uid);
+            return PeerUid(connection) is { } uid ? UserName(uid) : null;
         }
         catch (Exception ex) when (ex is SocketException or ObjectDisposedException or PlatformNotSupportedException)
         {
             logger.LogWarning("Couldn't tell which user the tray app on the socket runs as: {Error}", ex.Message);
             return null;
         }
+    }
+
+    /// <summary>The uid of the process at the other end of a connected Unix socket, from the kernel.</summary>
+    private static uint? PeerUid(Socket connection)
+    {
+        Span<byte> credentials = stackalloc byte[12]; // struct ucred { pid_t pid; uid_t uid; gid_t gid; }
+        return connection.GetRawSocketOption(SolSocket, SoPeerCred, credentials) < 12
+            ? null
+            : BinaryPrimitives.ReadUInt32LittleEndian(credentials[4..]);
     }
 
     /// <summary>The login name of <paramref name="uid"/> (from /etc/passwd, LDAP or wherever NSS looks), or null.</summary>
@@ -116,6 +121,19 @@ public sealed class UpdateCheckSocket : IUpdateCheckListener
     public static async Task<SessionVerifyReply> VerifySessionAsync(string sessionToken, CancellationToken ct)
     {
         await using var stream = await ConnectAsync(ct);
+        // The session token only goes to the service, which runs as root. (Only root can create the
+        // socket in /run/tapqueue-client anyway; this doesn't rely on that.)
+        uint? uid;
+        try
+        {
+            uid = PeerUid(stream.Socket);
+        }
+        catch (SocketException)
+        {
+            uid = null;
+        }
+        if (uid != 0)
+            return new SessionVerifyReply(false, "The TapQueue socket isn't the TapQueue service's.");
         return await UpdateCheck.AskVerifySessionAsync(stream, sessionToken, ct);
     }
 

@@ -109,7 +109,25 @@ public sealed class UpdateCheckPipe : IUpdateCheckListener
     public static async Task<SessionVerifyReply> VerifySessionAsync(string sessionToken, CancellationToken ct)
     {
         await using var pipe = await ConnectAsync(ct);
+        // The session token only goes to the real service. Anyone signed in could create a pipe of
+        // this name while the service is stopped (restarting into an update), but it would be theirs.
+        if (!OwnedBySystem(pipe))
+            return new SessionVerifyReply(false, "The TapQueue pipe isn't the TapQueue service's.");
         return await UpdateCheck.AskVerifySessionAsync(pipe, sessionToken, ct);
+    }
+
+    /// <summary>The pipe was created by SYSTEM (owned by it, or by Administrators as SYSTEM's objects are), not by a user.</summary>
+    private static bool OwnedBySystem(NamedPipeClientStream pipe)
+    {
+        try
+        {
+            var owner = pipe.GetAccessControl().GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier;
+            return owner is not null && (owner.IsWellKnown(WellKnownSidType.LocalSystemSid) || owner.IsWellKnown(WellKnownSidType.BuiltinAdministratorsSid));
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or InvalidOperationException)
+        {
+            return false;
+        }
     }
 
     /// <summary>Lets the service see which Windows account connected (identification only; it can't act as us).</summary>
