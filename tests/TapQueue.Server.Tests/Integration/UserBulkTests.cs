@@ -80,6 +80,18 @@ public sealed class UserBulkTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ExportedNamesCantRunAsSpreadsheetFormulas()
+    {
+        await _server.Admin.PostAsJsonAsync("/api/v1/admin/users", new CreateUserRequest("mallory", "=HYPERLINK(\"http://x\")"), TapQueueJson.Options);
+
+        var export = await _server.Admin.GetStringAsync("/api/v1/admin/users/export");
+        var preview = await TestServer.ReadAsync<ImportResponse>(await Import(export, apply: false));
+
+        Assert.Contains("mallory,\"'=HYPERLINK(\"\"http://x\"\")\"", export);
+        Assert.All(preview.Rows, r => Assert.Equal(ImportAction.Unchanged, r.Action));
+    }
+
+    [Fact]
     public async Task UnknownColumnsAreRejected()
     {
         var response = await Import("username,email\nalice,a@example.com\n", apply: false);

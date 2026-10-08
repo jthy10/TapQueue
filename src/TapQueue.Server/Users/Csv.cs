@@ -41,13 +41,27 @@ public static class Csv
         return rows.Where(r => r.Any(f => f.Trim().Length > 0)).ToList();
     }
 
-    public static string Write(IEnumerable<IEnumerable<string>> rows)
+    /// <param name="guardFormulas">
+    /// For files people open in a spreadsheet: a field that would start a formula (=, +, -, @) gets a
+    /// leading ', which spreadsheets show as text. <see cref="Unguard"/> takes it off again on import.
+    /// </param>
+    public static string Write(IEnumerable<IEnumerable<string>> rows, bool guardFormulas = false)
     {
         var sb = new StringBuilder();
         foreach (var row in rows)
-            sb.Append(string.Join(',', row.Select(Quote))).Append("\r\n");
+            sb.Append(string.Join(',', row.Select(f => Quote(guardFormulas ? Guard(f) : f)))).Append("\r\n");
         return sb.ToString();
     }
+
+    private const string FormulaStarts = "=+-@\t\r";
+
+    /// <summary>A ' in front of a field a spreadsheet would read as a formula, or that starts with ' already.</summary>
+    public static string Guard(string field) =>
+        field.Length > 0 && (FormulaStarts.Contains(field[0]) || field[0] == '\'') ? "'" + field : field;
+
+    /// <summary>Undoes <see cref="Guard"/>: drops a leading ' in front of a formula character or another '.</summary>
+    public static string Unguard(string field) =>
+        field.Length > 1 && field[0] == '\'' && (FormulaStarts.Contains(field[1]) || field[1] == '\'') ? field[1..] : field;
 
     private static string Quote(string field) =>
         field.IndexOfAny([',', '"', '\n', '\r']) >= 0 || field != field.Trim() ? "\"" + field.Replace("\"", "\"\"") + "\"" : field;
