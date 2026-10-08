@@ -11,6 +11,26 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+### Added
+- TLS. The server also listens on port 8632 (`tls.listen`) for HTTPS and IPPS: the client API,
+  stations, the admin console and printing, encrypted. It makes itself a self-signed certificate
+  on first start (in `data_dir/tls`), or uses yours from `tls.cert_file` and `tls.key_file`,
+  picking up renewed files without a restart. `tls.require` refuses plain HTTP from other
+  machines once everything has moved over. `tapqueue-admin server` shows the certificate and its
+  SHA-256 fingerprint. Stations trust a self-signed certificate the first time they connect, or
+  the one `server_cert_fingerprint` in `station.toml` names; `tapqueue-admin` takes `--fingerprint`.
+  Queues are advertised as `ipps://` over TLS, and the installers' server search offers the
+  `https://` address. See [tls.md](docs/tls.md).
+
+### Changed
+- The server listens on a second port, 8632, by default. Open it in the firewall
+  (`sudo ufw allow 8632/tcp`), or set `tls.listen = ""` to keep TLS off. Plain HTTP on 8631 is
+  unchanged.
+
+### Fixed
+- Jobs being sent to a printer when the server stopped (a restart from the console, an update)
+  are held again when it starts, instead of staying "releasing" for good.
+
 ### Security
 - Print jobs can no longer take the server down: the IPP attributes in a request are limited to
   4 MB and collections to 16 levels deep, and counting a PDF's pages gives up on documents built to
@@ -21,10 +41,6 @@ breaking changes; they're listed under **Changed** with what to do.
 - The admin console can't be shown in a frame on another site.
 - Signing in to the tray with a domain password is throttled like the console's sign-in: after
   5 wrong passwords for a name, or 20 from one address, within 15 minutes, wait 15 minutes.
-
-### Fixed
-- Jobs being sent to a printer when the server stopped (a restart from the console, an update)
-  are held again when it starts, instead of staying "releasing" for good.
 
 ## [0.7.0] - 2026-09-25
 

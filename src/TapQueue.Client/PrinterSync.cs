@@ -1,4 +1,6 @@
+using System.Security.Cryptography.X509Certificates;
 using Microsoft.Extensions.Logging;
+using TapQueue.Shared;
 using TapQueue.Shared.Api;
 
 namespace TapQueue.Client;
@@ -13,6 +15,14 @@ public interface IPrinterInstaller
     Task<(bool Success, string Output)> EnsureInstalledAsync(string name, Uri ippUrl, bool reinstall);
 
     Task<(bool Success, string Output)> RemoveAsync(string name);
+
+    /// <summary>
+    /// Makes the system trust the server's self-signed certificate, so the printers can reach it
+    /// over https://, or with null stops trusting the one it trusted before. Does nothing by
+    /// default: CUPS trusts a printer's certificate the first time it connects.
+    /// </summary>
+    /// <param name="server">The server the certificate is for; null when <paramref name="certificate"/> is.</param>
+    Task<(bool Success, string Output)> TrustServerCertificateAsync(X509Certificate2? certificate, Uri? server) => Task.FromResult((true, ""));
 }
 
 /// <summary>
@@ -25,14 +35,30 @@ public sealed class PrinterSync(IPrinterInstaller installer, ILogger logger)
     private static readonly string StatePath = Path.Combine(ClientConfig.StateDirectory, "printers.txt");
 
     private Dictionary<string, string>? _applied;
+    private string? _trusted;
 
     /// <summary>
     /// Adds, repoints or removes printers. Does nothing if the queues haven't changed since last time,
     /// unless <paramref name="reinstallAll"/> ("Refresh printers" in the tray menu), which removes and
     /// adds every printer again. Returns the first failure, or null when everything worked.
     /// </summary>
-    public async Task<string?> SyncAsync(IReadOnlyList<QueueDto> queues, Uri serverUrl, bool reinstallAll = false)
+    /// <param name="serverCertificate">The server's certificate when it's trusted only because it's pinned (<see cref="ServerCertificatePin.Pinned"/>).</param>
+    public async Task<string?> SyncAsync(IReadOnlyList<QueueDto> queues, Uri serverUrl, bool reinstallAll = false, X509Certificate2? serverCertificate = null)
     {
+        var trust = serverCertificate?.Thumbprint ?? "";
+        if (trust != _trusted || reinstallAll)
+        {
+            var (trusted, output) = await installer.TrustServerCertificateAsync(serverCertificate, serverUrl);
+            if (!trusted)
+            {
+                logger.LogWarning("Trusting the server's certificate failed: {Output}", output);
+                return $"Couldn't make this PC trust the server's certificate: {output}";
+            }
+            if (output.Length > 0)
+                logger.LogInformation("Server certificate: {Output}", output);
+            _trusted = trust;
+        }
+
         var wanted = queues.ToDictionary(q => q.Name, q => new Uri(serverUrl, q.IppPath.TrimStart('/')).ToString(), StringComparer.OrdinalIgnoreCase);
         if (!reinstallAll && _applied is not null && SameAs(_applied, wanted))
             return null;
@@ -68,6 +94,8 @@ public sealed class PrinterSync(IPrinterInstaller installer, ILogger logger)
             var (success, _) = await installer.RemoveAsync(name);
             if (!success) failures++;
         }
+        if (!(await installer.TrustServerCertificateAsync(null, null)).Success)
+            failures++;
         File.Delete(StatePath);
         return failures == 0 ? 0 : 1;
     }

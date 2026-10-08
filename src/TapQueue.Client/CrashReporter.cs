@@ -69,7 +69,7 @@ public static class CrashReporter
         var dir = PendingDirectory(program);
         if (!Directory.Exists(dir))
             return 0;
-        using var http = new HttpClient { BaseAddress = new Uri(config.ServerUrl.TrimEnd('/') + "/"), Timeout = timeout };
+        using var http = config.CreateHttpClient(config.CertificatePin(learn: false), timeout);
         var sent = 0;
         foreach (var file in Directory.GetFiles(dir, "*.json").Order())
         {

@@ -2,8 +2,14 @@
 #   Windows: C:\ProgramData\TapQueue\client.toml
 #   Linux:   /etc/tapqueue/client.toml
 
-# The TapQueue server.
-server_url = "http://tapqueue-server:8631"
+# The TapQueue server. https:// on port 8632 encrypts everything, printing included;
+# http://tapqueue-server:8631 still works with servers that allow plain HTTP.
+server_url = "https://tapqueue-server:8632"
+
+# For a server with a self-signed certificate: its SHA-256 fingerprint (`tapqueue-admin server`
+# shows it). Leave empty to trust the certificate the TapQueue service sees the first time it
+# connects. Not needed for a certificate from a CA the PC already trusts.
+server_cert_fingerprint = ""
 
 # Your TapQueue username. Leave empty to use the name you sign in to the PC with.
 username = ""

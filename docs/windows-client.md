@@ -16,8 +16,10 @@ desktops, see the [Linux client](linux-client.md).
 1. Download `TapQueue_client_X.Y.Z.exe` from [Releases](https://github.com/jthy10/TapQueue/releases)
    (the newest `client-v` release).
 2. Run it (it asks for admin rights). It searches the network for TapQueue servers: pick yours
-   from the list, or type its address, e.g. `http://tapqueue-server:8631`. The search only
-   reaches the PC's own network; a server behind a router has to be typed in.
+   from the list, or type its address, e.g. `https://tapqueue-server:8632`. The search only
+   reaches the PC's own network; a server behind a router has to be typed in. Over `https://`,
+   the TapQueue service trusts the server's self-signed certificate the first time it connects
+   and adds it to the PC's trusted roots so Windows can print there; see [TLS](tls.md).
 3. TapQueue starts in the tray. Within a minute the **TapQueue Secure Print** printer (or whatever
    the queue is called) appears for every user of the PC.
 4. Print something to it, then tap a badge at a release station, or right-click the tray icon →
@@ -40,7 +42,7 @@ What goes where:
 To install on many PCs, run it silently, for example from a deployment tool or a login script:
 
 ```
-TapQueue_client_X.Y.Z.exe /VERYSILENT /SERVER=http://tapqueue-server:8631
+TapQueue_client_X.Y.Z.exe /VERYSILENT /SERVER=https://tapqueue-server:8632
 ```
 
 Without `/SERVER`, a first install uses the TapQueue server it finds on the network, and fails
@@ -53,7 +55,7 @@ checksum and installs it silently:
 irm https://raw.githubusercontent.com/jthy10/TapQueue/main/install.ps1 | iex
 ```
 
-Set `$env:TAPQUEUE_SERVER = "http://tapqueue-server:8631"` first to name the server. Run the same
+Set `$env:TAPQUEUE_SERVER = "https://tapqueue-server:8632"` first to name the server. Run the same
 command to repair a PC that stopped checking in or is stuck on an old version: it first prints the
 service's state, the installed version, the server address and whether the server answers, then
 reinstalls over what's there and starts the service and tray again.

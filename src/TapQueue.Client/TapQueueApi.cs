@@ -8,11 +8,7 @@ namespace TapQueue.Client;
 /// <summary>Talks to the TapQueue server, signing in again automatically if the session lapses.</summary>
 public sealed class TapQueueApi(ClientConfig config) : IDisposable
 {
-    private readonly HttpClient _http = new()
-    {
-        BaseAddress = new Uri(config.ServerUrl.TrimEnd('/') + "/"),
-        Timeout = TimeSpan.FromMinutes(5),
-    };
+    private readonly HttpClient _http = config.CreateHttpClient(config.CertificatePin(learn: false), TimeSpan.FromMinutes(5));
 
     public ClientSessionResponse? Session { get; private set; }
 

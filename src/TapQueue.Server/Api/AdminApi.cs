@@ -1,9 +1,11 @@
+using Microsoft.AspNetCore.Hosting.Server;
 using TapQueue.Server.Admins;
 using TapQueue.Server.Config;
 using TapQueue.Server.Data;
 using TapQueue.Server.Jobs;
 using TapQueue.Server.Ipp;
 using TapQueue.Server.Printers;
+using TapQueue.Server.Tls;
 using TapQueue.Server.Users;
 using TapQueue.Shared;
 using TapQueue.Shared.Api;
@@ -95,13 +97,24 @@ public static class AdminApi
         admin.MapGet("/clients", (SessionStore sessions, ServerSettings settings) => sessions.ListActive(settings.SessionTimeout));
     }
 
-    private static ServerInfoDto ServerInfo(ServerConfig config, ServerSettings settings, Database database, JobStore jobs) => new(
+    private static ServerInfoDto ServerInfo(ServerConfig config, ServerSettings settings, Database database, JobStore jobs, IServiceProvider services) => new(
         TapQueueVersion.Current, ServerClock.StartedAt, config.Auth.Mode, config.Server.Listen, config.Server.DataDir,
         database.SchemaVersion(), settings.HoldHours, settings.SessionTimeoutMinutes, jobs.CountHeld(),
-        ServerSettings.Keys.Where(settings.IsSaved).ToList(), AdminServerApi.CanRestart, settings.QuotaOverrun);
+        ServerSettings.Keys.Where(settings.IsSaved).ToList(), AdminServerApi.CanRestart, settings.QuotaOverrun,
+        TlsInfo(config, services));
+
+    private static ServerTlsDto? TlsInfo(ServerConfig config, IServiceProvider services)
+    {
+        if (services.GetService<ServerCertificate>() is not { } certificate)
+            return null;
+        var current = certificate.Current;
+        return new ServerTlsDto(config.Tls.Listen, ServerApp.BoundPort(services.GetRequiredService<IServer>(), "https") ?? 0,
+            certificate.Fingerprint, certificate.SelfSigned, certificate.CertPath, current.Subject, certificate.Names,
+            new DateTimeOffset(current.NotAfter.ToUniversalTime()), config.Tls.Require);
+    }
 
     private static IResult UpdateServerSettings(UpdateServerSettingsRequest request, ServerConfig config, ServerSettings settings,
-        Database database, JobStore jobs, EventLog events)
+        Database database, JobStore jobs, EventLog events, IServiceProvider services)
     {
         if (request.HoldHours is < 1 or > 720)
             return Results.BadRequest(new ErrorResponse("holdHours must be 1 to 720 (30 days)."));
@@ -144,7 +157,7 @@ public static class AdminApi
 
         if (changes.Count > 0)
             events.Admin(null, $"Server settings: {string.Join("; ", changes)}.");
-        return Results.Ok(ServerInfo(config, settings, database, jobs));
+        return Results.Ok(ServerInfo(config, settings, database, jobs, services));
 
         static string DescribeOverrun(string overrun) => overrun == QuotaOverrun.Deny
             ? "only jobs that fit in what's left print"

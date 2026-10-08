@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 
 namespace TapQueue.Client.Windows;
@@ -52,6 +54,57 @@ public sealed class PrinterInstaller : IPrinterInstaller
 
     public Task<(bool Success, string Output)> RemoveAsync(string name) =>
         RunAsync(RemoveScript, new() { ["TQ_PRINTER_NAME"] = name });
+
+    /// <summary>The thumbprint of the certificate this service added to the trusted roots, so it's the only one it removes.</summary>
+    private static readonly string TrustedPath = Path.Combine(ClientConfig.StateDirectory, "trusted-certificate.txt");
+
+    /// <summary>
+    /// The IPP class driver reaches the server with the PC's own certificate checks, so a self-signed
+    /// server certificate goes into the computer's trusted root certificates (if <see cref="SystemTrust"/>
+    /// allows it). One it added before for another certificate is taken out.
+    /// </summary>
+    public Task<(bool Success, string Output)> TrustServerCertificateAsync(X509Certificate2? certificate, Uri? server)
+    {
+        if (certificate is not null && server is not null && SystemTrust.Refusal(certificate, server) is { } refusal)
+            return Task.FromResult((false, $"Windows won't be told to trust it, because {refusal}. Give the server a certificate from your own CA instead."));
+        try
+        {
+            var previous = File.Exists(TrustedPath) ? File.ReadAllText(TrustedPath).Trim() : "";
+            if (previous == (certificate?.Thumbprint ?? ""))
+                return Task.FromResult((true, ""));
+
+            using var root = new X509Store(StoreName.Root, StoreLocation.LocalMachine);
+            root.Open(OpenFlags.ReadWrite);
+            var done = new List<string>();
+            if (previous.Length > 0)
+            {
+                foreach (var old in root.Certificates.Find(X509FindType.FindByThumbprint, previous, validOnly: false))
+                    root.Remove(old);
+                File.Delete(TrustedPath);
+                done.Add("removed the certificate it trusted before from the trusted roots");
+            }
+            if (certificate is not null)
+            {
+                if (root.Certificates.Find(X509FindType.FindByThumbprint, certificate.Thumbprint, validOnly: false).Count > 0)
+                {
+                    done.Add("already in the trusted roots");
+                }
+                else
+                {
+                    // The public certificate only; there's no key to add.
+                    root.Add(X509CertificateLoader.LoadCertificate(certificate.RawData));
+                    Directory.CreateDirectory(ClientConfig.StateDirectory);
+                    File.WriteAllText(TrustedPath, certificate.Thumbprint);
+                    done.Add($"added {certificate.Subject} to the trusted roots so Windows can print over https");
+                }
+            }
+            return Task.FromResult((true, string.Join("; ", done)));
+        }
+        catch (Exception ex) when (ex is CryptographicException or IOException or UnauthorizedAccessException)
+        {
+            return Task.FromResult((false, ex.Message));
+        }
+    }
 
     private static async Task<(bool Success, string Output)> RunAsync(string script, Dictionary<string, string> environment)
     {

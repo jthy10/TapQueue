@@ -41,11 +41,12 @@ public sealed class ClientService(
 
     private async Task RunAsync(CancellationToken stoppingToken)
     {
-        using var http = new HttpClient
-        {
-            BaseAddress = new Uri(config.ServerUrl.TrimEnd('/') + "/"),
-            Timeout = TimeSpan.FromMinutes(10),
-        };
+        // The service is the one that trusts a self-signed server certificate the first time it sees it.
+        var pin = config.CertificatePin(learn: true);
+        pin.Learned = certificate => logger.LogWarning(
+            "Trusting {Server}'s certificate from now on: {Subject}, SHA-256 {Fingerprint}. Saved in {Path}",
+            config.ServerUrl, certificate.Subject, ServerCertificatePin.FingerprintOf(certificate), pin.SavedPath);
+        using var http = config.CreateHttpClient(pin, TimeSpan.FromMinutes(10));
         var printers = new PrinterSync(installer, logger);
         var updater = new ClientUpdater(http, logger);
 
@@ -86,7 +87,7 @@ public sealed class ClientService(
                 {
                     if (refreshing)
                         logger.LogInformation("Reinstalling this PC's printers (asked from this PC)");
-                    var printerError = await printers.SyncAsync(setup.Queues, http.BaseAddress, reinstallAll: refreshing);
+                    var printerError = await printers.SyncAsync(setup.Queues, http.BaseAddress!, reinstallAll: refreshing, pin.Pinned);
                     printersReply = new PrinterRefreshReply(printerError is null, setup.Queues.Count, printerError);
                 }
                 else
