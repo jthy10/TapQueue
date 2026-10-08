@@ -71,6 +71,40 @@ public class IppCodecTests
     }
 
     [Fact]
+    public async Task RejectsCollectionsNestedTooDeep()
+    {
+        static byte[] Nested(int depth)
+        {
+            var bytes = new List<byte> { 2, 0, 0, 0x0B, 0, 0, 0, 1, IppTag.OperationAttributes };
+            // attribute "a": begCollection; then per level a member name and another begCollection.
+            bytes.AddRange([IppTag.BegCollection, 0, 1, (byte)'a', 0, 0]);
+            for (var i = 1; i < depth; i++)
+                bytes.AddRange([IppTag.MemberAttrName, 0, 0, 0, 1, (byte)'m', IppTag.BegCollection, 0, 0, 0, 0]);
+            for (var i = 0; i < depth; i++)
+                bytes.AddRange([IppTag.EndCollection, 0, 0, 0, 0]);
+            bytes.Add(IppTag.EndOfAttributes);
+            return [.. bytes];
+        }
+
+        await IppReader.ReadAsync(new MemoryStream(Nested(IppReader.MaxCollectionDepth)));
+        await Assert.ThrowsAsync<InvalidDataException>(() => IppReader.ReadAsync(new MemoryStream(Nested(IppReader.MaxCollectionDepth + 1))));
+        // Deep enough to overflow the stack if nesting weren't limited.
+        await Assert.ThrowsAsync<InvalidDataException>(() => IppReader.ReadAsync(new MemoryStream(Nested(200_000))));
+    }
+
+    [Fact]
+    public async Task RejectsAttributesBiggerThanTheLimit()
+    {
+        var message = IppMessage.CreateRequest(IppOperation.PrintJob, 1, "ipp://x/ipp/print");
+        var text = new string('x', ushort.MaxValue);
+        var group = message.Group(IppTag.JobAttributes);
+        for (var i = 0; i <= IppReader.MaxAttributeBytes / ushort.MaxValue; i++)
+            group.Add($"a{i}", IppValue.Text(text));
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => IppReader.ReadAsync(new MemoryStream(IppWriter.Encode(message))));
+    }
+
+    [Fact]
     public void QueueAdvertisesItsNameAndIppEverywhereBasics()
     {
         var queue = new QueueRecord("secure", "TapQueue Secure Print", QueueRecord.DefaultDescription, "", false, false, QueueRecord.Letter);

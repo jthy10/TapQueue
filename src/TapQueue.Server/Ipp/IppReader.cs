@@ -6,10 +6,23 @@ namespace TapQueue.Server.Ipp;
 /// <summary>
 /// Reads the attribute section of an IPP message (RFC 8010). Reading stops right after the
 /// end-of-attributes tag, so any document data that follows is left unread in the stream.
+/// Anyone who can reach the server can send one, so the attribute section is capped in size and in
+/// how deeply collections nest: an endless one would otherwise use up the memory or the stack.
 /// </summary>
 public sealed class IppReader(Stream stream)
 {
+    /// <summary>
+    /// The most an attribute section may take. Clients send a few KB; printers' answers to
+    /// Get-Printer-Attributes (media-col-database and all) run to a few hundred.
+    /// </summary>
+    public const int MaxAttributeBytes = 4 * 1024 * 1024;
+
+    /// <summary>How deeply collections may nest. media-col, the deepest in common use, goes three levels.</summary>
+    public const int MaxCollectionDepth = 16;
+
     private readonly byte[] _scratch = new byte[8];
+    private long _read;
+    private int _depth;
 
     public static async Task<IppMessage> ReadAsync(Stream stream, CancellationToken ct = default) =>
         await new IppReader(stream).ReadMessageAsync(ct);
@@ -62,9 +75,13 @@ public sealed class IppReader(Stream stream)
     private async Task<IppValue> ReadValueAsync(byte tag, CancellationToken ct)
     {
         var bytes = await ReadBytesAsync(await ReadLengthAsync(ct), ct);
-        if (tag == IppTag.BegCollection)
-            return new IppValue(tag, await ReadCollectionAsync(ct));
-        return Decode(tag, bytes);
+        if (tag != IppTag.BegCollection)
+            return Decode(tag, bytes);
+        if (++_depth > MaxCollectionDepth)
+            throw new InvalidDataException($"IPP collections nest more than {MaxCollectionDepth} deep.");
+        var collection = await ReadCollectionAsync(ct);
+        _depth--;
+        return new IppValue(tag, collection);
     }
 
     private async Task<IppCollection> ReadCollectionAsync(CancellationToken ct)
@@ -134,6 +151,7 @@ public sealed class IppReader(Stream stream)
     private async Task<byte[]> ReadBytesAsync(int count, CancellationToken ct)
     {
         if (count == 0) return [];
+        Count(count);
         var buffer = new byte[count];
         await stream.ReadExactlyAsync(buffer, ct);
         return buffer;
@@ -141,19 +159,29 @@ public sealed class IppReader(Stream stream)
 
     private async Task<byte> ReadByteAsync(CancellationToken ct)
     {
+        Count(1);
         await stream.ReadExactlyAsync(_scratch.AsMemory(0, 1), ct);
         return _scratch[0];
     }
 
     private async Task<short> ReadInt16Async(CancellationToken ct)
     {
+        Count(2);
         await stream.ReadExactlyAsync(_scratch.AsMemory(0, 2), ct);
         return BinaryPrimitives.ReadInt16BigEndian(_scratch);
     }
 
     private async Task<int> ReadInt32Async(CancellationToken ct)
     {
+        Count(4);
         await stream.ReadExactlyAsync(_scratch.AsMemory(0, 4), ct);
         return BinaryPrimitives.ReadInt32BigEndian(_scratch);
+    }
+
+    private void Count(int bytes)
+    {
+        _read += bytes;
+        if (_read > MaxAttributeBytes)
+            throw new InvalidDataException($"IPP attributes take more than {MaxAttributeBytes / 1024 / 1024} MB.");
     }
 }

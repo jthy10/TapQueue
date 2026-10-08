@@ -32,6 +32,12 @@ public static class AdminUi
                 return Results.NotFound();
             // The console changes with every server upgrade; make the browser check instead of keeping an old copy.
             http.Response.Headers.CacheControl = "no-cache";
+            // Another site may not frame the console (and trick an admin into clicking in it), and
+            // browsers mustn't guess a file's type from its content.
+            http.Response.Headers.XFrameOptions = "DENY";
+            http.Response.Headers.ContentSecurityPolicy = "frame-ancestors 'none'";
+            http.Response.Headers.XContentTypeOptions = "nosniff";
+            http.Response.Headers["Referrer-Policy"] = "same-origin";
             return Results.Stream(stream, contentType.StartsWith("text/") ? contentType + "; charset=utf-8" : contentType);
         });
     }

@@ -1,4 +1,5 @@
 using System.Net;
+using Microsoft.AspNetCore.Http.Features;
 using TapQueue.Server.ActiveDirectory;
 using TapQueue.Server.Admin;
 using TapQueue.Server.Admins;
@@ -80,6 +81,14 @@ public static class ServerApp
         configureServices?.Invoke(builder.Services);
 
         var app = builder.Build();
+        app.Use((http, next) =>
+        {
+            // Bodies are read (JSON ones bound) before an endpoint checks who's asking, so only the
+            // endpoints that take documents and programs get the big limit set on Kestrel above.
+            if (http.Features.Get<IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } limit && !TakesLargeBodies(http.Request.Path))
+                limit.MaxRequestBodySize = SmallBodyLimit;
+            return next(http);
+        });
 
         app.MapPost("/ipp/{queueId}", (HttpContext http, string queueId, IppPrinterEndpoint ipp) => ipp.HandleAsync(http, queueId));
         app.MapGet("/", () => "TapQueue server " + TapQueueVersion.Current);
@@ -95,6 +104,15 @@ public static class ServerApp
         app.MapAdminUi();
         return app;
     }
+
+    /// <summary>For everything but print jobs, client and station builds and user imports.</summary>
+    public const long SmallBodyLimit = 4L * 1024 * 1024;
+
+    private static bool TakesLargeBodies(PathString path) =>
+        path.StartsWithSegments("/ipp")
+        || path.StartsWithSegments("/api/v1/admin/client-builds")
+        || path.StartsWithSegments("/api/v1/admin/station-builds")
+        || path.StartsWithSegments("/api/v1/admin/users/import");
 
     public static IPEndPoint ParseEndpoint(string listen)
     {

@@ -18,6 +18,28 @@ public sealed class ServerControlTests : IAsyncLifetime
         await _server.Admin.PatchAsJsonAsync("/api/v1/admin/server/settings", request, TapQueueJson.Options);
 
     [Fact]
+    public async Task OnlyDocumentsAndProgramsMayBeBig()
+    {
+        using var anonymous = _server.NewClient();
+        var crash = new CrashReportRequest("PC", "service", "windows", "0.8.0", DateTimeOffset.UtcNow, "boom",
+            new string('x', (int)ServerApp.SmallBodyLimit));
+
+        var response = await anonymous.PostAsJsonAsync("/api/v1/client/crash", crash, TapQueueJson.Options);
+
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task TheConsoleCantBeFramedByAnotherSite()
+    {
+        using var anonymous = _server.NewClient();
+        var page = await anonymous.GetAsync("/admin/");
+
+        Assert.Equal("DENY", page.Headers.GetValues("X-Frame-Options").Single());
+        Assert.Equal("nosniff", page.Headers.GetValues("X-Content-Type-Options").Single());
+    }
+
+    [Fact]
     public async Task SettingsDefaultToServerTomlAndCanBeChangedAndReset()
     {
         var before = (await _server.Admin.GetFromJsonAsync<ServerInfoDto>("/api/v1/admin/server", TapQueueJson.Options))!;

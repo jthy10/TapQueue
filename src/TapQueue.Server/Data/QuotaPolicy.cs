@@ -34,7 +34,7 @@ public sealed class QuotaPolicy(Database database, ServerSettings settings)
         if (usage.Count == 0)
             return null;
         var deny = settings.QuotaOverrun == QuotaOverrun.Deny;
-        if (usage.Any(u => deny ? u.Used + pages <= u.Limit.Pages : u.Used < u.Limit.Pages))
+        if (usage.Any(u => deny ? (long)u.Used + pages <= u.Limit.Pages : u.Used < u.Limit.Pages))
             return null;
 
         var best = usage.MaxBy(u => u.Remaining)!;
@@ -57,10 +57,10 @@ public sealed class QuotaPolicy(Database database, ServerSettings settings)
     }
 
     private int PagesReleased(long userId, DateTimeOffset since) =>
-        Convert.ToInt32(database.Scalar("""
+        (int)Math.Min(int.MaxValue, Convert.ToInt64(database.Scalar("""
             SELECT COALESCE(SUM(COALESCE(pages, 1) * copies), 0) FROM jobs
             WHERE user_id = $u AND status = $released AND released_at >= $since
-            """, ("$u", userId), ("$released", JobStatus.Released), ("$since", since.ToUniversalTime())));
+            """, ("$u", userId), ("$released", JobStatus.Released), ("$since", since.ToUniversalTime()))));
 
     /// <summary>The period <paramref name="now"/> falls in: a calendar day, a week from Monday, or a calendar month.</summary>
     public static (DateTimeOffset Start, DateTimeOffset End) Period(string period, DateTimeOffset now, TimeZoneInfo zone)
