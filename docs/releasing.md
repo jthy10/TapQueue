@@ -45,11 +45,14 @@ Server and station (`server-vX.Y.Z`):
 
 | File | Contents |
 |---|---|
-| `TapQueue_server_X.Y.Z_linux-x64.tar.gz` | `tapqueue-server`, `tapqueue-admin`, `libe_sqlite3.so`, example config, systemd units, `install-server.sh` |
+| `TapQueue_server_X.Y.Z_linux-x64.tar.gz` | `tapqueue-server`, `tapqueue-admin`, `libe_sqlite3.so`, example config, systemd units, `install-server.sh`, `update-server.sh` |
 | `TapQueue_station_X.Y.Z_linux-x64.tar.gz` | `tapqueue-station`, example config, systemd unit, pcProx udev rule, `install-station.sh` |
 | `SHA256SUMS` | checksums of the above |
 
 `install.sh` in the repository root downloads the newest of these and runs the installer in it.
+The console's **Check for updates** (Server page) looks for the newest `server-vX.Y.Z` release that
+isn't a draft or pre-release and has the server archive and `SHA256SUMS` attached, so keep those
+names as they are.
 
 Clients (`client-vX.Y.Z`):
 

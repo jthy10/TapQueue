@@ -26,6 +26,9 @@ public sealed class AdminRolesTests
     [InlineData("PATCH", "/directory/config", AdminArea.Directory, AdminRole.Admin)]
     [InlineData("POST", "/client-builds", AdminArea.Updates, AdminRole.Admin)]
     [InlineData("POST", "/server/restart", AdminArea.Server, AdminRole.Admin)]
+    [InlineData("GET", "/server/update", AdminArea.Server, AdminRole.Viewer)]
+    [InlineData("POST", "/server/update", AdminArea.Server, AdminRole.Admin)]
+    [InlineData("DELETE", "/server/update", AdminArea.Server, AdminRole.Admin)]
     public void EachEndpointNeedsARoleInItsArea(string method, string path, string area, string role)
     {
         Assert.Equal(new AdminRequirement(area, role), AdminAccess.Requirement(method, path));

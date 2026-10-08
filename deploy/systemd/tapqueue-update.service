@@ -1,0 +1,12 @@
+# Upgrades tapqueue-server to the release named in /var/lib/tapqueue/update-request, as root, since
+# the server itself runs unprivileged. Started by tapqueue-update.path; see update-server.sh.
+[Unit]
+Description=TapQueue server upgrade
+Documentation=https://github.com/jthy10/TapQueue/blob/main/docs/install-server.md#upgrading
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/tapqueue/update-server.sh
+TimeoutStartSec=20min

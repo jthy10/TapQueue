@@ -11,6 +11,14 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+### Added
+- **Check for updates** on the console's Server page. It asks GitHub for the newest server release
+  and, if it's newer, updates now or at a time you pick (you can call a scheduled update off). The
+  download is checked against the release's SHA256SUMS before anything is installed.
+  `install-server.sh` now also installs `tapqueue-update.path` and `tapqueue-update.service`, which
+  do the upgrade as root; servers installed before this release need one upgrade by hand first.
+  See [Upgrading](docs/install-server.md#upgrading).
+
 ## [0.7.0] - 2026-09-25
 
 ### Added

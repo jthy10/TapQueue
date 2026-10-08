@@ -10,6 +10,7 @@ using TapQueue.Server.Ipp;
 using TapQueue.Server.Jobs;
 using TapQueue.Server.Logging;
 using TapQueue.Server.Printers;
+using TapQueue.Server.Updates;
 using TapQueue.Server.Users;
 using TapQueue.Shared;
 
@@ -77,6 +78,10 @@ public static class ServerApp
         builder.Services.AddSingleton<DirectorySync>();
         builder.Services.AddSingleton<DirectorySyncService>();
         builder.Services.AddHostedService(services => services.GetRequiredService<DirectorySyncService>());
+        builder.Services.AddSingleton(UpdaterSetup.Installed);
+        builder.Services.AddSingleton<IReleaseFeed, GitHubReleaseFeed>();
+        builder.Services.AddSingleton<ServerUpdater>();
+        builder.Services.AddHostedService<UpdateScheduler>();
         configureServices?.Invoke(builder.Services);
 
         var app = builder.Build();

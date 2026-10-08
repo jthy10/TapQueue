@@ -32,6 +32,43 @@ public sealed record UpdateServerSettingsRequest(
     IReadOnlyList<string>? Reset = null,
     string? QuotaOverrun = null);
 
+/// <summary>
+/// Upgrading the server itself to a newer GitHub release: what's running, what's out, and any
+/// upgrade that's scheduled, running or just finished.
+/// </summary>
+/// <param name="Current">The running version without the commit, e.g. "0.8.0".</param>
+/// <param name="Latest">The newest server release on GitHub, once checked.</param>
+/// <param name="CheckedAt">When GitHub was last asked; null if it hasn't been since the server started.</param>
+/// <param name="CheckError">Why the last check failed, if it did.</param>
+/// <param name="UpdateAvailable">True when <see cref="Latest"/> is newer than <see cref="Current"/>.</param>
+/// <param name="CanApply">True when this server can install an update by itself (installed by install-server.sh, run by systemd).</param>
+/// <param name="CannotApplyReason">Why not, and what to run instead.</param>
+/// <param name="Scheduled">An upgrade waiting for its time.</param>
+/// <param name="LastRun">The most recent upgrade the updater ran, or the one running now.</param>
+public sealed record ServerUpdateDto(
+    string Current,
+    ServerReleaseDto? Latest,
+    DateTimeOffset? CheckedAt,
+    string? CheckError,
+    bool UpdateAvailable,
+    bool CanApply,
+    string? CannotApplyReason,
+    ScheduledUpdateDto? Scheduled,
+    UpdateRunDto? LastRun);
+
+/// <summary>A server release on GitHub.</summary>
+/// <param name="Version">e.g. "0.9.0"; the tag is server-v{Version}.</param>
+/// <param name="Url">The release page, with its notes.</param>
+public sealed record ServerReleaseDto(string Version, string Url, DateTimeOffset? PublishedAt);
+
+public sealed record ScheduledUpdateDto(string Version, DateTimeOffset At, string? By);
+
+/// <param name="State">running, done or failed.</param>
+public sealed record UpdateRunDto(string State, string Version, DateTimeOffset? At, string Message);
+
+/// <summary>Upgrade to <see cref="Version"/> now, or at <see cref="At"/> if it's given.</summary>
+public sealed record ApplyServerUpdateRequest(string Version, DateTimeOffset? At = null);
+
 /// <summary>What happens when a job would take someone past their page limit.</summary>
 public static class QuotaOverrun
 {
