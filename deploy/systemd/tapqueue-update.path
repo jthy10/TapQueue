@@ -1,0 +1,12 @@
+# Starts tapqueue-update.service when tapqueue-server asks for an upgrade (the admin console's
+# "Check for updates" on the Server page). install-server.sh installs and enables it.
+[Unit]
+Description=TapQueue server upgrade requests from the admin console
+Documentation=https://github.com/jthy10/TapQueue/blob/main/docs/install-server.md#upgrading
+
+[Path]
+PathExists=/var/lib/tapqueue/update-request
+Unit=tapqueue-update.service
+
+[Install]
+WantedBy=multi-user.target

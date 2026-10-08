@@ -87,9 +87,24 @@ values are kept in the database until they're set back to `default`.
 
 ## Upgrading
 
-Run the same one-line install again (or extract the new release and run its `install-server.sh`).
-It replaces the programs, keeps your config and data, and restarts the service. Database changes are applied automatically at startup.
 Read the [changelog](../CHANGELOG.md) first: before 1.0, minor versions can need manual steps.
+
+**From the admin console:** on the Server page, **Check for updates** asks GitHub for the newest
+server release. If it's newer than what's running, choose to update now or at a time you pick
+(within 30 days; you can call a scheduled update off). The server doesn't run as root, so it can't
+replace itself: it writes the version to `/var/lib/tapqueue/update-request`, and
+`tapqueue-update.path` starts `tapqueue-update.service`, which runs `/opt/tapqueue/update-server.sh`
+as root. That script downloads the release from GitHub, checks it against the release's
+`SHA256SUMS`, refuses anything that isn't newer than what's installed, and runs the archive's
+`install-server.sh`, the same as the one-line install. The console shows how it went; the details are
+in `journalctl -u tapqueue-update`. Checking needs the server to reach `api.github.com` and
+`github.com`; nothing is checked until an admin asks.
+
+Servers installed before 0.8.0 don't have `tapqueue-update` yet: upgrade them once by hand.
+
+**By hand:** run the same one-line install again (or extract the new release and run its
+`install-server.sh`). It replaces the programs, keeps your config and data, and restarts the
+service. Database changes are applied automatically at startup.
 
 ## Backups
 

@@ -1,20 +1,25 @@
 import { api } from "../api.js";
-import { h, pageHead, panel, button, pill, props, dateTime, duration, plural, field, input, select, formDialog, confirm, attempt, toast } from "../ui.js";
+import { h, pageHead, panel, button, pill, props, time, dateTime, duration, plural, field, input, select, formDialog, confirm, attempt, toast } from "../ui.js";
 
 const MAX_LINES = 2000;
 
 export async function render(root, ctx) {
   let s = await api.get("server");
+  // Null for admins without a role in the Server area.
+  let u = await api.maybe("server/update", null);
   if (!ctx.current) return;
 
   const status = h("div");
   const settings = h("div");
+  const updates = h("div");
+  const checkButton = button("Check for updates", { small: true, iconName: "refresh", onclick: () => checkForUpdates(true) });
   const restartButton = button("Restart", { iconName: "refresh", onclick: restart });
   root.append(pageHead("Server", "The TapQueue server this console is running on.",
     h("a", { class: "btn", href: "/healthz", target: "_blank" }, "Health check"), restartButton),
   h("div", { class: "grid two" },
     panel({ title: "Status", body: status }),
     panel({ title: "Settings", actions: button("Edit", { small: true, onclick: edit }), body: settings })),
+  u && panel({ title: "Updates", description: "New TapQueue server releases on GitHub.", actions: checkButton, body: updates }),
   liveLog(ctx));
 
   function draw() {
@@ -44,6 +49,112 @@ export async function render(root, ctx) {
         ? [pill("Dev", "bad"), h("span", { class: "sub" }, "Anyone can sign in as any username, and this console is open. Set auth.mode in server.toml and restart to change it.")]
         : [pill("Tokens", "ok"), h("span", { class: "sub" }, "Clients need the token from Users.")]],
     ]));
+  }
+
+  function drawUpdates() {
+    const latest = u.latest;
+    const run = u.lastRun;
+    const runTone = { done: "ok", failed: "bad" }[run?.state] ?? "warn";
+    const runLabel = { requested: "Starting", running: "Upgrading", done: "Done", failed: "Failed" }[run?.state];
+    updates.replaceChildren(...[
+      u.checkError ? h("div", { class: "callout bad" }, u.checkError) : null,
+      u.updateAvailable && !u.canApply ? h("div", { class: "callout" }, u.cannotApplyReason) : null,
+      props([
+        ["Running", h("span", { class: "mono" }, u.current)],
+        ["Newest release", latest
+          ? [h("a", { href: latest.url, target: "_blank", rel: "noopener" }, latest.version), " ",
+            u.updateAvailable ? pill("Update available", "accent") : pill("Up to date", "ok"),
+            latest.publishedAt && h("span", { class: "sub" }, `Released ${dateTime(latest.publishedAt)}`)]
+          : h("span", { class: "muted" }, u.checkedAt ? "Unknown" : "Not checked yet")],
+        ["Last checked", u.checkedAt ? time(u.checkedAt) : "Not since the server started"],
+        u.scheduled && ["Scheduled", [`${u.scheduled.version} at ${dateTime(u.scheduled.at)}`,
+          u.scheduled.by && h("span", { class: "sub" }, `By ${u.scheduled.by}`), " ",
+          button("Call off", { small: true, onclick: cancelScheduled })]],
+        run && ["Last upgrade", [pill(runLabel, runTone), ` ${run.version} `,
+          run.at && h("span", { class: "sub" }, `${run.message} (${dateTime(run.at)})`)]],
+      ]),
+      u.updateAvailable && u.canApply && !u.scheduled && !["requested", "running"].includes(run?.state)
+        ? button(`Update to ${latest.version}…`, { kind: "primary", onclick: offerUpdate })
+        : null,
+    ].filter(Boolean));
+  }
+
+  async function checkForUpdates(offer) {
+    checkButton.disabled = true;
+    const checked = await attempt(() => api.get("server/update?refresh=true"));
+    checkButton.disabled = false;
+    if (!checked || !ctx.current) return;
+    u = checked;
+    drawUpdates();
+    if (u.checkError) return;
+    if (!u.updateAvailable) return toast(`This server runs the newest release (${u.current})`);
+    if (offer && u.canApply && !u.scheduled) offerUpdate();
+  }
+
+  function offerUpdate() {
+    const version = u.latest.version;
+    // datetime-local wants local time without a zone; default to tonight at 2:00.
+    const tonight = new Date();
+    tonight.setDate(tonight.getDate() + (tonight.getHours() >= 2 ? 1 : 0));
+    tonight.setHours(2, 0, 0, 0);
+    const local = (d) => new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    const when = select("when", [["now", "Now"], ["later", "Later, at a time I pick"]], "now");
+    const at = input("at", { type: "datetime-local", value: local(tonight), min: local(new Date()) });
+    const atField = field("Upgrade at", at, "This browser's local time. The server starts it within a minute of then.");
+    atField.hidden = true;
+    when.onchange = () => { atField.hidden = when.value !== "later"; };
+    formDialog({
+      title: `Update to TapQueue server ${version}?`,
+      description: `This server runs ${u.current}.`,
+      submitLabel: "Update",
+      body: [
+        h("p", { style: "margin-top:0" }, "The server downloads the release from GitHub, checks it against its SHA256SUMS and installs it. ",
+          "Printing, releasing and this console stop for up to a minute while it restarts. Held jobs, settings and server.toml are kept. ",
+          h("a", { href: u.latest.url, target: "_blank", rel: "noopener" }, "Read the release notes"),
+          " first: before 1.0, a new minor version can need manual steps."),
+        s.heldJobs ? h("div", { class: "callout info" }, `${plural(s.heldJobs, "job")} held now; they stay held.`) : null,
+        field("When", when),
+        atField,
+      ],
+      onSubmit: async (v) => {
+        const later = v.when === "later";
+        if (later && !v.at) throw new Error("Pick a time to upgrade at.");
+        const body = { version, at: later ? new Date(v.at).toISOString() : null };
+        u = await api.post("server/update", body);
+        drawUpdates();
+        if (later) toast(`Upgrade to ${version} scheduled for ${dateTime(body.at)}`);
+        else followUpgrade(version);
+      },
+    });
+  }
+
+  async function cancelScheduled() {
+    const updated = await attempt(() => api.del("server/update"), "Scheduled upgrade called off");
+    if (updated && ctx.current) { u = updated; drawUpdates(); }
+  }
+
+  /** Waits for the server to come back on the new version, or for the updater to say it failed. */
+  async function followUpgrade(version) {
+    toast(`Upgrading to ${version}…`);
+    restartButton.disabled = true;
+    for (let i = 0; i < 300 && ctx.current; i++) {
+      await new Promise((r) => setTimeout(r, 2000));
+      try {
+        const now = await api.get("server/update");
+        u = now;
+        drawUpdates();
+        if (now.current === version) {
+          s = await api.get("server");
+          draw();
+          return toast(`Updated to TapQueue server ${version}`);
+        }
+        if (now.lastRun?.state === "failed") {
+          draw();
+          return toast(`The upgrade didn't work: ${now.lastRun.message}`, "bad");
+        }
+      } catch { /* restarting */ }
+    }
+    if (ctx.current) toast("The server hasn't come back on the new version after 10 minutes. Check it with: journalctl -u tapqueue-update -n 100", "bad");
   }
 
   function edit() {
@@ -110,7 +221,12 @@ export async function render(root, ctx) {
   }
 
   draw();
-  ctx.every(30000, async () => { s = await api.get("server"); if (ctx.current) draw(); });
+  if (u) drawUpdates();
+  ctx.every(30000, async () => {
+    s = await api.get("server");
+    if (u) u = await api.get("server/update");
+    if (ctx.current) { draw(); if (u) drawUpdates(); }
+  });
 }
 
 /** The server's log as it happens, from a server-sent event stream that picks up where it left off after a reconnect. */

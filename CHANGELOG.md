@@ -30,6 +30,12 @@ breaking changes; they're listed under **Changed** with what to do.
 - **Jobs without a PC key** setting (Server page, `tapqueue-admin server set address-matching on|off`):
   whether jobs from older clients are still matched by address. On by default; turn it off once
   every PC has a key.
+- **Check for updates** on the console's Server page. It asks GitHub for the newest server release
+  and, if it's newer, updates now or at a time you pick (you can call a scheduled update off). The
+  download is checked against the release's SHA256SUMS before anything is installed.
+  `install-server.sh` now also installs `tapqueue-update.path` and `tapqueue-update.service`, which
+  do the upgrade as root; servers installed before this release need one upgrade by hand first.
+  See [Upgrading](docs/install-server.md#upgrading).
 
 ### Changed
 - The server listens on a second port, 8632, by default. Open it in the firewall

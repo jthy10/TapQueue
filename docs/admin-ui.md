@@ -40,7 +40,7 @@ A sidebar groups pages by what you're doing; each page is a list with a detail d
 | | Stations | Release stations: status, printer, reader, settings, restart, update, token. |
 | | Workstations | Windows and Linux PCs running the client: who's signed in, client version, update now, sign out. |
 | **System** | Updates | Client and station builds: publish, see who runs what, roll back. |
-| | Server | Version, uptime, settings, live log, restart. |
+| | Server | Version, uptime, settings, live log, restart, check for updates and upgrade (now or scheduled). |
 | | Admins | Who may use the console: roles for people and groups, per area. Full admins only. |
 
 URLs are `/admin/<page>` and `/admin/<page>/<id>` for an open detail drawer, so every view can be

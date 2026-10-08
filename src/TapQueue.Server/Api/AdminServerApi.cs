@@ -1,11 +1,16 @@
 using System.Net.ServerSentEvents;
 using TapQueue.Server.Data;
+using TapQueue.Server.Admins;
 using TapQueue.Server.Logging;
+using TapQueue.Server.Updates;
 using TapQueue.Shared.Api;
 
 namespace TapQueue.Server.Api;
 
-/// <summary>/api/v1/admin/server/log and /server/restart: the server's live log, and restarting it.</summary>
+/// <summary>
+/// /api/v1/admin/server/log, /server/restart and /server/update: the server's live log, restarting
+/// it, and upgrading it to a newer release.
+/// </summary>
 public static class AdminServerApi
 {
     /// <summary>
@@ -24,6 +29,18 @@ public static class AdminServerApi
             log.Since(after ?? 0, Math.Clamp(limit ?? 500, 1, LogBuffer.Capacity)));
         admin.MapGet("/server/log/stream", StreamLog);
         admin.MapPost("/server/restart", Restart);
+        // ?refresh=true asks GitHub (at most once a minute); without it, what the last check found.
+        admin.MapGet("/server/update", async (ServerUpdater updater, bool? refresh, CancellationToken ct) =>
+            refresh == true ? await updater.CheckAsync(ct) : updater.Status());
+        admin.MapPost("/server/update", (ApplyServerUpdateRequest request, ServerUpdater updater, HttpContext http) =>
+            updater.Apply(request.Version, request.At, http.Caller().Actor) is { } error
+                ? Results.Conflict(new ErrorResponse(error))
+                : Results.Ok(updater.Status()));
+        admin.MapDelete("/server/update", (ServerUpdater updater) =>
+        {
+            updater.CancelSchedule();
+            return Results.Ok(updater.Status());
+        });
     }
 
     /// <summary>
