@@ -161,7 +161,8 @@ static async Task TapAsync(HttpClient http, string card, CancellationToken ct)
             return;
         }
         var result = await response.Content.ReadFromJsonAsync<StationTapResponse>(TapQueueJson.Options, ct);
-        var who = result!.User?.Username ?? $"card {card}";
+        // Only the end of an unknown card's number, as the server logs it: the journal isn't the place for whole ones.
+        var who = result!.User?.Username ?? $"card {(card.Length <= 4 ? card : "…" + card[^4..])}";
         Log($"{who}: {result.Message}");
         foreach (var r in result.Results.Where(r => !r.Success))
             Log($"  job #{r.JobId} \"{r.JobName}\" not printed: {r.Error}");
