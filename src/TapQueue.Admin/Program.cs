@@ -103,6 +103,8 @@ const string Usage = """
                                                      go to whoever is signed in at their address; off: nobody
       tapqueue-admin server log [--follow]           The server's recent log lines, and new ones with --follow
       tapqueue-admin server restart                  Restart tapqueue-server (only when systemd runs it)
+      tapqueue-admin server enrollment-code new|off  Make new PCs give a code to register (shown once; goes in
+                                                     their client.toml as enrollment_code), or stop asking
 
     Connection (flag > environment > ~/.config/tapqueue/admin.toml > /etc/tapqueue/server.toml):
       --server <url>    TAPQUEUE_SERVER       default http://localhost:8631
@@ -226,6 +228,7 @@ try
         ("server", "set") when positional.Count == 4 => await SetServerSetting(positional[2], positional[3]),
         ("server", "log") when positional.Count == 2 => await ServerLog(options.ContainsKey("--follow")),
         ("server", "restart") when positional.Count == 2 => await RestartServer(),
+        ("server", "enrollment-code") when positional.Count == 3 && positional[2] is "new" or "off" => await SetEnrollmentCode(positional[2] == "new"),
         _ => BadUsage(),
     };
 }
@@ -806,6 +809,9 @@ async Task<int> ShowServer()
     Console.WriteLine($"quota-overrun    {server.QuotaOverrun,-6} ({(server.ChangedSettings?.Contains("quotaOverrun") == true ? "set here" : "default")})");
     Console.WriteLine($"address-matching {server.AddressMatching,-6} ({(server.ChangedSettings?.Contains("addressMatching") == true ? "set here" : "default")})");
     Console.WriteLine($"auth.mode        {server.AuthMode,-6} (server.toml; restart to change)");
+    Console.WriteLine(server.EnrollmentCodeRequired
+        ? "new PCs          need the enrollment code (`server enrollment-code new` makes another, `off` stops asking)"
+        : "new PCs          any PC that can reach the server can register (`server enrollment-code new` to ask for a code)");
     if (server.Tls is not { } tls)
     {
         Console.WriteLine("tls              off    (tls.listen in server.toml is empty; nothing is encrypted)");
@@ -887,6 +893,18 @@ async Task<int> ServerLog(bool follow)
 
 static void PrintLogLine(LogLineDto line) =>
     Console.WriteLine($"{line.At.ToLocalTime():HH:mm:ss} {line.Level,-7} {line.Category}: {line.Message}");
+
+async Task<int> SetEnrollmentCode(bool make)
+{
+    if (!make)
+        return await Delete("server/enrollment-code", "New PCs no longer need an enrollment code.");
+    var made = await Send<EnrollmentCodeResponse>(HttpMethod.Post, "server/enrollment-code", null);
+    if (made is null) return 1;
+    Console.WriteLine($"Enrollment code: {made.Code}");
+    Console.WriteLine("New PCs need it to register: enrollment_code in client.toml, /ENROLL=<code> for the Windows installer,");
+    Console.WriteLine("TAPQUEUE_ENROLLMENT_CODE for install.sh and install.ps1. It isn't shown again; PCs that already have a key aren't affected.");
+    return 0;
+}
 
 async Task<int> RestartServer()
 {

@@ -45,6 +45,13 @@ export async function render(root, ctx) {
         h("span", { class: "sub" }, s.addressMatching === "off"
           ? "Only jobs from PCs whose TapQueue client has a key (0.8 on) go to someone."
           : "Jobs from clients older than 0.8 go to whoever is signed in at that address. Turn this off once every PC under Workstations has a key.")]],
+      ["New PCs", [s.enrollmentCodeRequired ? pill("Need the enrollment code", "ok") : pill("Open", "warn"),
+        h("span", { class: "sub" }, s.enrollmentCodeRequired
+          ? "A PC's TapQueue service must send the code (enrollment_code in client.toml) the first time it checks in."
+          : "Any machine that can reach the server can register as a PC."),
+        h("span", { style: "display:flex;gap:8px;margin-top:6px" },
+          button(s.enrollmentCodeRequired ? "New code…" : "Require a code…", { small: true, onclick: newEnrollmentCode }),
+          s.enrollmentCodeRequired && button("Stop asking", { small: true, kind: "ghost danger", onclick: stopEnrollmentCode }))]],
       ["Client sign-in", s.authMode === "dev"
         ? [pill("Dev", "bad"), h("span", { class: "sub" }, "Anyone can sign in as any username, and this console is open. Set auth.mode in server.toml and restart to change it.")]
         : [pill("Tokens", "ok"), h("span", { class: "sub" }, "Clients need the token from Users.")]],
@@ -193,6 +200,39 @@ export async function render(root, ctx) {
         toast("Settings saved");
       },
     });
+  }
+
+  /** The code is shown once, here: the server only keeps its hash. */
+  function newEnrollmentCode() {
+    formDialog({
+      title: s.enrollmentCodeRequired ? "Make a new enrollment code?" : "Require an enrollment code?",
+      description: s.enrollmentCodeRequired
+        ? "The old code stops working for PCs that haven't registered yet. PCs that already have a key aren't affected."
+        : "New PCs will need the code to register. PCs that already have a key (see Workstations) aren't affected; ones without need client 0.9 and the code.",
+      submitLabel: "Make code",
+      body: [],
+      onSubmit: async () => {
+        const made = await api.post("server/enrollment-code");
+        s = await api.get("server");
+        draw();
+        return h("div", null,
+          h("p", { style: "margin-top:0" }, "Copy it now; it isn't shown again."),
+          h("p", null, h("code", { style: "user-select:all;word-break:break-all" }, made.code)),
+          h("p", { class: "muted", style: "margin-bottom:0" },
+            "On each new PC: enrollment_code in client.toml, /ENROLL=<code> for the Windows installer, or TAPQUEUE_ENROLLMENT_CODE for install.sh and install.ps1."));
+      },
+    });
+  }
+
+  async function stopEnrollmentCode() {
+    if (!await confirm({
+      title: "Stop asking new PCs for a code?",
+      message: "Any machine that can reach the server will be able to register as a PC again.",
+      confirmLabel: "Stop asking",
+    })) return;
+    if (await attempt(() => api.del("server/enrollment-code"), "New PCs no longer need a code") === undefined) return;
+    s = await api.get("server");
+    draw();
   }
 
   async function restart() {
