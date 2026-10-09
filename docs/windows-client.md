@@ -48,6 +48,11 @@ TapQueue_client_X.Y.Z.exe /VERYSILENT /SERVER=https://tapqueue-server:8632
 Without `/SERVER`, a first install uses the TapQueue server it finds on the network, and fails
 (nothing is installed) if it finds none or more than one. Upgrades keep the server already set.
 
+If the server asks new PCs for an enrollment code (see
+[Security notes](how-it-works.md#security-notes)), add `/ENROLL=<code>`, or type it on the
+installer's server page. It goes into `client.toml` as `enrollment_code`, and is only needed
+until the PC has registered. With `install.ps1`, set `$env:TAPQUEUE_ENROLLMENT_CODE`.
+
 Or from PowerShell run as administrator, which downloads the newest release, checks its
 checksum and installs it silently:
 

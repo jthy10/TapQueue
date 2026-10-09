@@ -10,6 +10,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Added
+- `enrollment_code` in `client.toml`, for servers (0.10 and later) that only let new PCs register
+  with their enrollment code. The Windows installer takes `/ENROLL=<code>` and has a field for it
+  on the server page; `install.sh` and `install.ps1` take `TAPQUEUE_ENROLLMENT_CODE`. Only sent
+  until the PC has its key.
+
+### Changed
+- With server 0.10, printing while nobody is signed in to TapQueue on the PC gives a print error
+  asking you to sign in, instead of the job disappearing into a queue nobody could release it from.
+
 ## [0.8.0] - 2026-10-08
 
 ### Added

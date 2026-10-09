@@ -69,6 +69,7 @@ tapqueue-admin server set address-matching on|off|default
                                                (see how-it-works.md)
 tapqueue-admin server log [--follow]           Recent server log lines; --follow keeps printing new ones
 tapqueue-admin server restart                  Restart tapqueue-server (only when systemd runs it)
+tapqueue-admin server enrollment-code new|off  Make new PCs give a code to register (shown once), or stop asking
 ```
 
 `tapqueue-admin --help` shows every option.

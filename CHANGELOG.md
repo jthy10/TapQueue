@@ -11,6 +11,13 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+### Added
+- Enrollment code for PCs. `tapqueue-admin server enrollment-code new` (or **Server** in the
+  console) makes a code, shown once; from then on a PC without a key only registers with it
+  (`enrollment_code` in `client.toml`, client 0.9 and later). PCs that already have a key aren't
+  affected. Off by default, so any PC that can reach the server can still register until you turn
+  it on. See [Security notes](docs/how-it-works.md#security-notes).
+
 ### Changed
 - A job that can't be matched to anyone (nobody is signed in to TapQueue where it came from) is
   refused instead of being held with no owner. The PC shows a print error asking the person to sign

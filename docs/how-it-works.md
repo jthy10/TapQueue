@@ -141,6 +141,13 @@ decides ownership.
   port 8632), with a self-signed certificate they pin the first time they connect, or your own;
   see [TLS](tls.md). Plain HTTP on port 8631 still works until `tls.require` is on, and anything
   sent that way, tokens and documents included, crosses the network in the clear.
+- Any machine that can reach the server can register itself as a PC (a workstation) unless you
+  ask for an enrollment code: `sudo tapqueue-admin server enrollment-code new` (or **Server** in the
+  console) makes one, shown once. From then on a PC without a key only gets in with the code:
+  `enrollment_code` in its `client.toml`, `/ENROLL=<code>` for the Windows installer, or
+  `TAPQUEUE_ENROLLMENT_CODE` for `install.sh` and `install.ps1`. PCs that already have a key carry
+  on as they are. Every user of a PC can read its `client.toml`, so the code keeps strangers'
+  machines out, not your own users; send it over `https://`. `server enrollment-code off` stops asking.
 - Releasing to a printer uses whatever its `uri` says: `ipps://` encrypts it, and
   `--tls-skip-verify` accepts the printer's own self-signed certificate.
 - Tokens (user, station, session) are stored hashed. Badge numbers are stored hashed, with only

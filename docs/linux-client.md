@@ -60,6 +60,11 @@ To install on many PCs without questions, set the server:
 curl -fsSL https://raw.githubusercontent.com/jthy10/TapQueue/main/install.sh | sudo TAPQUEUE_SERVER=https://tapqueue-server:8632 bash -s client
 ```
 
+If the server asks new PCs for an enrollment code (see
+[Security notes](how-it-works.md#security-notes)), pass it the same way:
+`sudo TAPQUEUE_SERVER=... TAPQUEUE_ENROLLMENT_CODE=<code> bash -s client`. It goes into
+`/etc/tapqueue/client.toml` as `enrollment_code`.
+
 Upgrades (run it again) keep the server already set. To remove TapQueue:
 
 ```
