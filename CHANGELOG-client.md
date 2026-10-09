@@ -10,6 +10,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Fixed
+- Two queues with the same name on the server made the TapQueue service crash and restart every
+  minute, on every PC, so printers weren't kept up to date and new client builds weren't installed.
+  The PC now adds the first of them and carries on (and servers from 0.10 refuse the second name).
+
 ## [0.9.5] - 2026-10-09
 
 ### Added

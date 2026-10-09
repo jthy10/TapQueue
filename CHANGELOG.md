@@ -11,6 +11,24 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+### Changed
+- Each queue needs its own name (whatever the case), at most 127 characters and without tabs or
+  line breaks. PCs know their printers by name, so two queues with one name could never both be
+  added. If you already have two with the same name, rename one.
+
+### Fixed
+- Crash reports and rejected tray sign-ins, which need no sign-in to send, each added a line to
+  the activity log, so anyone who could reach the server could bury it and fill the disk. The log
+  now takes at most five of each a minute from one address; crash reports themselves are still kept.
+- Job and user names longer than the 255 characters IPP allows are cut to that instead of being
+  stored and logged whole.
+- PDFs are counted one at a time, so several large ones arriving together can't use up the
+  server's memory.
+- An admin console sign-in as a local user who has no console password took less time to refuse
+  than a wrong password, which told a guesser which users have one.
+- Station: an answer that isn't the server's (a proxy's error page, say) no longer ends its
+  heartbeats until the next restart, or stops the station on a tap.
+
 ## [0.9.5] - 2026-10-09
 
 ### Added
