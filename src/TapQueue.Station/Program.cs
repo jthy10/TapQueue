@@ -160,9 +160,13 @@ static async Task TapAsync(HttpClient http, string card, CancellationToken ct)
             Log($"Tap failed: {await ErrorText(response, ct)}");
             return;
         }
-        var result = await response.Content.ReadFromJsonAsync<StationTapResponse>(TapQueueJson.Options, ct);
+        if (await response.Content.ReadFromJsonAsync<StationTapResponse>(TapQueueJson.Options, ct) is not { } result)
+        {
+            Log("Tap failed: the server sent an empty answer.");
+            return;
+        }
         // Only the end of an unknown card's number, as the server logs it: the journal isn't the place for whole ones.
-        var who = result!.User?.Username ?? $"card {(card.Length <= 4 ? card : "…" + card[^4..])}";
+        var who = result.User?.Username ?? $"card {(card.Length <= 4 ? card : "…" + card[^4..])}";
         Log($"{who}: {result.Message}");
         foreach (var r in result.Results.Where(r => !r.Success))
             Log($"  job #{r.JobId} \"{r.JobName}\" not printed: {r.Error}");
@@ -174,6 +178,11 @@ static async Task TapAsync(HttpClient http, string card, CancellationToken ct)
     catch (TaskCanceledException) when (!ct.IsCancellationRequested)
     {
         Log("Tap failed: the server took too long to answer.");
+    }
+    catch (System.Text.Json.JsonException ex)
+    {
+        // Something between here and the server answered instead of it; the station keeps reading cards.
+        Log($"Tap failed: the answer wasn't the TapQueue server's ({ex.Message}).");
     }
 }
 

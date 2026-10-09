@@ -95,9 +95,11 @@ internal sealed class StationRuntime(HttpClient http, StationConfig local, Actio
             response.EnsureSuccessStatusCode();
             return await response.Content.ReadFromJsonAsync<StationHeartbeatResponse>(TapQueueJson.Options, ct);
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException && !ct.IsCancellationRequested)
         {
-            return null; // Taps report connection problems; heartbeats just try again.
+            // Taps report connection problems; heartbeats just try again. That goes for an answer that
+            // isn't the server's too (a proxy's error page): it mustn't end the heartbeats for good.
+            return null;
         }
     }
 
