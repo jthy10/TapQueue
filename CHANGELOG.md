@@ -11,6 +11,8 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-08
+
 ### Added
 - Enrolling a card by tapping it can be tied to one station. The console's **Enroll card** dialog
   has a **Station** choice (remembered per browser) when there's more than one, and only a card
@@ -286,7 +288,8 @@ First working version.
   readers. A tap releases the user's held jobs to the station's printer.
 - Badge enrollment by an admin (`badges add --last-tap`).
 
-[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.8.0...HEAD
+[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.9.0...HEAD
+[0.9.0]: https://github.com/jthy10/TapQueue/compare/server-v0.8.0...server-v0.9.0
 [0.8.0]: https://github.com/jthy10/TapQueue/compare/server-v0.7.0...server-v0.8.0
 [0.7.0]: https://github.com/jthy10/TapQueue/compare/server-v0.6.2...server-v0.7.0
 [0.6.2]: https://github.com/jthy10/TapQueue/compare/server-v0.6.1...server-v0.6.2
