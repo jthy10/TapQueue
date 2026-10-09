@@ -11,6 +11,8 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-08
+
 ### Added
 - TLS. The server also listens on port 8632 (`tls.listen`) for HTTPS and IPPS: the client API,
   stations, the admin console and printing, encrypted. It makes itself a self-signed certificate
@@ -252,7 +254,8 @@ First working version.
   readers. A tap releases the user's held jobs to the station's printer.
 - Badge enrollment by an admin (`badges add --last-tap`).
 
-[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.7.0...HEAD
+[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.8.0...HEAD
+[0.8.0]: https://github.com/jthy10/TapQueue/compare/server-v0.7.0...server-v0.8.0
 [0.7.0]: https://github.com/jthy10/TapQueue/compare/server-v0.6.2...server-v0.7.0
 [0.6.2]: https://github.com/jthy10/TapQueue/compare/server-v0.6.1...server-v0.6.2
 [0.6.1]: https://github.com/jthy10/TapQueue/compare/server-v0.6.0...server-v0.6.1
