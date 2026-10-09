@@ -23,6 +23,12 @@ public sealed class ClientConfig
     /// <summary>Per-user token from `tapqueue-admin users add`. Not needed when the server runs in dev auth mode.</summary>
     public string Token { get; set; } = "";
 
+    /// <summary>
+    /// The server's enrollment code, if it asks new PCs for one (`tapqueue-admin server enrollment-code new`).
+    /// Only used until this PC has its key; it can be removed afterwards.
+    /// </summary>
+    public string EnrollmentCode { get; set; } = "";
+
     /// <summary>Let the TapQueue service add the server's print queues to this PC as printers.</summary>
     public bool InstallPrinters { get; set; } = true;
 

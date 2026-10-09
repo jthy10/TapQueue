@@ -11,6 +11,10 @@ server_url = "https://tapqueue-server:8632"
 # connects. Not needed for a certificate from a CA the PC already trusts.
 server_cert_fingerprint = ""
 
+# The server's enrollment code, if it asks new PCs for one (an admin gets it with
+# `tapqueue-admin server enrollment-code new`). Only needed until this PC has registered.
+enrollment_code = ""
+
 # Your TapQueue username. Leave empty to use the name you sign in to the PC with.
 username = ""
 

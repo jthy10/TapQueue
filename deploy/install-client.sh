@@ -6,7 +6,7 @@
 #   sudo ./install-client.sh --uninstall  remove it, and the printers it added (keeps client.toml)
 #
 # First install: finds TapQueue servers on the network and asks which to use (set TAPQUEUE_SERVER
-# to install without questions). Upgrade: replaces the program and restarts the service; the
+# to install without questions; TAPQUEUE_ENROLLMENT_CODE if the server asks new PCs for its code). Upgrade: replaces the program and restarts the service; the
 # config is left alone.
 #
 # What goes where:
@@ -97,7 +97,14 @@ if [ ! -e "$config" ]; then
             server=$(ask "TapQueue server address" "$default")
         fi
     fi
-    sed -e "s|^server_url = .*|server_url = \"$server\"|" "$here/client.example.toml" > "$config"
+    # TAPQUEUE_ENROLLMENT_CODE: for servers that only let new PCs in with their enrollment code.
+    code=${TAPQUEUE_ENROLLMENT_CODE:-}
+    if [[ ! "$code" =~ ^[A-Za-z0-9_-]*$ ]]; then
+        echo "TAPQUEUE_ENROLLMENT_CODE doesn't look like an enrollment code." >&2
+        exit 1
+    fi
+    sed -e "s|^server_url = .*|server_url = \"$server\"|" -e "s|^enrollment_code = .*|enrollment_code = \"$code\"|" \
+        "$here/client.example.toml" > "$config"
     # Readable by everyone: each user's tray app reads it. A per-PC token would be visible to all
     # users of the PC, as it is on Windows; see docs/linux-client.md.
     chmod 644 "$config"

@@ -169,7 +169,9 @@ public sealed class ClientService(
     {
         var key = WorkstationKey.Load(config.ServerUrl) ?? "";
         var report = new ClientSetupRequest(Environment.MachineName, TapQueueVersion.Current, await updater.OwnSha256Async(ct), updater.LastError,
-            ClientPlatform.Current, key);
+            ClientPlatform.Current, key,
+            // Only to get a key; a PC that has one doesn't keep sending the code around.
+            key.Length == 0 && !string.IsNullOrWhiteSpace(config.EnrollmentCode) ? config.EnrollmentCode.Trim() : null);
         using var response = await http.PostAsJsonAsync("api/v1/client/setup", report, TapQueueJson.Options, ct);
         if (response.StatusCode is System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.MethodNotAllowed)
             return await http.GetFromJsonAsync<ClientSetupResponse>("api/v1/client/setup", TapQueueJson.Options, ct)

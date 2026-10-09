@@ -87,6 +87,8 @@ Step "Installing TapQueue $version"
 $log = Join-Path $work "setup.log"
 $arguments = @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/LOG=`"$log`"")
 if ($env:TAPQUEUE_SERVER) { $arguments += "/SERVER=$($env:TAPQUEUE_SERVER)" }
+# For servers that only let new PCs in with their enrollment code.
+if ($env:TAPQUEUE_ENROLLMENT_CODE) { $arguments += "/ENROLL=$($env:TAPQUEUE_ENROLLMENT_CODE)" }
 $setup = Start-Process -FilePath $installer -ArgumentList $arguments -Wait -PassThru
 if ($setup.ExitCode -ne 0) {
     Get-Content $log -Tail 15 -ErrorAction SilentlyContinue

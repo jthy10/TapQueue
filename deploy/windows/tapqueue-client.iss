@@ -9,6 +9,7 @@
 ;
 ; Silent install for many PCs:
 ;   TapQueue_client_0.3.0.exe /VERYSILENT /SERVER=https://tapqueue-server:8632
+; Add /ENROLL=<code> for a server that only lets new PCs in with its enrollment code.
 ; Without /SERVER, a first install uses the one TapQueue server it finds on the network (and fails if
 ; it finds none, or more than one). The wizard lists the servers it finds (TapQueueClient.exe --discover).
 
@@ -226,6 +227,8 @@ begin
     'TapQueue server', 'Which TapQueue server should this PC use?',
     'Pick a server found on this network, or enter its address including the port, for example https://tapqueue-server:8632');
   ServerPage.Add('Server address:', False);
+  ServerPage.Add('Enrollment code (only if your TapQueue admin gave you one):', False);
+  ServerPage.Values[1] := ExpandConstant('{param:ENROLL|}');
   ServerPage.Values[0] := ExpandConstant('{param:SERVER|}');
   if ServerPage.Values[0] = '' then
     ServerPage.Values[0] := ExistingServerUrl;
@@ -234,7 +237,7 @@ begin
 
   FoundLabel := TNewStaticText.Create(ServerPage);
   FoundLabel.Parent := ServerPage.Surface;
-  FoundLabel.Top := ServerPage.Edits[0].Top + ServerPage.Edits[0].Height + ScaleY(16);
+  FoundLabel.Top := ServerPage.Edits[1].Top + ServerPage.Edits[1].Height + ScaleY(10);
   FoundLabel.Width := ServerPage.SurfaceWidth;
   FoundLabel.AutoSize := False;
   FoundLabel.Height := ScaleY(16);
@@ -243,13 +246,13 @@ begin
   FoundList.Parent := ServerPage.Surface;
   FoundList.Top := FoundLabel.Top + FoundLabel.Height + ScaleY(4);
   FoundList.Width := ServerPage.SurfaceWidth;
-  FoundList.Height := ScaleY(80);
+  FoundList.Height := ScaleY(48);
   FoundList.OnClick := @FoundListClick;
 
   SearchButton := TNewButton.Create(ServerPage);
   SearchButton.Parent := ServerPage.Surface;
   SearchButton.Caption := 'Search again';
-  SearchButton.Top := FoundList.Top + FoundList.Height + ScaleY(8);
+  SearchButton.Top := FoundList.Top + FoundList.Height + ScaleY(6);
   SearchButton.Width := ScaleX(100);
   SearchButton.Height := WizardForm.NextButton.Height;
   SearchButton.OnClick := @SearchButtonClick;
@@ -360,6 +363,33 @@ begin
   end;
 end;
 
+{ Puts the server's enrollment code in client.toml (see docs/windows-client.md), keeping everything else. }
+procedure WriteEnrollmentCode(Code: String);
+var
+  Lines: TArrayOfString;
+  I: Integer;
+  Found: Boolean;
+begin
+  Code := Trim(Code);
+  if (Code = '') or (Pos('"', Code) > 0) or (Pos('\', Code) > 0) then
+    exit;
+  if not LoadStringsFromFile(ConfigPath, Lines) then
+    exit;
+  Found := False;
+  for I := 0 to GetArrayLength(Lines) - 1 do
+    if Pos('enrollment_code', Trim(Lines[I])) = 1 then
+    begin
+      Lines[I] := 'enrollment_code = "' + Code + '"';
+      Found := True;
+    end;
+  if not Found then
+  begin
+    SetArrayLength(Lines, GetArrayLength(Lines) + 1);
+    Lines[GetArrayLength(Lines) - 1] := 'enrollment_code = "' + Code + '"';
+  end;
+  SaveStringsToUTF8FileWithoutBOM(ConfigPath, Lines, False);
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   { Before [Run] starts the service, which needs the config. }
@@ -374,5 +404,9 @@ begin
     end
     else
       WriteConfig(ServerPage.Values[0]);
+    if WizardSilent then
+      WriteEnrollmentCode(ExpandConstant('{param:ENROLL|}'))
+    else
+      WriteEnrollmentCode(ServerPage.Values[1]);
   end;
 end;
