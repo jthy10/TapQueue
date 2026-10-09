@@ -44,7 +44,7 @@ public static class ServerApp
                 {
                     OnConnection = _ => ValueTask.FromResult(certificate.HandshakeOptions()),
                 }));
-            kestrel.Limits.MaxRequestBodySize = 512L * 1024 * 1024; // big scanned PDFs
+            kestrel.Limits.MaxRequestBodySize = MaxJobBytes;
         });
         builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
         // One line per event, so the log reads well in journalctl and on the server's screen.
@@ -132,6 +132,9 @@ public static class ServerApp
         app.MapAdminUi();
         return app;
     }
+
+    /// <summary>The most one print job (or uploaded build) may take: big scanned PDFs fit, a disk-filling one doesn't.</summary>
+    public const long MaxJobBytes = 512L * 1024 * 1024;
 
     /// <summary>For everything but print jobs, client and station builds and user imports.</summary>
     public const long SmallBodyLimit = 4L * 1024 * 1024;

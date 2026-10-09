@@ -162,6 +162,14 @@ public sealed class IppPrinterEndpoint(
             jobs.SetDocumentFormat(job.Id, format);
 
         var size = await ReceiveDocumentAsync(c, job.Id, append: true);
+        // One request can't be bigger than this (Kestrel's limit), but a job sent in pieces could grow without end.
+        if (size > ServerApp.MaxJobBytes)
+        {
+            if (jobs.TryTransition(job.Id, JobStatus.Receiving, JobStatus.Canceled, "The document is too big."))
+                spool.Delete(job.Id);
+            logger.LogWarning("Job {JobId} from {Source} canceled: it grew past {Limit} MB", job.Id, c.Source, ServerApp.MaxJobBytes / 1024 / 1024);
+            return IppMessage.CreateResponse(c.Request, IppStatus.ClientErrorNotPossible, "The document is too big");
+        }
         if (lastDocument.Value)
             await HoldAsync(job.Id, size, c.Http.RequestAborted);
         return JobResponse(c, jobs.Get(job.Id)!);

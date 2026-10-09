@@ -49,8 +49,15 @@ public static class ClientApi
     {
         var logger = loggers.CreateLogger("TapQueue.Server.Api.ClientApi");
         var username = request.Username?.Trim();
-        if (string.IsNullOrEmpty(username))
+        if (string.IsNullOrEmpty(username) || username.Length > 255)
             return Results.BadRequest(new ErrorResponse("username is required"));
+        // Stored with the session and written to the activity log, whoever sends them.
+        request = request with
+        {
+            Hostname = Clean(request.Hostname, 255),
+            WindowsUser = Clean(request.WindowsUser, 255),
+            ClientVersion = Clean(request.ClientVersion, 64),
+        };
         var pc = request.Hostname ?? http.ClientIp();
 
         UserRecord? user;
@@ -198,7 +205,13 @@ public static class ClientApi
                 statusCode: StatusCodes.Status403Forbidden);
         }
 
-        var command = workstations.CheckIn(computer, http.ClientIp(), platform, request with { UpdateError = Clean(request.UpdateError) });
+        // Anyone who can reach the server can check in, so what it stores about a PC is kept short.
+        var command = workstations.CheckIn(computer, http.ClientIp(), platform, request with
+        {
+            Version = Clean(request.Version, 64),
+            Sha256 = Clean(request.Sha256, 64),
+            UpdateError = Clean(request.UpdateError, 500),
+        });
 
         string? key = keyHash is null ? null : request.WorkstationKey;
         string? newKey = null;
@@ -213,7 +226,14 @@ public static class ClientApi
         }
         return Results.Ok(new ClientSetupResponse(queues.List().Select(q => ToDto(q, key)).ToList(), builds.Latest(platform)?.ToDto(), command, newKey));
 
-        static string? Clean(string? error) => string.IsNullOrWhiteSpace(error) ? null : error.Trim()[..Math.Min(error.Trim().Length, 500)];
+    }
+
+    /// <summary>Trimmed and cut to <paramref name="max"/> characters; null if there's nothing left.</summary>
+    private static string? Clean(string? text, int max)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        var trimmed = text.Trim();
+        return trimmed.Length <= max ? trimmed : trimmed[..max];
     }
 
     /// <summary>
@@ -291,7 +311,7 @@ public static class ClientApi
 
     private static async Task<IResult> Release(ReleaseRequest request, HttpContext http, PrinterRegistry printers, ReleaseService release)
     {
-        var printer = printers.Find(request.PrinterId);
+        var printer = printers.Find(request.PrinterId ?? "");
         if (printer is null)
             return Results.NotFound(new ErrorResponse($"Unknown printer \"{request.PrinterId}\"."));
         var user = CurrentUser(http);
