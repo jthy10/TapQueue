@@ -11,6 +11,16 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+### Changed
+- A job that can't be matched to anyone (nobody is signed in to TapQueue where it came from) is
+  refused instead of being held with no owner. The PC shows a print error asking the person to sign
+  in to TapQueue and print again. Nobody could release such a job, and anyone who could reach the
+  server could fill its disk with them. The activity log notes refusals, once a minute per source.
+
+### Fixed
+- Two releases for one person at the same moment (a tap at two stations, or a tap and the tray app)
+  could together print past their page limit. Releases now take turns per person.
+
 ## [0.9.0] - 2026-10-08
 
 ### Added
