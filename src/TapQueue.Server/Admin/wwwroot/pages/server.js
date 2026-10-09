@@ -208,7 +208,7 @@ export async function render(root, ctx) {
       title: s.enrollmentCodeRequired ? "Make a new enrollment code?" : "Require an enrollment code?",
       description: s.enrollmentCodeRequired
         ? "The old code stops working for PCs that haven't registered yet. PCs that already have a key aren't affected."
-        : "New PCs will need the code to register. PCs that already have a key (see Workstations) aren't affected; ones without need client 0.9 and the code.",
+        : "New PCs will need the code to register. PCs that already have a key (see Workstations) aren't affected; ones without need client 0.9.5 and the code.",
       submitLabel: "Make code",
       body: [],
       onSubmit: async () => {

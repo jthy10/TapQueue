@@ -11,10 +11,12 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+## [0.9.5] - 2026-10-09
+
 ### Added
 - Enrollment code for PCs. `tapqueue-admin server enrollment-code new` (or **Server** in the
   console) makes a code, shown once; from then on a PC without a key only registers with it
-  (`enrollment_code` in `client.toml`, client 0.9 and later). PCs that already have a key aren't
+  (`enrollment_code` in `client.toml`, client 0.9.5 and later). PCs that already have a key aren't
   affected. Off by default, so any PC that can reach the server can still register until you turn
   it on. See [Security notes](docs/how-it-works.md#security-notes).
 
@@ -305,7 +307,8 @@ First working version.
   readers. A tap releases the user's held jobs to the station's printer.
 - Badge enrollment by an admin (`badges add --last-tap`).
 
-[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.9.0...HEAD
+[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.9.5...HEAD
+[0.9.5]: https://github.com/jthy10/TapQueue/compare/server-v0.9.0...server-v0.9.5
 [0.9.0]: https://github.com/jthy10/TapQueue/compare/server-v0.8.0...server-v0.9.0
 [0.8.0]: https://github.com/jthy10/TapQueue/compare/server-v0.7.0...server-v0.8.0
 [0.7.0]: https://github.com/jthy10/TapQueue/compare/server-v0.6.2...server-v0.7.0
