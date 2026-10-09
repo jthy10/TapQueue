@@ -17,6 +17,7 @@ public sealed class TestServer : IAsyncDisposable
 {
     public const string AdminToken = "test-admin-token";
     public const string QueueId = "secure";
+    public const string QueueName = "Test Secure Print";
     public const string PrinterId = "office";
 
     private readonly WebApplication _app;
@@ -60,7 +61,7 @@ public sealed class TestServer : IAsyncDisposable
         await app.StartAsync();
         var server = new TestServer(app, dataDir, printer);
         await ReadAsync<QueueAdminDto>(await server.Admin.PostAsJsonAsync("/api/v1/admin/queues",
-            new CreateQueueRequest(QueueId, "Test Secure Print"), TapQueueJson.Options));
+            new CreateQueueRequest(QueueId, QueueName), TapQueueJson.Options));
         await ReadAsync<PrinterAdminDto>(await server.Admin.PostAsJsonAsync("/api/v1/admin/printers",
             new CreatePrinterRequest(PrinterId, printer.Uri, "Office printer"), TapQueueJson.Options));
         return server;

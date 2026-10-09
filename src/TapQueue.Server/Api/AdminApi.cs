@@ -289,6 +289,8 @@ public static class AdminApi
             return Results.BadRequest(new ErrorResponse($"Queue id must be {Ids.Rule}. It becomes part of the URL clients print to."));
         if (Clean(request.Name) is not { } name)
             return Results.BadRequest(new ErrorResponse("Queue name is required. It's the printer name users see in Windows."));
+        if (QueueNameProblem(name, id!, queues) is { } problem)
+            return problem;
         if (queues.Get(id!) is not null)
             return Results.Conflict(new ErrorResponse($"Queue \"{id}\" already exists."));
 
@@ -302,6 +304,8 @@ public static class AdminApi
     {
         if (queues.Get(id) is not { } queue)
             return Results.NotFound(new ErrorResponse($"No queue \"{id}\"."));
+        if (Clean(request.Name) is { } newName && newName != queue.Name && QueueNameProblem(newName, queue.Id, queues) is { } problem)
+            return problem;
         queue = queues.Update(queue with
         {
             Name = Clean(request.Name) ?? queue.Name,
@@ -313,6 +317,26 @@ public static class AdminApi
         })!;
         events.Admin(EventLog.Queue(queue.Id), $"Changed queue \"{queue.Name}\" ({queue.Id}).");
         return Results.Ok(ToAdminDto(queue));
+    }
+
+    /// <summary>The most a queue name may be: CUPS takes printer names up to 127 characters.</summary>
+    private const int MaxQueueNameLength = 127;
+
+    /// <summary>
+    /// A queue's name becomes a printer's name on every PC, where it's also how the TapQueue service
+    /// tells its printers apart. So it has to be one a PC can use, and no other queue's.
+    /// </summary>
+    private static IResult? QueueNameProblem(string name, string id, QueueStore queues)
+    {
+        if (name.Length > MaxQueueNameLength)
+            return Results.BadRequest(new ErrorResponse($"Queue name can be at most {MaxQueueNameLength} characters."));
+        if (name.Any(char.IsControl))
+            return Results.BadRequest(new ErrorResponse("Queue name can't have tabs, line breaks or other control characters."));
+        if (queues.List().FirstOrDefault(q => !string.Equals(q.Id, id, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(q.Name, name, StringComparison.OrdinalIgnoreCase)) is { } other)
+            return Results.Conflict(new ErrorResponse(
+                $"Queue \"{other.Id}\" is already named \"{other.Name}\". PCs know their printers by name, so each queue needs its own."));
+        return null;
     }
 
     private static QueueAdminDto ToAdminDto(QueueRecord q) =>

@@ -92,6 +92,38 @@ public sealed class AdminPrinterAndQueueTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task EachQueueNeedsItsOwnName()
+    {
+        // PCs know their printers by name: two queues with one name can't both be added to a PC.
+        var same = await _server.Admin.PostAsJsonAsync("/api/v1/admin/queues",
+            new CreateQueueRequest("second", TestServer.QueueName.ToUpperInvariant()), TapQueueJson.Options);
+        Assert.Equal(HttpStatusCode.Conflict, same.StatusCode);
+        Assert.Contains(TestServer.QueueId, await same.Content.ReadAsStringAsync());
+
+        await TestServer.ReadAsync<QueueAdminDto>(await _server.Admin.PostAsJsonAsync("/api/v1/admin/queues",
+            new CreateQueueRequest("second", "Color"), TapQueueJson.Options));
+        var renamed = await Patch("/api/v1/admin/queues/second", new UpdateQueueRequest(Name: $" {TestServer.QueueName} "));
+        Assert.Equal(HttpStatusCode.Conflict, renamed.StatusCode);
+
+        // A queue keeps its own name (in any case), and other changes to it still go through.
+        var kept = await TestServer.ReadAsync<QueueAdminDto>(await Patch("/api/v1/admin/queues/second", new UpdateQueueRequest(Name: "COLOR", Duplex: true)));
+        Assert.Equal("COLOR", kept.Name);
+        Assert.Equal(2, (await _server.Admin.GetFromJsonAsync<List<QueueAdminDto>>("/api/v1/admin/queues", TapQueueJson.Options))!.Count);
+    }
+
+    [Theory]
+    [InlineData("Line\nbreak")]
+    [InlineData("Tab\tbed")]
+    public async Task QueueNamesAPcCouldntUseAreRefused(string name)
+    {
+        var response = await _server.Admin.PostAsJsonAsync("/api/v1/admin/queues", new CreateQueueRequest("second", name), TapQueueJson.Options);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        var tooLong = await Patch($"/api/v1/admin/queues/{TestServer.QueueId}", new UpdateQueueRequest(Name: new string('x', 128)));
+        Assert.Equal(HttpStatusCode.BadRequest, tooLong.StatusCode);
+    }
+
+    [Fact]
     public async Task QueueNeedsAName()
     {
         var response = await _server.Admin.PostAsJsonAsync("/api/v1/admin/queues", new CreateQueueRequest("second", " "), TapQueueJson.Options);
