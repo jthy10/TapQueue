@@ -27,6 +27,8 @@ public static partial class PageCounter
 
     private const int PatternTimeoutMs = 5_000;
 
+    private static readonly Lock PdfLock = new();
+
     public static int? Count(string path) => CountUnbounded(path) is { } pages ? Math.Min(pages, MaxPages) : null;
 
     private static int? CountUnbounded(string path)
@@ -40,7 +42,14 @@ public static partial class PageCounter
             file.Position = 0;
 
             if (magic.StartsWith("%PDF-"u8))
-                return file.Length > MaxPdfBytes ? null : CountPdf(File.ReadAllBytes(path));
+            {
+                if (file.Length > MaxPdfBytes)
+                    return null;
+                // A PDF is read into memory whole (and again as text) to be counted. One at a time, so
+                // several big ones arriving together can't use up the server's memory between them.
+                lock (PdfLock)
+                    return CountPdf(File.ReadAllBytes(path));
+            }
             if (magic.StartsWith("RaS2"u8))
                 return CountPwgRaster(file);
             if (magic.StartsWith("UNIRAST\0"u8))
