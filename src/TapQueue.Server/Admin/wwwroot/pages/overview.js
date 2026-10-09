@@ -13,7 +13,7 @@ export async function render(root, ctx) {
   async function load(refresh) {
     const [server, printers, stations, clients, held, unknown, queues, builds, events, crashes] = await Promise.all([
       api.get("server"), get("fleet", `printers${refresh ? "?refresh=true" : ""}`), get("fleet", "stations"), get("fleet", "clients"),
-      get("jobs", "jobs?status=held"), get("people", "badges/unknown"), get("fleet", "queues"), get("updates", "client-builds"),
+      get("jobs", "jobs?status=held"), (ctx.can("people", "operator") ? api.get("badges/unknown") : null), get("fleet", "queues"), get("updates", "client-builds"),
       api.get("events?limit=10"), get("server", "crashes?limit=200"),
     ]);
     if (!ctx.current) return;

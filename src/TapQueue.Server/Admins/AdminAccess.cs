@@ -78,6 +78,10 @@ public static class AdminAccess
         // Passwords and admins: nobody may give themselves (or take over someone with) more rights.
         if (area is null || parts is ["users", _, "password"])
             return AdminRequirement.FullAdminOnly;
+        // Cards are stored hashed, but a card nobody owns yet is listed whole so it can be enrolled:
+        // only for those who may enroll it.
+        if (read && parts is ["badges", "unknown"])
+            return new AdminRequirement(area, AdminRole.Operator);
         if (read)
             return new AdminRequirement(area, AdminRole.Viewer);
         return new AdminRequirement(area, IsOperatorWork(method, parts) ? AdminRole.Operator : AdminRole.Admin);

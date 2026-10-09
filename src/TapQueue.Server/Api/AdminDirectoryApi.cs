@@ -1,4 +1,5 @@
 using TapQueue.Server.ActiveDirectory;
+using TapQueue.Server.Admins;
 using TapQueue.Server.Data;
 using TapQueue.Shared.Api;
 
@@ -59,6 +60,10 @@ public static class AdminDirectoryApi
         // The saved bind password goes to whatever server these name, and that server then decides who
         // may sign in with a domain account. So pointing them somewhere else takes the password again.
         var elsewhere = config.Host != old.Host || config.Port != old.Port || Pem(config.CaCertificate) != Pem(old.CaCertificate);
+        // Whoever picks the domain controller or the account it's read with decides who every AD user and
+        // AD group member is, admins included. So that takes a full admin, like changing admins does.
+        if ((elsewhere || config.BindDn != old.BindDn || config.Password != old.Password) && AdminAccess.CurrentPermissions is { IsFullAdmin: false })
+            return AdminAccess.Forbidden("Only a full admin (admin in every area) can change the domain controller, its CA certificate or the bind account.");
         if (elsewhere && old.Password.Length > 0 && string.IsNullOrEmpty(request.Password))
             return Results.BadRequest(new ErrorResponse("Enter the bind account's password again to change the domain controller or its CA certificate."));
         if (config.DomainSignIn && (config.Host.Length == 0 || config.BindDn.Length == 0 || config.Password.Length == 0))

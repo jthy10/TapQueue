@@ -19,6 +19,10 @@ public sealed class AdminRolesTests
     [InlineData("DELETE", "/jobs/5", AdminArea.Jobs, AdminRole.Operator)]
     [InlineData("POST", "/release", AdminArea.Jobs, AdminRole.Operator)]
     [InlineData("POST", "/badges", AdminArea.People, AdminRole.Operator)]
+    [InlineData("GET", "/badges", AdminArea.People, AdminRole.Viewer)]
+    [InlineData("GET", "/badges/stations", AdminArea.People, AdminRole.Viewer)]
+    [InlineData("GET", "/badges/unknown", AdminArea.People, AdminRole.Operator)]
+    [InlineData("GET", "/Badges/Unknown", AdminArea.People, AdminRole.Operator)]
     [InlineData("PATCH", "/users/alice", AdminArea.People, AdminRole.Admin)]
     [InlineData("PATCH", "/Printers/office", AdminArea.Fleet, AdminRole.Admin)]
     [InlineData("POST", "/stations/office/restart", AdminArea.Fleet, AdminRole.Operator)]
@@ -74,6 +78,9 @@ public sealed class AdminRolesTests
         Assert.StartsWith("pbkdf2-sha256$", hash);
         Assert.True(PasswordHasher.Verify(Password, hash));
         Assert.False(PasswordHasher.Verify("wrong", hash));
+        // A stored hash that got damaged is a wrong password, not an error.
+        Assert.False(PasswordHasher.Verify(Password, "pbkdf2-sha256$600000$not base64!$also not"));
+        Assert.False(PasswordHasher.Verify(Password, "pbkdf2-sha256$0$AAAA$AAAA"));
         Assert.False(PasswordHasher.Verify(Password, null));
         Assert.NotNull(PasswordHasher.Problem("short"));
     }
@@ -235,6 +242,51 @@ public sealed class AdminRolesTests
         Assert.Equal(HttpStatusCode.Forbidden, deleteAdminGroup.StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, grantSelf.StatusCode);
         Assert.Equal(0, bulk.Changed);
+    }
+
+    [Fact]
+    public async Task OnlyFullAdminsPointTheDirectoryAtAnotherDomainController()
+    {
+        // Whoever answers as the domain controller says who each AD admin is, so a Directory admin
+        // moving it to a server of their own would be making themselves anyone.
+        await using var server = await TestServer.StartAsync(configureServices: services => services.AddSingleton<IDirectorySourceFactory>(new FakeDirectory()));
+        await AddAdmin(server, "ada", AdminRole.Admin);
+        await AddAdmin(server, "dee", AdminRole.Admin, [AdminArea.Directory]);
+        await TestServer.ReadAsync<DirectoryStatusDto>(await server.Admin.PatchAsJsonAsync("/api/v1/admin/directory/config",
+            new UpdateDirectoryConfigRequest(Host: "dc01.lab", BindDn: "svc@lab", Password: "secret"), TapQueueJson.Options));
+        using var dee = await Console(server, "dee");
+        using var ada = await Console(server, "ada");
+
+        var moveIt = await dee.PatchAsJsonAsync("/api/v1/admin/directory/config",
+            new UpdateDirectoryConfigRequest(Host: "evil.example", Password: "anything"), TapQueueJson.Options);
+        var otherAccount = await dee.PatchAsJsonAsync("/api/v1/admin/directory/config",
+            new UpdateDirectoryConfigRequest(BindDn: "someone@lab", Password: "anything"), TapQueueJson.Options);
+        var otherCa = await dee.PatchAsJsonAsync("/api/v1/admin/directory/config",
+            new UpdateDirectoryConfigRequest(CaCertificate: "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----", Password: "secret"), TapQueueJson.Options);
+        var syncTime = await dee.PatchAsJsonAsync("/api/v1/admin/directory/config", new UpdateDirectoryConfigRequest(SyncTime: "02:30"), TapQueueJson.Options);
+        var fullAdminMovesIt = await ada.PatchAsJsonAsync("/api/v1/admin/directory/config",
+            new UpdateDirectoryConfigRequest(Host: "dc02.lab", Password: "secret"), TapQueueJson.Options);
+
+        Assert.Equal(HttpStatusCode.Forbidden, moveIt.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, otherAccount.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, otherCa.StatusCode);
+        Assert.Equal("02:30", (await TestServer.ReadAsync<DirectoryStatusDto>(syncTime)).Config.SyncTime);
+        Assert.Equal("dc02.lab", (await TestServer.ReadAsync<DirectoryStatusDto>(fullAdminMovesIt)).Config.Host);
+    }
+
+    [Fact]
+    public async Task ViewersDontSeeTheNumbersOfCardsNobodyOwns()
+    {
+        await using var server = await TestServer.StartAsync();
+        await AddAdmin(server, "vic", AdminRole.Viewer, [AdminArea.People]);
+        await AddAdmin(server, "olive", AdminRole.Operator, [AdminArea.People]);
+        using var vic = await Console(server, "vic");
+        using var olive = await Console(server, "olive");
+
+        Assert.Equal(HttpStatusCode.OK, (await vic.GetAsync("/api/v1/admin/badges")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await vic.GetAsync("/api/v1/admin/badges/stations")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await vic.GetAsync("/api/v1/admin/badges/unknown")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await olive.GetAsync("/api/v1/admin/badges/unknown")).StatusCode);
     }
 
     [Fact]

@@ -35,7 +35,7 @@ from server.toml.
 | Area | Pages | Operators may also |
 |------|-------|--------------------|
 | Jobs | Jobs | release and cancel jobs |
-| People | Users, Groups, Cards, page limits | link, edit and remove cards |
+| People | Users, Groups, Cards, page limits | link, edit and remove cards, and see cards nobody owns yet |
 | Active Directory | Active Directory | run a sync |
 | Fleet | Printers, Queues, Stations, Workstations | restart stations, sign people out of PCs, update or forget a PC |
 | Updates | Updates | |
@@ -56,7 +56,9 @@ areas cover.
 - open the Admins page and give or remove roles;
 - set or remove local users' console passwords;
 - change someone who has admin rights (rename, disable, delete), or change the members of a
-  group that gives admin rights (or delete it).
+  group that gives admin rights (or delete it);
+- change which domain controller Active Directory is read from, its CA certificate, or the bind
+  account. Whoever answers as the domain controller decides who each AD admin is.
 
 The last rule stops a People admin from adding themselves to an admin group, or disabling the
 admins above them.

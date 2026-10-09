@@ -32,8 +32,18 @@ public static class PasswordHasher
         var parts = stored?.Split('$');
         if (parts is not [Scheme, var iterationsText, var saltText, var hashText] || !int.TryParse(iterationsText, out var iterations))
             return false;
-        var expected = Convert.FromBase64String(hashText);
-        return CryptographicOperations.FixedTimeEquals(Derive(password, Convert.FromBase64String(saltText), iterations), expected);
+        if (iterations < 1)
+            return false;
+        byte[] salt, expected;
+        try
+        {
+            (salt, expected) = (Convert.FromBase64String(saltText), Convert.FromBase64String(hashText));
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+        return CryptographicOperations.FixedTimeEquals(Derive(password, salt, iterations), expected);
     }
 
     /// <summary>Does the same work as <see cref="Verify"/> for an unknown user, so a wrong name takes as long as a wrong password.</summary>
