@@ -17,7 +17,11 @@ public sealed record ServerInfoDto(
     bool CanRestart = false,
     string QuotaOverrun = Api.QuotaOverrun.Allow,
     ServerTlsDto? Tls = null,
-    string AddressMatching = Api.AddressMatching.On);
+    string AddressMatching = Api.AddressMatching.On,
+    bool EnrollmentCodeRequired = false);
+
+/// <summary>A new enrollment code for PCs, shown once: the server keeps only its hash.</summary>
+public sealed record EnrollmentCodeResponse(string Code);
 
 /// <summary>The server's HTTPS listener, so admins can check the fingerprint clients see.</summary>
 /// <param name="Fingerprint">SHA-256 of the certificate, "AB:CD:…". What server_cert_fingerprint in client.toml and station.toml expects.</param>
@@ -413,8 +417,12 @@ public sealed record ClientSetupResponse(IReadOnlyList<QueueDto> Queues, ClientB
 /// The key the server gave this PC, or "" from a service (0.8 on) that has none yet and wants one.
 /// Null from older services, which don't know about keys.
 /// </param>
+/// <param name="EnrollmentCode">
+/// enrollment_code from client.toml, sent by a PC that has no key yet. A server that asks for one
+/// (`tapqueue-admin server enrollment-code new`) only lets new PCs in with it.
+/// </param>
 public sealed record ClientSetupRequest(string Computer, string? Version, string? Sha256, string? UpdateError, string? Platform = null,
-    string? WorkstationKey = null);
+    string? WorkstationKey = null, string? EnrollmentCode = null);
 
 /// <summary>
 /// The TapQueue service vouching for a tray app on its PC: the tray app with session

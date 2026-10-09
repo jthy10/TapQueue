@@ -112,7 +112,7 @@ public static class AdminApi
         TapQueueVersion.Current, ServerClock.StartedAt, config.Auth.Mode, config.Server.Listen, config.Server.DataDir,
         database.SchemaVersion(), settings.HoldHours, settings.SessionTimeoutMinutes, jobs.CountHeld(),
         ServerSettings.Keys.Where(settings.IsSaved).ToList(), AdminServerApi.CanRestart, settings.QuotaOverrun,
-        TlsInfo(config, services), settings.AddressMatching);
+        TlsInfo(config, services), settings.AddressMatching, settings.EnrollmentCodeHash is not null);
 
     private static ServerTlsDto? TlsInfo(ServerConfig config, IServiceProvider services)
     {

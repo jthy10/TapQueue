@@ -159,6 +159,37 @@ public sealed class WorkstationKeyTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task WithAnEnrollmentCodeOnlyPcsThatHaveItOrAKeyGetIn()
+    {
+        var (key, _) = await Enroll("OLD-PC");
+        using var service = _server.NewClient();
+        Task<HttpResponseMessage> CheckIn(string computer, string workstationKey, string? code) =>
+            service.PostAsJsonAsync("/api/v1/client/setup",
+                new ClientSetupRequest(computer, "0.9.0", null, null, ClientPlatform.Windows, workstationKey, code), TapQueueJson.Options);
+
+        var made = await TestServer.ReadAsync<EnrollmentCodeResponse>(await _server.Admin.PostAsync("/api/v1/admin/server/enrollment-code", null));
+        var info = await _server.Admin.GetFromJsonAsync<ServerInfoDto>("/api/v1/admin/server", TapQueueJson.Options);
+        Assert.True(info!.EnrollmentCodeRequired);
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await CheckIn("NEW-PC", "", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await CheckIn("NEW-PC", "", "a-guess")).StatusCode);
+        // Nothing was stored about a PC that was turned away.
+        var pcs = await _server.Admin.GetFromJsonAsync<List<WorkstationDto>>("/api/v1/admin/workstations", TapQueueJson.Options);
+        Assert.Equal(["OLD-PC"], pcs!.Select(p => p.Hostname));
+
+        // A PC that already has its key carries on without the code; a new one gets in with it.
+        Assert.Equal(HttpStatusCode.OK, (await CheckIn("OLD-PC", key, null)).StatusCode);
+        var admitted = await TestServer.ReadAsync<ClientSetupResponse>(await CheckIn("NEW-PC", "", made.Code));
+        Assert.False(string.IsNullOrEmpty(admitted.WorkstationKey));
+
+        // A new code replaces the old one, and turning it off lets anyone in again.
+        await TestServer.ReadAsync<EnrollmentCodeResponse>(await _server.Admin.PostAsync("/api/v1/admin/server/enrollment-code", null));
+        Assert.Equal(HttpStatusCode.Forbidden, (await CheckIn("THIRD-PC", "", made.Code)).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await _server.Admin.DeleteAsync("/api/v1/admin/server/enrollment-code")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await CheckIn("THIRD-PC", "", null)).StatusCode);
+    }
+
+    [Fact]
     public async Task KeylessJobsAreMatchedByAddressUntilThatIsTurnedOff()
     {
         using var alice = await _server.SignInAsync("alice");

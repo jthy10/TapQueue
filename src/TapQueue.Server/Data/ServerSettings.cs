@@ -51,11 +51,27 @@ public sealed class ServerSettings(Database database, ServerConfig config)
     /// <summary>Goes back to server.toml's value, or the default for settings that aren't in it.</summary>
     public void Reset(string key) => Set(key, null);
 
+    private const string EnrollmentCodeHashKey = "enrollmentCodeHash";
+
+    /// <summary>
+    /// The hash of the code a new PC's TapQueue service must send to be let in (<see cref="Tokens.Hash"/>);
+    /// null while any PC that can reach the server may register itself. Only the hash is kept, like a token.
+    /// </summary>
+    public string? EnrollmentCodeHash => Saved().GetValueOrDefault(EnrollmentCodeHashKey);
+
+    /// <summary>Requires the code that hashes to <paramref name="hash"/> from new PCs, or with null none.</summary>
+    public void SetEnrollmentCodeHash(string? hash) => Save(EnrollmentCodeHashKey, hash);
+
     /// <summary>Saves a value, or with null goes back to server.toml's or the default.</summary>
     public void Set(string key, string? value)
     {
         if (!Keys.Contains(key))
             throw new ArgumentException($"Unknown setting \"{key}\".", nameof(key));
+        Save(key, value);
+    }
+
+    private void Save(string key, string? value)
+    {
         lock (_lock)
         {
             if (value is null)

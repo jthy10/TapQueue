@@ -33,6 +33,8 @@ public sealed class AdminRolesTests
     [InlineData("GET", "/server/update", AdminArea.Server, AdminRole.Viewer)]
     [InlineData("POST", "/server/update", AdminArea.Server, AdminRole.Admin)]
     [InlineData("DELETE", "/server/update", AdminArea.Server, AdminRole.Admin)]
+    [InlineData("POST", "/server/enrollment-code", AdminArea.Server, AdminRole.Admin)]
+    [InlineData("DELETE", "/server/enrollment-code", AdminArea.Server, AdminRole.Admin)]
     public void EachEndpointNeedsARoleInItsArea(string method, string path, string area, string role)
     {
         Assert.Equal(new AdminRequirement(area, role), AdminAccess.Requirement(method, path));

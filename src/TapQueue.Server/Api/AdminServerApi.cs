@@ -36,6 +36,23 @@ public static class AdminServerApi
             updater.Apply(request.Version, request.At, http.Caller().Actor) is { } error
                 ? Results.Conflict(new ErrorResponse(error))
                 : Results.Ok(updater.Status()));
+        // New PCs then need this code in client.toml to register. Shown once; making another replaces it.
+        admin.MapPost("/server/enrollment-code", (ServerSettings settings, EventLog events) =>
+        {
+            var code = Tokens.New();
+            settings.SetEnrollmentCodeHash(Tokens.Hash(code));
+            events.Admin(null, "Made a new enrollment code for PCs. New PCs need it to register; PCs that already have a key aren't affected.");
+            return new EnrollmentCodeResponse(code);
+        });
+        admin.MapDelete("/server/enrollment-code", (ServerSettings settings, EventLog events) =>
+        {
+            if (settings.EnrollmentCodeHash is not null)
+            {
+                settings.SetEnrollmentCodeHash(null);
+                events.Admin(null, "Turned off the enrollment code for PCs: any PC that can reach the server can register again.");
+            }
+            return Results.NoContent();
+        });
         admin.MapDelete("/server/update", (ServerUpdater updater) =>
         {
             updater.CancelSchedule();

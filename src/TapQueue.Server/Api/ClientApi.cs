@@ -187,7 +187,7 @@ public static class ClientApi
     /// that lost its key (reinstalled) gets a new one once an admin forgets it under Workstations.
     /// </summary>
     private static IResult CheckIn(ClientSetupRequest request, HttpContext http, QueueStore queues, ClientBuildStore builds, WorkstationStore workstations,
-        ILoggerFactory loggers)
+        ServerSettings settings, ILoggerFactory loggers)
     {
         var computer = request.Computer?.Trim();
         if (string.IsNullOrEmpty(computer) || computer.Length > 255)
@@ -202,6 +202,20 @@ public static class ClientApi
                 "Turned away a check-in as {Computer} from {Ip}: it didn't have that PC's key", computer, http.ClientIp());
             return Results.Json(new ErrorResponse(
                     $"{computer} already has a TapQueue key, and this isn't it. If this PC was reinstalled, forget {computer} under Workstations and it gets a new key."),
+                statusCode: StatusCodes.Status403Forbidden);
+        }
+
+        // With an enrollment code set, a PC without a key (a new one, or one that was forgotten) needs
+        // the code: otherwise anything that can reach the server could register as any PC it likes.
+        if (keyHash is null && settings.EnrollmentCodeHash is { } codeHash
+            && (string.IsNullOrEmpty(request.EnrollmentCode) || !Tokens.FixedTimeEquals(codeHash, Tokens.Hash(request.EnrollmentCode.Trim()))))
+        {
+            loggers.CreateLogger("TapQueue.Server.Api.ClientApi").LogWarning(
+                "Turned away a check-in as {Computer} from {Ip}: {Why}", computer, http.ClientIp(),
+                string.IsNullOrEmpty(request.EnrollmentCode) ? "it sent no enrollment code" : "its enrollment code is wrong");
+            return Results.Json(new ErrorResponse(
+                    "This TapQueue server only lets new PCs in with its enrollment code. Put it in client.toml as enrollment_code " +
+                    "(an admin gets one with `tapqueue-admin server enrollment-code new`)."),
                 statusCode: StatusCodes.Status403Forbidden);
         }
 
