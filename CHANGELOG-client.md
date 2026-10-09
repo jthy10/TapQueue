@@ -10,6 +10,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-08
+
 ### Added
 - TLS: with `server_url = "https://<server>:8632"` (server 0.8.0 and later) everything, printing
   included, is encrypted. The TapQueue service trusts the server's self-signed certificate the
@@ -108,7 +110,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 First working version: a tray app configured by a file that signs in, adds the printer, and shows
 and releases held jobs.
 
-[Unreleased]: https://github.com/jthy10/TapQueue/compare/client-v0.7.0...HEAD
+[Unreleased]: https://github.com/jthy10/TapQueue/compare/client-v0.8.0...HEAD
+[0.8.0]: https://github.com/jthy10/TapQueue/compare/client-v0.7.0...client-v0.8.0
 [0.7.0]: https://github.com/jthy10/TapQueue/compare/client-v0.6.0...client-v0.7.0
 [0.6.0]: https://github.com/jthy10/TapQueue/compare/client-v0.5.0...client-v0.6.0
 [0.5.0]: https://github.com/jthy10/TapQueue/compare/client-v0.4.0...client-v0.5.0
