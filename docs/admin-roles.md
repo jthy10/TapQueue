@@ -60,6 +60,11 @@ areas cover.
 - change which domain controller Active Directory is read from, its CA certificate, or the bind
   account. Whoever answers as the domain controller decides who each AD admin is.
 
+An **admin of Updates** is not a full admin, but treat the role as just as trusted: the client
+build they publish is installed by every PC's TapQueue service and runs there as SYSTEM (Windows)
+or root (Linux), and a station build runs on every station. Give it only to people you'd let
+install software on all your PCs.
+
 The last rule stops a People admin from adding themselves to an admin group, or disabling the
 admins above them.
 
