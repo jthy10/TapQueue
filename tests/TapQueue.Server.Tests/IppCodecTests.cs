@@ -6,6 +6,23 @@ namespace TapQueue.Server.Tests;
 public class IppCodecTests
 {
     [Fact]
+    public async Task ANameWithLanguageWhoseLengthsLieReadsAsEmpty()
+    {
+        // nameWithLanguage (0x36) whose language length says 65526 bytes, in a 4-byte value.
+        byte[] bytes =
+        [
+            1, 1, 0x00, 0x02, 0, 0, 0, 1,
+            IppTag.OperationAttributes,
+            0x36, 0, 1, (byte)'n', 0, 4, 0xFF, 0xF6, 0, 0,
+            IppTag.EndOfAttributes,
+        ];
+
+        var decoded = await IppReader.ReadAsync(new MemoryStream(bytes));
+
+        Assert.Equal("", decoded.Find(IppTag.OperationAttributes, "n")?.First?.AsString());
+    }
+
+    [Fact]
     public async Task RoundTripsEveryValueKind()
     {
         var message = IppMessage.CreateRequest(IppOperation.PrintJob, 42, "ipp://printer/ipp/print");

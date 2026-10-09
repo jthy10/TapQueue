@@ -137,7 +137,7 @@ public sealed class IppReader(Stream stream)
     {
         // [2-byte len][language][2-byte len][text]; we keep only the text.
         if (bytes.Length < 4) return "";
-        var langLength = BinaryPrimitives.ReadInt16BigEndian(bytes);
+        var langLength = BinaryPrimitives.ReadUInt16BigEndian(bytes);
         var textStart = 2 + langLength + 2;
         return textStart <= bytes.Length ? Encoding.UTF8.GetString(bytes, textStart, bytes.Length - textStart) : "";
     }

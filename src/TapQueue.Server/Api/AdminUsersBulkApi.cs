@@ -46,7 +46,7 @@ public static class AdminUsersBulkApi
 
         var errors = new List<string>();
         var changed = 0;
-        foreach (var username in request.Usernames.Distinct(StringComparer.OrdinalIgnoreCase))
+        foreach (var username in (request.Usernames ?? []).Distinct(StringComparer.OrdinalIgnoreCase))
         {
             if (users.FindByUsername(username) is not { } user)
             {
