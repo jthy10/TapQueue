@@ -80,7 +80,13 @@ public static class AdminAuthApi
     {
         var user = users.FindByUsername(name);
         if (user is { FromDirectory: false })
-            return PasswordHasher.Verify(password, users.PasswordHash(user.Id)) ? user : null;
+        {
+            if (users.PasswordHash(user.Id) is { } hash)
+                return PasswordHasher.Verify(password, hash) ? user : null;
+            // No console password: take as long as checking one, so the answer doesn't say who has one.
+            PasswordHasher.VerifyNothing(password);
+            return null;
+        }
 
         // AD users sign in with their domain password, by TapQueue username, sAMAccountName, DOMAIN\name or UPN.
         var config = directory.Config();
