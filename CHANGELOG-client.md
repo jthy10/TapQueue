@@ -10,6 +10,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.9.6] - 2026-10-09
+
 ### Fixed
 - Two queues with the same name on the server made the TapQueue service crash and restart every
   minute, on every PC, so printers weren't kept up to date and new client builds weren't installed.
@@ -127,7 +129,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 First working version: a tray app configured by a file that signs in, adds the printer, and shows
 and releases held jobs.
 
-[Unreleased]: https://github.com/jthy10/TapQueue/compare/client-v0.9.5...HEAD
+[Unreleased]: https://github.com/jthy10/TapQueue/compare/client-v0.9.6...HEAD
+[0.9.6]: https://github.com/jthy10/TapQueue/compare/client-v0.9.5...client-v0.9.6
 [0.9.5]: https://github.com/jthy10/TapQueue/compare/client-v0.8.0...client-v0.9.5
 [0.8.0]: https://github.com/jthy10/TapQueue/compare/client-v0.7.0...client-v0.8.0
 [0.7.0]: https://github.com/jthy10/TapQueue/compare/client-v0.6.0...client-v0.7.0
