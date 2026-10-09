@@ -35,6 +35,33 @@ public sealed class CrashReportTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AFloodOfCrashReportsDoesntFillTheActivityLog()
+    {
+        // Crash reports need no sign-in, so anyone who can reach the server can send them all day.
+        for (var i = 0; i < 12; i++)
+            (await ReportAsync($"PC-{i}", "Boom")).EnsureSuccessStatusCode();
+
+        Assert.Equal(12, (await CrashesAsync()).Count);
+        var events = await _server.Admin.GetFromJsonAsync<List<EventDto>>("/api/v1/admin/events?category=crash&limit=100", TapQueueJson.Options);
+        Assert.Equal(5, events!.Count);
+    }
+
+    [Fact]
+    public async Task AFloodOfRejectedSignInsDoesntFillTheActivityLog()
+    {
+        using var anonymous = _server.NewClient();
+        for (var i = 0; i < 12; i++)
+        {
+            var response = await anonymous.PostAsJsonAsync("/api/v1/client/session",
+                new ClientSessionRequest($"nobody-{i}", "a-guess", "nobody", "SOME-PC", "test"), TapQueueJson.Options);
+            Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        }
+
+        var events = await _server.Admin.GetFromJsonAsync<List<EventDto>>("/api/v1/admin/events?category=signin&limit=100", TapQueueJson.Options);
+        Assert.Equal(5, events!.Count);
+    }
+
+    [Fact]
     public async Task CrashesCanBeListedPerPcAndCleared()
     {
         await ReportAsync("UP", "One");

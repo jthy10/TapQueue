@@ -258,9 +258,9 @@ public sealed class IppPrinterEndpoint(
 
     private JobRecord NewJob(RequestContext c)
     {
-        var requestingUser = c.Request.OperationString("requesting-user-name");
+        var requestingUser = RequestingUser(c);
         var (userId, ownerHint) = owners.Resolve(c.ClientIp, requestingUser, c.Workstation);
-        var name = c.Request.OperationString("job-name") ?? c.Request.OperationString("document-name") ?? "Untitled";
+        var name = Cut(c.Request.OperationString("job-name") ?? c.Request.OperationString("document-name") ?? "Untitled");
         var copies = c.Request.Find(IppTag.JobAttributes, "copies")?.First?.AsInt() ?? 1;
         var jobGroup = c.Request.Groups.FirstOrDefault(g => g.Tag == IppTag.JobAttributes);
 
@@ -285,6 +285,17 @@ public sealed class IppPrinterEndpoint(
                 : "it came without a PC key, and matching by address is off");
         return job;
     }
+
+    /// <summary>
+    /// IPP names are at most 255 bytes, but nothing stops a client sending 64 KB of one, and job and
+    /// user names are stored, logged and shown for as long as the job's history is kept.
+    /// </summary>
+    private const int MaxNameLength = 255;
+
+    private static string Cut(string text) => text.Length <= MaxNameLength ? text : text[..MaxNameLength];
+
+    private static string? RequestingUser(RequestContext c) =>
+        c.Request.OperationString("requesting-user-name") is { } name ? Cut(name) : null;
 
     private async Task<long> ReceiveDocumentAsync(RequestContext c, long jobId, bool append)
     {
@@ -353,7 +364,7 @@ public sealed class IppPrinterEndpoint(
     /// </summary>
     private IppMessage? Refused(RequestContext c)
     {
-        var requestingUser = c.Request.OperationString("requesting-user-name");
+        var requestingUser = RequestingUser(c);
         var (userId, ownerHint) = owners.Resolve(c.ClientIp, requestingUser, c.Workstation);
         if (userId is null || users.FindById(userId.Value) is not { } user)
         {
@@ -433,28 +444,6 @@ public sealed class IppPrinterEndpoint(
     }
 
     private static bool IsTerminal(JobRecord job) => job.Status != JobStatus.Receiving;
-
-    /// <summary>Remembers which sources did something lately, so it's reported once per <paramref name="every"/> each.</summary>
-    private sealed class RecentSources(TimeSpan every)
-    {
-        private const int MaxTracked = 1000;
-        private readonly Dictionary<string, DateTimeOffset> _last = new(StringComparer.OrdinalIgnoreCase);
-
-        public bool ShouldRecord(string source)
-        {
-            var now = DateTimeOffset.UtcNow;
-            lock (_last)
-            {
-                if (_last.TryGetValue(source, out var last) && now - last < every)
-                    return false;
-                // Many sources at once is someone making them up: start over rather than grow.
-                if (_last.Count >= MaxTracked)
-                    _last.Clear();
-                _last[source] = now;
-                return true;
-            }
-        }
-    }
 
     /// <param name="Workstation">The PC whose keyed printer this came through, or null for a keyless request.</param>
     private sealed record RequestContext(HttpContext Http, QueueRecord Queue, IppMessage Request, Stream Body, string PrinterUri, string? Workstation)

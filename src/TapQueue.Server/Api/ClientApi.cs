@@ -45,7 +45,7 @@ public static class ClientApi
 
     private static async Task<IResult> CreateSession(ClientSessionRequest request, HttpContext http, ServerConfig config, EventLog events, AccessPolicy access,
         UserStore users, SessionStore sessions, ClientLoginStore logins, DirectoryStore directory, IDirectorySourceFactory ad,
-        QueueStore queues, PrinterRegistry printers, ClientBuildStore builds, SignInThrottle throttle, ILoggerFactory loggers)
+        QueueStore queues, PrinterRegistry printers, ClientBuildStore builds, SignInThrottle throttle, AnonymousEventLimits limits, ILoggerFactory loggers)
     {
         var logger = loggers.CreateLogger("TapQueue.Server.Api.ClientApi");
         var username = request.Username?.Trim();
@@ -128,7 +128,9 @@ public static class ClientApi
                      !Tokens.FixedTimeEquals(user.TokenHash, Tokens.Hash(request.Token)))
             {
                 logger.LogWarning("Rejected sign-in for \"{User}\" from {Ip}", username, http.ClientIp());
-                events.Record(EventCategory.SignIn, username, EventLog.User(username), $"Sign-in as {username} from {pc} rejected: unknown user or wrong token.");
+                // Anyone can send these, so the activity log only gets a few a minute from one address.
+                if (limits.RejectedSignIns.ShouldRecord(http.ClientIp()))
+                    events.Record(EventCategory.SignIn, username, EventLog.User(username), $"Sign-in as {username} from {pc} rejected: unknown user or wrong token.");
                 return Results.Json(new ErrorResponse("Unknown user or wrong token."), statusCode: StatusCodes.Status401Unauthorized);
             }
         }
@@ -274,7 +276,7 @@ public static class ClientApi
         return Results.NoContent();
     }
 
-    private static IResult ReportCrash(CrashReportRequest report, HttpContext http, CrashStore crashes, EventLog events, ILoggerFactory loggers)
+    private static IResult ReportCrash(CrashReportRequest report, HttpContext http, CrashStore crashes, EventLog events, AnonymousEventLimits limits, ILoggerFactory loggers)
     {
         if (string.IsNullOrWhiteSpace(report.Computer) || string.IsNullOrWhiteSpace(report.Program) || string.IsNullOrWhiteSpace(report.Message))
             return Results.BadRequest(new ErrorResponse("computer, program and message are required."));
@@ -286,8 +288,11 @@ public static class ClientApi
         loggers.CreateLogger("TapQueue.Server.Api.ClientApi").LogWarning(
             "{Computer} ({Ip}): {What} {Version} crashed: {Message} (crash report {Id})",
             crash.Computer, crash.Ip, what, crash.Version ?? "?", crash.Message, crash.Id);
-        events.Record(EventCategory.Crash, crash.Computer, null,
-            $"The {what} on {crash.Computer} ({ClientPlatform.DisplayName(platform)}, client {crash.Version ?? "?"}) crashed: {crash.Message}");
+        // Anyone can send crash reports. The reports themselves are capped (CrashStore.Keep); the
+        // activity log only gets a few lines a minute from one address.
+        if (limits.Crashes.ShouldRecord(crash.Ip))
+            events.Record(EventCategory.Crash, crash.Computer, null,
+                $"The {what} on {crash.Computer} ({ClientPlatform.DisplayName(platform)}, client {crash.Version ?? "?"}) crashed: {crash.Message}");
         return Results.Ok(new { crash.Id });
     }
 

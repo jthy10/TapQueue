@@ -63,6 +63,7 @@ public static class ServerApp
         builder.Services.AddSingleton(services => new StationBuildStore(services.GetRequiredService<Database>(), config.Server.DataDir));
         builder.Services.AddSingleton<ServerSettings>();
         builder.Services.AddSingleton<EventLog>();
+        builder.Services.AddSingleton<AnonymousEventLimits>();
         builder.Services.AddSingleton<UserStore>();
         builder.Services.AddSingleton<GroupStore>();
         builder.Services.AddSingleton<AccessPolicy>();

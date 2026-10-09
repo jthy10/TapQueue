@@ -130,6 +130,17 @@ public sealed class PrintAndReleaseTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task OverlongJobNamesAreCutToWhatIppAllows()
+    {
+        using var alice = await _server.SignInAsync("alice");
+
+        await _server.PrintAsync(new string('n', 5000), [1, 2, 3]);
+
+        var held = Assert.Single(await alice.GetFromJsonAsync<List<JobDto>>("/api/v1/me/jobs", TapQueueJson.Options) ?? []);
+        Assert.Equal(new string('n', 255), held.Name);
+    }
+
+    [Fact]
     public async Task CanceledJobIsGoneAndCantBeReleased()
     {
         using var alice = await _server.SignInAsync("alice");
