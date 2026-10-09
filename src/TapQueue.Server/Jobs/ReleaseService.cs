@@ -31,7 +31,27 @@ public sealed class ReleaseService(JobStore jobs, Spool spool, PrinterRegistry p
     private static string Jobs(List<ReleaseResult> results) =>
         results.Count == 1 ? $"\"{results[0].JobName}\"" : $"{results.Count} jobs";
 
+    /// <summary>
+    /// One release at a time per person. Two at once (a tap at two stations, a tap and the tray) would
+    /// each see the page limit as it was before the other's jobs counted, and together go over it.
+    /// </summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<long, SemaphoreSlim> _releasing = new();
+
     private async Task<ReleaseResponse> ReleaseJobsAsync(UserRecord user, PrinterRecord printer, IReadOnlyList<long>? jobIds, CancellationToken ct)
+    {
+        var turn = _releasing.GetOrAdd(user.Id, _ => new SemaphoreSlim(1, 1));
+        await turn.WaitAsync(ct);
+        try
+        {
+            return await ReleaseHeldAsync(user, printer, jobIds, ct);
+        }
+        finally
+        {
+            turn.Release();
+        }
+    }
+
+    private async Task<ReleaseResponse> ReleaseHeldAsync(UserRecord user, PrinterRecord printer, IReadOnlyList<long>? jobIds, CancellationToken ct)
     {
         var held = jobs.ListForUser(user.Id, heldOnly: true);
         var refusal = user.Disabled ? "This account is disabled."
