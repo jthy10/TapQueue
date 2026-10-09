@@ -42,9 +42,11 @@ const string Usage = """
 
       tapqueue-admin badges [username]               List badges
       tapqueue-admin badges add <username> <card>    Link a card number to a user
-      tapqueue-admin badges add <username> --last-tap
-                                                     Link the card most recently tapped at any station
-      tapqueue-admin badges unknown                  Cards tapped recently that nobody owns
+      tapqueue-admin badges add <username> --last-tap [--station <station-id>]
+                                                     Link the card most recently tapped at any station,
+                                                     or at the one named
+      tapqueue-admin badges unknown [--station <station-id>]
+                                                     Cards tapped recently that nobody owns
       tapqueue-admin badges remove <badge-id>        Unlink a badge
 
       tapqueue-admin stations                        List release stations
@@ -125,7 +127,7 @@ for (var i = 0; i < args.Length; i++)
     }
     if (args[i].StartsWith("--"))
     {
-        var takesValue = args[i] is "--server" or "--token" or "--fingerprint" or "--name" or "--status" or "--uri" or "--location" or "--description" or "--media" or "--version-name" or "--platform" or "--area";
+        var takesValue = args[i] is "--server" or "--token" or "--fingerprint" or "--name" or "--status" or "--uri" or "--location" or "--description" or "--media" or "--version-name" or "--platform" or "--area" or "--station";
         var switchWithValue = args[i] is "--tls-skip-verify" or "--color" or "--duplex" && i + 1 < args.Length && ParseSwitch(args[i + 1]) is not null;
         options[args[i]] = (takesValue || switchWithValue) && i + 1 < args.Length ? args[++i] : null;
     }
@@ -195,8 +197,8 @@ try
         ("release", not null) when positional.Count >= 3 => await Release(positional[1], positional[2], positional.Skip(3).ToList()),
         ("badges", null) => await ListBadges(null),
         ("badges", "add") when positional.Count == 4 => await AddBadge(positional[2], positional[3]),
-        ("badges", "add") when positional.Count == 3 && options.ContainsKey("--last-tap") => await AddBadgeFromLastTap(positional[2]),
-        ("badges", "unknown") when positional.Count == 2 => await ListUnknownTaps(),
+        ("badges", "add") when positional.Count == 3 && options.ContainsKey("--last-tap") => await AddBadgeFromLastTap(positional[2], options.GetValueOrDefault("--station")),
+        ("badges", "unknown") when positional.Count == 2 => await ListUnknownTaps(options.GetValueOrDefault("--station")),
         ("badges", "remove") when positional.Count == 3 => await RemoveBadge(long.Parse(positional[2])),
         ("badges", not null) when positional.Count == 2 => await ListBadges(positional[1]),
         ("stations", null) => await ListStations(),
@@ -631,13 +633,20 @@ async Task<int> AddBadge(string username, string card)
     return 0;
 }
 
-async Task<int> AddBadgeFromLastTap(string username)
+// With several stations, --station says which reader the card was tapped at, so a card tapped
+// somewhere else in the meantime isn't the one that gets linked.
+string UnknownTapsPath(string? station) =>
+    string.IsNullOrWhiteSpace(station) ? "badges/unknown" : $"badges/unknown?station={Uri.EscapeDataString(station)}";
+
+async Task<int> AddBadgeFromLastTap(string username, string? station)
 {
-    var taps = await Get<List<UnknownTapDto>>("badges/unknown");
+    var taps = await Get<List<UnknownTapDto>>(UnknownTapsPath(station));
     if (taps is null) return 1;
     if (taps.Count == 0)
     {
-        Console.Error.WriteLine("No unknown cards have been tapped in the last hour. Tap the card at a station, then try again.");
+        Console.Error.WriteLine(string.IsNullOrWhiteSpace(station)
+            ? "No unknown cards have been tapped in the last hour. Tap the card at a station, then try again."
+            : $"No unknown cards have been tapped at {station} in the last hour. Tap the card there, then try again.");
         return 1;
     }
     var tap = taps[0];
@@ -645,9 +654,9 @@ async Task<int> AddBadgeFromLastTap(string username)
     return await AddBadge(username, tap.Card);
 }
 
-async Task<int> ListUnknownTaps()
+async Task<int> ListUnknownTaps(string? station)
 {
-    var taps = await Get<List<UnknownTapDto>>("badges/unknown");
+    var taps = await Get<List<UnknownTapDto>>(UnknownTapsPath(station));
     if (taps is null) return 1;
     Table(["CARD", "STATION", "WHEN"], taps.Select(t => new[] { t.Card, t.StationId, Ago(t.At) }));
     return 0;

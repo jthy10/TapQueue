@@ -493,6 +493,11 @@ public sealed record UpdateBadgeRequest(string? Username = null, string? Label =
 /// <summary>A card that was tapped at a station but isn't linked to anyone yet.</summary>
 public sealed record UnknownTapDto(string Card, string StationId, DateTimeOffset At);
 
+/// <summary>A station as the card enrollment dialog lists it: somewhere a card can be tapped.</summary>
+/// <param name="Online">It sent a heartbeat lately, so a tap there will reach the server.</param>
+/// <param name="Enabled">False when it's out of service; its taps are ignored then.</param>
+public sealed record BadgeStationDto(string Id, string Name, string Location, bool Online, bool Enabled);
+
 /// <param name="LastSeenAt">Its last request of any kind (heartbeat, check-in, tap).</param>
 /// <param name="Online">It sent a heartbeat in the last <c>StationStatus.OfflineAfterSeconds</c> seconds.</param>
 /// <param name="ReaderStatus">"ok", or what's wrong with the badge reader, as the station last reported.</param>

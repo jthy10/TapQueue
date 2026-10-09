@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using TapQueue.Shared;
@@ -76,6 +77,54 @@ public sealed class StationTests : IAsyncLifetime
         await TestServer.ReadAsync<BadgeDto>(await _server.Admin.PostAsJsonAsync("/api/v1/admin/badges",
             new CreateBadgeRequest("alice", unknown.Card), TapQueueJson.Options));
         Assert.Equal(TapOutcome.Released, (await TapAsync("99887766")).Outcome);
+        Assert.Empty(await _server.Admin.GetFromJsonAsync<List<UnknownTapDto>>("/api/v1/admin/badges/unknown", TapQueueJson.Options) ?? []);
+    }
+
+    [Fact]
+    public async Task UnknownTapsCanBeAskedForByStation()
+    {
+        var annex = await TestServer.ReadAsync<StationTokenResponse>(await _server.Admin.PostAsJsonAsync("/api/v1/admin/stations",
+            new CreateStationRequest("annex", TestServer.PrinterId), TapQueueJson.Options));
+        using var annexStation = _server.NewClient(annex.Token);
+
+        await TapAsync("11110001");
+        await annexStation.PostAsJsonAsync("/api/v1/station/tap", new StationTapRequest("22220002"), TapQueueJson.Options);
+
+        Task<List<UnknownTapDto>?> Unknown(string query) =>
+            _server.Admin.GetFromJsonAsync<List<UnknownTapDto>>("/api/v1/admin/badges/unknown" + query, TapQueueJson.Options);
+        Assert.Equal(["22220002", "11110001"], (await Unknown(""))!.Select(t => t.Card));
+        Assert.Equal("11110001", Assert.Single((await Unknown("?station=lobby"))!).Card);
+        // Station ids match whatever their case, like everywhere else.
+        Assert.Equal("22220002", Assert.Single((await Unknown("?station=ANNEX"))!).Card);
+        Assert.Equal(HttpStatusCode.NotFound, (await _server.Admin.GetAsync("/api/v1/admin/badges/unknown?station=nowhere")).StatusCode);
+
+        var stations = await _server.Admin.GetFromJsonAsync<List<BadgeStationDto>>("/api/v1/admin/badges/stations", TapQueueJson.Options);
+        Assert.Equal(["annex", "lobby"], stations!.Select(s => s.Id));
+    }
+
+    [Fact]
+    public async Task ABusyStationDoesNotPushOutAnotherStationsTap()
+    {
+        var annex = await TestServer.ReadAsync<StationTokenResponse>(await _server.Admin.PostAsJsonAsync("/api/v1/admin/stations",
+            new CreateStationRequest("annex", TestServer.PrinterId), TapQueueJson.Options));
+        using var annexStation = _server.NewClient(annex.Token);
+
+        await annexStation.PostAsJsonAsync("/api/v1/station/tap", new StationTapRequest("22220002"), TapQueueJson.Options);
+        for (var i = 0; i < 30; i++)
+            await TapAsync($"1111{i:0000}");
+
+        var atAnnex = await _server.Admin.GetFromJsonAsync<List<UnknownTapDto>>("/api/v1/admin/badges/unknown?station=annex", TapQueueJson.Options);
+        Assert.Equal("22220002", Assert.Single(atAnnex!).Card);
+        var atLobby = await _server.Admin.GetFromJsonAsync<List<UnknownTapDto>>("/api/v1/admin/badges/unknown?station=lobby", TapQueueJson.Options);
+        Assert.Equal(20, atLobby!.Count);
+        Assert.Equal("11110029", atLobby[0].Card);
+    }
+
+    [Fact]
+    public async Task AnAbsurdlyLongCardIsRefused()
+    {
+        var response = await _station.PostAsJsonAsync("/api/v1/station/tap", new StationTapRequest(new string('7', 5000)), TapQueueJson.Options);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Empty(await _server.Admin.GetFromJsonAsync<List<UnknownTapDto>>("/api/v1/admin/badges/unknown", TapQueueJson.Options) ?? []);
     }
 

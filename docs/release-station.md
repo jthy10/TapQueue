@@ -55,12 +55,18 @@ To move a station to another printer, change it on the server. Nothing changes o
 
 ## Enrolling badges
 
-Tap a new card at any station. The station reports it as unrecognized. Then link it:
+Tap a new card at a station. The station reports it as unrecognized. Then link it:
 
 ```sh
-sudo tapqueue-admin badges add jsmith --last-tap  # links the card most recently tapped anywhere
-sudo tapqueue-admin badges add jsmith 04A1B2C3    # or type the number if you already know it
+sudo tapqueue-admin badges add jsmith --last-tap                  # the card most recently tapped anywhere
+sudo tapqueue-admin badges add jsmith --last-tap --station lobby  # the card most recently tapped at "lobby"
+sudo tapqueue-admin badges add jsmith 04A1B2C3                    # or type the number if you already know it
 ```
+
+With more than one station, say which one you're at: otherwise a card someone else happens to tap
+at another printer in the meantime is the "most recent" one. The admin console's **Enroll card**
+dialog has the same choice (**Station**), and remembers it; `tapqueue-admin badges unknown --station lobby`
+lists what was tapped there.
 
 A tap then sends all of that user's held jobs to the station's printer. If a job can't be sent,
 it stays held so the user can try again at another printer.

@@ -40,6 +40,8 @@ public static class StationApi
         var card = BadgeStore.Normalize(request.Card ?? "");
         if (card.Length == 0)
             return Results.BadRequest(new ErrorResponse("card is required"));
+        if (card.Length > BadgeStore.MaxCardLength)
+            return Results.BadRequest(new ErrorResponse($"card is longer than {BadgeStore.MaxCardLength} characters"));
 
         var printer = printers.Find(station.PrinterId);
         if (printer is null)

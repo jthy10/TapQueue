@@ -21,6 +21,9 @@ public sealed class BadgeStore(Database database)
         FROM badges b JOIN users u ON u.id = b.user_id
         """;
 
+    /// <summary>Far longer than any reader sends (a 10-byte UID is 20 hex digits); anything past it isn't a card.</summary>
+    public const int MaxCardLength = 128;
+
     /// <summary>Readers differ in case and padding; "04a1b2 " and "04A1B2" are the same card.</summary>
     public static string Normalize(string card) =>
         new string(card.Where(c => !char.IsWhiteSpace(c) && !char.IsControl(c)).ToArray()).ToUpperInvariant();

@@ -26,9 +26,11 @@ tapqueue-admin jobs [--status held]            List recent jobs
 tapqueue-admin release <user> <printer> [ids]  Release a user's held jobs to a printer
 
 tapqueue-admin badges [username]               List badges
-tapqueue-admin badges add <user> <card>|--last-tap
-                                               Link a badge to a user
-tapqueue-admin badges unknown                  Unrecognized cards tapped in the last hour
+tapqueue-admin badges add <user> <card>|--last-tap [--station <station>]
+                                               Link a badge to a user: a card number, or the card
+                                               last tapped (at that station, with --station)
+tapqueue-admin badges unknown [--station <station>]
+                                               Unrecognized cards tapped in the last hour
 tapqueue-admin badges remove <badge-id>        Unlink a badge
 
 tapqueue-admin stations                        Release stations and when they last checked in

@@ -10,7 +10,8 @@ export async function render(root, ctx) {
   panel({ flush: true, body: list }));
 
   async function load() {
-    const [badges, unknown] = await Promise.all([api.get("badges"), api.get("badges/unknown")]);
+    // Cards nobody owns are listed whole, so only those who may enroll them get to see them.
+    const [badges, unknown] = await Promise.all([api.get("badges"), ctx.can("people", "operator") ? api.get("badges/unknown") : []]);
     if (!ctx.current) return;
 
     unknownPanel.replaceChildren(unknown.length ? panel({
@@ -80,22 +81,63 @@ export async function removeCard(badge, onDone) {
   if (await attempt(() => api.del(`badges/${badge.id}`), "Card removed") !== undefined) await onDone?.();
 }
 
+const stationKey = "tapqueue.enroll.station";
+
+/** The station picked the last time a card was enrolled in this browser, if it still exists. */
+function rememberedStation(stations) {
+  try {
+    const id = localStorage.getItem(stationKey);
+    return stations.some((s) => s.id === id) ? id : "";
+  } catch {
+    return "";
+  }
+}
+
+function rememberStation(id) {
+  try {
+    localStorage.setItem(stationKey, id);
+  } catch {
+    // Private windows and locked-down browsers: the choice just isn't remembered.
+  }
+}
+
+const stationName = (s) => s.name || s.id;
+
+function stationLabel(s) {
+  const state = !s.enabled ? " (out of service)" : !s.online ? " (offline)" : "";
+  return `${stationName(s)}${s.location ? `, ${s.location}` : ""}${state}`;
+}
+
 /**
- * Links a card to a person. With no card given, it waits for one to be tapped at any station
- * (or takes a typed number). Pass username to enroll for someone specific.
+ * Links a card to a person. With no card given, it waits for one to be tapped (or takes a typed
+ * number): at the station picked in the dialog, or at any of them. Pass username to enroll for
+ * someone specific.
  */
 export async function enrollCard({ username, card, onDone }) {
-  const users = await api.get("users");
+  const [users, stations] = await Promise.all([api.get("users"), card ? [] : api.get("badges/stations").catch(() => [])]);
   if (users.length === 0) {
     formDialog({ title: "Enroll card", body: h("p", null, "Add a user first, then give them a card."), submitLabel: "OK", onSubmit: () => {} });
     return;
   }
   const opened = new Date();
   const cardInput = input("card", { type: card ? "hidden" : "text", value: card ?? "", placeholder: "Card number as the reader reads it" });
-  const waiting = h("div", { class: "tap-wait" }, h("div", { class: "ring" }), h("b", null, "Tap the card at any station"), h("p", { class: "muted", style: "margin:4px 0 0" }, "Waiting for a card nobody owns yet…"));
+  const where = h("b");
+  const waiting = h("div", { class: "tap-wait" }, h("div", { class: "ring" }), where, h("p", { class: "muted", style: "margin:4px 0 0" }, "Waiting for a card nobody owns yet…"));
   const tapped = h("div", { class: "callout info", hidden: true });
   let mode = card ? "given" : "tap";
   let timer;
+
+  // With more than one reader, cards tapped elsewhere in the building mustn't end up on this person.
+  const stationSelect = select("station", [["", "Any station"], ...stations.map((s) => [s.id, stationLabel(s)])], rememberedStation(stations));
+  const stationField = field("Station", stationSelect, "Where the card will be tapped. Taps at other stations are left alone.");
+  stationField.hidden = stations.length < 2;
+  const station = () => (stations.length < 2 ? "" : stationSelect.value);
+  stationSelect.addEventListener("change", () => {
+    rememberStation(stationSelect.value);
+    // A card already caught at another station doesn't count for this one.
+    if (mode === "tap") { cardInput.value = ""; tapped.hidden = true; }
+    update();
+  });
 
   const toggle = h("div", { class: "segmented", style: "margin-bottom:14px" });
   function drawToggle() {
@@ -107,12 +149,18 @@ export async function enrollCard({ username, card, onDone }) {
     drawToggle();
     if (mode !== "given") cardInput.type = mode === "type" ? "text" : "hidden";
     waiting.hidden = mode !== "tap" || cardInput.value !== "";
+    const picked = stations.find((s) => s.id === station());
+    where.textContent = picked ? `Tap the card at ${stationName(picked)}` : "Tap the card at any station";
+    stationField.hidden = stations.length < 2 || mode !== "tap";
     if (mode === "type") { tapped.hidden = true; cardInput.focus(); }
   }
 
   async function poll() {
     if (mode !== "tap" || cardInput.value) return;
-    const taps = await api.get("badges/unknown").catch(() => []);
+    const at = station();
+    const taps = await api.get(`badges/unknown${at ? `?station=${enc(at)}` : ""}`).catch(() => []);
+    // The station may have been changed while that was on its way.
+    if (at !== station() || mode !== "tap" || cardInput.value) return;
     const fresh = taps.find((t) => new Date(t.at) >= opened);
     if (!fresh) return;
     cardInput.value = fresh.card;
@@ -127,7 +175,7 @@ export async function enrollCard({ username, card, onDone }) {
     submitLabel: "Enroll",
     body: [
       field("Person", select("username", users.map((u) => [u.username, `${u.displayName} (${u.username})`]), username)),
-      card ? h("div", { class: "callout info" }, `Card ${hint(card)}`) : [toggle, waiting, tapped],
+      card ? h("div", { class: "callout info" }, `Card ${hint(card)}`) : [toggle, stationField, waiting, tapped],
       h("div", { class: "field" }, cardInput),
       field("Label", input("label", { placeholder: "Optional, e.g. blue fob" })),
     ],

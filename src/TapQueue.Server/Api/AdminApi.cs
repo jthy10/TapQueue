@@ -79,7 +79,18 @@ public static class AdminApi
             events.Admin(EventLog.User(badge.Username), $"Removed card {badge.CardHint} from {badge.Username}.");
             return Results.NoContent();
         });
-        admin.MapGet("/badges/unknown", (UnknownTaps taps) => taps.Recent());
+        // ?station=<id>: only the cards tapped at that station, for enrolling at one reader among several.
+        admin.MapGet("/badges/unknown", (UnknownTaps taps, StationStore stations, string? station) =>
+        {
+            if (string.IsNullOrWhiteSpace(station))
+                return Results.Ok(taps.Recent());
+            return stations.Get(station.Trim()) is { } at
+                ? Results.Ok(taps.Recent(at.Id))
+                : Results.NotFound(new ErrorResponse($"No station \"{station}\". See `tapqueue-admin stations`."));
+        });
+        // The readers a card can be tapped at, for whoever enrolls cards (who may have no role in Fleet).
+        admin.MapGet("/badges/stations", (StationStore stations) =>
+            stations.List().Select(s => new BadgeStationDto(s.Id, s.Name, s.Location, s.Online, s.Settings.Enabled)));
         admin.MapGet("/events", (EventLog events, string? category, string? subject, long? before, int? limit) =>
             events.List(category, subject, before, limit ?? 100));
 
@@ -314,6 +325,8 @@ public static class AdminApi
         var card = BadgeStore.Normalize(request.Card ?? "");
         if (card.Length == 0)
             return Results.BadRequest(new ErrorResponse("card is required"));
+        if (card.Length > BadgeStore.MaxCardLength)
+            return Results.BadRequest(new ErrorResponse($"card is longer than {BadgeStore.MaxCardLength} characters"));
         var user = users.FindByUsername(request.Username ?? "");
         if (user is null)
             return Results.NotFound(new ErrorResponse($"No user \"{request.Username}\"."));
@@ -403,10 +416,10 @@ public static class AdminApi
     private static async Task<IResult> Release(AdminReleaseRequest request, UserStore users, PrinterRegistry printers,
         ReleaseService release, CancellationToken ct)
     {
-        var user = users.FindByUsername(request.Username);
+        var user = users.FindByUsername(request.Username ?? "");
         if (user is null)
             return Results.NotFound(new ErrorResponse($"No user \"{request.Username}\"."));
-        var printer = printers.Find(request.PrinterId);
+        var printer = printers.Find(request.PrinterId ?? "");
         if (printer is null)
             return Results.NotFound(new ErrorResponse($"Unknown printer \"{request.PrinterId}\"."));
         return Results.Ok(await release.ReleaseAsync(user, printer, request.JobIds, EventLog.CurrentAdmin, "from the admin console", ct));
