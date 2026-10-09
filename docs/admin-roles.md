@@ -65,8 +65,8 @@ build they publish is installed by every PC's TapQueue service and runs there as
 or root (Linux), and a station build runs on every station. Give it only to people you'd let
 install software on all your PCs.
 
-The last rule stops a People admin from adding themselves to an admin group, or disabling the
-admins above them.
+The rule about people with admin rights stops a People admin from adding themselves to an admin
+group, or disabling the admins above them.
 
 Outside dev mode, TapQueue refuses any change that would leave no full admin who can sign in:
 removing the last one's role, disabling or deleting them, removing them from the group that makes
