@@ -111,7 +111,7 @@ export async function render(root, ctx) {
           button("Clear crash reports", { small: true, kind: "ghost", onclick: () => clearCrashes(pc) })),
         sectionTitle("Signed in"),
         pc.sessions.length === 0
-          ? h("p", { class: "muted", style: "margin:0" }, `Nobody. Jobs printed from here don't belong to anyone until someone signs in.`)
+          ? h("p", { class: "muted", style: "margin:0" }, `Nobody. Jobs printed from here are refused until someone signs in.`)
           : h("div", { class: "row-list" }, pc.sessions.map((s) => h("div", { class: "row-item" },
             h("div", null,
               h("a", { class: "cell-strong", href: `users/${enc(s.username)}` }, s.username),

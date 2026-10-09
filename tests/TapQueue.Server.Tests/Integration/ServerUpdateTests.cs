@@ -177,6 +177,7 @@ public sealed class ServerUpdateTests : IAsyncLifetime
     public async Task UpgradesWaitForJobsBeingPrinted()
     {
         await Check();
+        using var alice = await _server.SignInAsync("alice");
         await _server.PrintAsync("report.pdf", "%PDF-1.4 test"u8.ToArray());
         _server.Service<TapQueue.Server.Data.Database>().Execute("UPDATE jobs SET status = 'releasing'");
 

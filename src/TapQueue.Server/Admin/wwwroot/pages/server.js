@@ -41,7 +41,7 @@ export async function render(root, ctx) {
         h("span", { class: "sub" }, s.quotaOverrun === "deny"
           ? "A job prints only if it fits in the pages someone has left."
           : "A job prints in full if someone is under their limit when it starts, even if it takes them over.")]],
-      ["Jobs without a PC key", [s.addressMatching === "off" ? "Not matched to anyone" : "Matched by address",
+      ["Jobs without a PC key", [s.addressMatching === "off" ? "Refused" : "Matched by address",
         h("span", { class: "sub" }, s.addressMatching === "off"
           ? "Only jobs from PCs whose TapQueue client has a key (0.8 on) go to someone."
           : "Jobs from clients older than 0.8 go to whoever is signed in at that address. Turn this off once every PC under Workstations has a key.")]],

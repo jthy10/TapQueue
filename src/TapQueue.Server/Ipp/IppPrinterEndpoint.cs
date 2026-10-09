@@ -19,6 +19,8 @@ public sealed class IppPrinterEndpoint(
     EventLog events,
     ILogger<IppPrinterEndpoint> logger)
 {
+    private readonly RecentSources _unownedRefusals = new(TimeSpan.FromMinutes(1));
+
     /// <param name="printKey">
     /// From printers a TapQueue service (0.8 on) added: the PC's print key (<c>/ipp/{queue}/pc/{printKey}</c>,
     /// <see cref="Tokens.PrintKey"/>), which says the job comes from that PC whatever its address.
@@ -344,14 +346,27 @@ public sealed class IppPrinterEndpoint(
     }
 
     /// <summary>
-    /// Jobs from disabled users, or from users whose groups don't allow this queue, are turned away up
-    /// front, so Windows tells them instead of holding a job that can never be released.
+    /// Jobs nobody could ever release are turned away up front, so the PC tells the person instead of
+    /// the server holding them: jobs that can't be matched to anyone (nobody signed in to TapQueue
+    /// where they came from; anyone who can reach the server could otherwise fill its disk with them),
+    /// and jobs from disabled users or users whose groups don't allow this queue.
     /// </summary>
     private IppMessage? Refused(RequestContext c)
     {
-        var (userId, _) = owners.Resolve(c.ClientIp, c.Request.OperationString("requesting-user-name"), c.Workstation);
+        var requestingUser = c.Request.OperationString("requesting-user-name");
+        var (userId, ownerHint) = owners.Resolve(c.ClientIp, requestingUser, c.Workstation);
         if (userId is null || users.FindById(userId.Value) is not { } user)
-            return null;
+        {
+            var why = c.Workstation is not null ? $"PC user {ownerHint ?? "?"} isn't signed in to the TapQueue tray app there"
+                : settings.AddressMatching == Shared.Api.AddressMatching.On ? "no TapQueue client is signed in on that machine"
+                : "it came without a PC key, and matching by address is off";
+            logger.LogWarning("Refused a job from {Source} (\"{User}\"): {Why}", c.Source, requestingUser, why);
+            // Anyone can send these, so the activity log gets one line a minute per source, not one per try.
+            if (_unownedRefusals.ShouldRecord(c.Source))
+                events.Record(EventCategory.Job, ownerHint ?? c.ClientIp, null, $"Refused a job from {c.Source}: {why}, so it couldn't be matched to anyone.");
+            return IppMessage.CreateResponse(c.Request, IppStatus.ClientErrorNotAuthorized,
+                "Sign in to TapQueue on this computer (the TapQueue icon near the clock), then print again.");
+        }
         var reason = user.Disabled ? "their account is disabled"
             : !access.CanPrintTo(user.Id, c.Queue.Id) ? $"their groups don't allow printing to {c.Queue.Name}"
             : null;
@@ -418,6 +433,28 @@ public sealed class IppPrinterEndpoint(
     }
 
     private static bool IsTerminal(JobRecord job) => job.Status != JobStatus.Receiving;
+
+    /// <summary>Remembers which sources did something lately, so it's reported once per <paramref name="every"/> each.</summary>
+    private sealed class RecentSources(TimeSpan every)
+    {
+        private const int MaxTracked = 1000;
+        private readonly Dictionary<string, DateTimeOffset> _last = new(StringComparer.OrdinalIgnoreCase);
+
+        public bool ShouldRecord(string source)
+        {
+            var now = DateTimeOffset.UtcNow;
+            lock (_last)
+            {
+                if (_last.TryGetValue(source, out var last) && now - last < every)
+                    return false;
+                // Many sources at once is someone making them up: start over rather than grow.
+                if (_last.Count >= MaxTracked)
+                    _last.Clear();
+                _last[source] = now;
+                return true;
+            }
+        }
+    }
 
     /// <param name="Workstation">The PC whose keyed printer this came through, or null for a keyless request.</param>
     private sealed record RequestContext(HttpContext Http, QueueRecord Queue, IppMessage Request, Stream Body, string PrinterUri, string? Workstation)

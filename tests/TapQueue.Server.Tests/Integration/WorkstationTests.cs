@@ -68,9 +68,9 @@ public sealed class WorkstationTests : IAsyncLifetime
         Assert.Contains("signed you out", await heartbeat.Content.ReadAsStringAsync());
         Assert.Empty((await _server.Admin.GetFromJsonAsync<List<ClientSessionDto>>("/api/v1/admin/clients", TapQueueJson.Options))!);
 
-        await _server.PrintAsync("after.pdf", "%PDF-1.4 test"u8.ToArray(), requestingUser: "alice");
-        var job = Assert.Single((await _server.Admin.GetFromJsonAsync<List<JobDto>>("/api/v1/admin/jobs", TapQueueJson.Options))!);
-        Assert.Null(job.Owner);
+        var refused = await _server.PrintAsync("after.pdf", "%PDF-1.4 test"u8.ToArray(), requestingUser: "alice");
+        Assert.Equal(TapQueue.Server.Ipp.IppStatus.ClientErrorNotAuthorized, refused.Code);
+        Assert.Empty((await _server.Admin.GetFromJsonAsync<List<JobDto>>("/api/v1/admin/jobs", TapQueueJson.Options))!);
 
         Assert.Equal(HttpStatusCode.NotFound, (await _server.Admin.DeleteAsync($"/api/v1/admin/clients/{session.Id}")).StatusCode);
     }

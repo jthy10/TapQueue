@@ -144,13 +144,19 @@ public sealed class PrintAndReleaseTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task JobWithNoSignedInClientHasNoOwner()
+    public async Task AJobWithNoSignedInClientIsRefusedAndNotStored()
     {
-        await _server.PrintAsync("Anonymous", Pdf, requestingUser: "mallory");
+        var first = await _server.PrintAsync("Anonymous", Pdf, requestingUser: "mallory");
+        var second = await _server.PrintAsync("Again", Pdf, requestingUser: "mallory");
 
-        var job = Assert.Single(await _server.Admin.GetFromJsonAsync<List<JobDto>>("/api/v1/admin/jobs", TapQueueJson.Options) ?? []);
-        Assert.Null(job.Owner);
-        Assert.Equal("mallory", job.ClaimedUser);
+        Assert.Equal(IppStatus.ClientErrorNotAuthorized, first.Code);
+        Assert.Equal(IppStatus.ClientErrorNotAuthorized, second.Code);
+        Assert.Contains("Sign in to TapQueue", first.OperationString("status-message"));
+        Assert.Empty(await _server.Admin.GetFromJsonAsync<List<JobDto>>("/api/v1/admin/jobs", TapQueueJson.Options) ?? []);
+        Assert.Empty(Directory.GetFiles(Path.Combine(_server.Service<TapQueue.Server.Config.ServerConfig>().Server.DataDir, "spool")));
+        // Anyone can send these, so the activity log gets one line for the pair, not one each.
+        var events = await _server.Admin.GetFromJsonAsync<List<EventDto>>("/api/v1/admin/events?category=job", TapQueueJson.Options);
+        Assert.Single(events!, e => e.Message.StartsWith("Refused a job"));
     }
 
     [Fact]

@@ -84,7 +84,7 @@ fills in, and anyone can put anything there. TapQueue doesn't trust it on its ow
 | Signed-in sessions this PC vouched for | Result |
 |---|---|
 | one for the PC user who printed | The job is theirs. |
-| none for that PC user (even if someone else is signed in there) | The job is held with no owner. |
+| none for that PC user (even if someone else is signed in there) | The job is refused; the PC shows a print error telling them to sign in to TapQueue. |
 | the job has no username at all | It goes to the one person signed in there, if there's exactly one. |
 
 This works the same on a terminal server with dozens of people, on PCs behind NAT or a VPN, and
@@ -101,12 +101,12 @@ is on, the default, they're matched the old way: the server finds the signed-in 
 |---|---|
 | exactly one | The job is theirs. |
 | several (e.g. a terminal server) | The one whose Windows username matches the job's username. |
-| none | The job is held with no owner. With `auth.mode = "dev"` only, the job's username is trusted. |
+| none | With `auth.mode = "dev"` only, the job's username is trusted. Otherwise the job is refused. |
 
 That breaks down behind NAT (many PCs share an address), on terminal servers (matching falls back
 to a username the tray app reports itself) and when someone sets `requesting-user-name` by hand.
 Once every PC under **Workstations** shows a key, turn address matching off: keyless jobs are then
-held with no owner.
+refused.
 
 ### Moving over
 
@@ -130,7 +130,8 @@ apps are vouched for at their next sign-in or heartbeat. Jobs already held keep 
 - Until [TLS](roadmap.md) is in, keys and print keys cross the network in the clear like
   everything else.
 
-Jobs with no owner show up in `tapqueue-admin jobs` as "unowned" and expire normally. The logic
+A job that can't be matched to anyone is refused rather than stored (the PC shows a print error
+asking the person to sign in to TapQueue), and the activity log notes it. The logic
 lives in [`JobOwnerResolver`](../src/TapQueue.Server/Jobs/JobOwnerResolver.cs), the only place that
 decides ownership.
 

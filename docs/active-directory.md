@@ -142,7 +142,7 @@ With a domain account:
 - The token is forgotten when they sign out, when an admin signs that PC out (Workstations), and
   when the user is disabled in TapQueue or by the sync. Changing the AD password doesn't end it;
   disabling the account in AD does, at the next sync.
-- Jobs printed on a PC where nobody has signed in yet aren't anyone's, even in dev mode (there's
+- Jobs printed on a PC where nobody has signed in yet are refused, even in dev mode (there's
   no falling back to the PC's user name).
 
 Changing the setting signs out the PCs signed in the old way; their trays sign in again the new

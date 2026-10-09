@@ -116,6 +116,7 @@ public sealed class TlsTests : IDisposable
     public async Task AJobPrintedOverIppsIsHeld()
     {
         await using var server = await TestServer.StartAsync(tls: true);
+        using var someone = await server.SignInAsync("someone");
         var ipps = $"ipps://{server.HttpsUri!.Authority}/ipp/{TestServer.QueueId}";
         var request = IppMessage.CreateRequest(IppOperation.PrintJob, IppClient.NextRequestId(), ipps);
         request.Group(IppTag.OperationAttributes)

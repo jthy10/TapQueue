@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using TapQueue.Server.Data;
+using TapQueue.Server.Ipp;
 using TapQueue.Shared;
 using TapQueue.Shared.Api;
 
@@ -111,17 +112,16 @@ public sealed class WorkstationKeyTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task OnAKeyedPrinterAPcUserWhoIsNotSignedInGetsNobodysQueueEvenIfOnlyOnePersonIsSignedIn()
+    public async Task OnAKeyedPrinterAPcUserWhoIsNotSignedInIsRefusedEvenIfOnlyOnePersonIsSignedIn()
     {
         var (key, path) = await Enroll();
         using var alice = await _server.SignInAsync("alice", windowsUser: "a.smith");
         await Vouch(key, alice, "a.smith");
 
         // Someone else on the same terminal server, without the tray app running.
-        await _server.PrintAsync("someone-elses.pdf", "%PDF-1.4 test"u8.ToArray(), requestingUser: "c.brown", ippPath: path);
-        var job = await OnlyJob();
-        Assert.Null(job.Owner);
-        Assert.Equal("c.brown", job.ClaimedUser);
+        var refused = await _server.PrintAsync("someone-elses.pdf", "%PDF-1.4 test"u8.ToArray(), requestingUser: "c.brown", ippPath: path);
+        Assert.Equal(IppStatus.ClientErrorNotAuthorized, refused.Code);
+        Assert.Empty((await _server.Admin.GetFromJsonAsync<List<JobDto>>("/api/v1/admin/jobs", TapQueueJson.Options))!);
     }
 
     [Fact]
@@ -131,8 +131,9 @@ public sealed class WorkstationKeyTests : IAsyncLifetime
         // Signed in from this address, but no service vouched for it: address matching doesn't apply to keyed jobs.
         using var alice = await _server.SignInAsync("alice");
 
-        await _server.PrintAsync("doc.pdf", "%PDF-1.4 test"u8.ToArray(), requestingUser: "alice", ippPath: path);
-        Assert.Null((await OnlyJob()).Owner);
+        var refused = await _server.PrintAsync("doc.pdf", "%PDF-1.4 test"u8.ToArray(), requestingUser: "alice", ippPath: path);
+        Assert.Equal(IppStatus.ClientErrorNotAuthorized, refused.Code);
+        Assert.Empty((await _server.Admin.GetFromJsonAsync<List<JobDto>>("/api/v1/admin/jobs", TapQueueJson.Options))!);
     }
 
     [Fact]
@@ -168,9 +169,9 @@ public sealed class WorkstationKeyTests : IAsyncLifetime
             new UpdateServerSettingsRequest(AddressMatching: AddressMatching.Off), TapQueueJson.Options));
         Assert.Equal(AddressMatching.Off, server.AddressMatching);
 
-        await _server.PrintAsync("after.pdf", "%PDF-1.4 test"u8.ToArray(), requestingUser: "alice");
-        var jobs = (await _server.Admin.GetFromJsonAsync<List<JobDto>>("/api/v1/admin/jobs", TapQueueJson.Options))!;
-        Assert.Null(jobs.Single(j => j.Name == "after.pdf").Owner);
+        var refused = await _server.PrintAsync("after.pdf", "%PDF-1.4 test"u8.ToArray(), requestingUser: "alice");
+        Assert.Equal(IppStatus.ClientErrorNotAuthorized, refused.Code);
+        Assert.Equal("before.pdf", (await OnlyJob()).Name);
 
         Assert.Equal(HttpStatusCode.BadRequest, (await _server.Admin.PatchAsJsonAsync("/api/v1/admin/server/settings",
             new UpdateServerSettingsRequest(AddressMatching: "sometimes"), TapQueueJson.Options)).StatusCode);

@@ -15,6 +15,8 @@ cat > "$work/server.toml" <<EOF
 listen = "127.0.0.1:18631"
 data_dir = "$work/data"
 discovery_port = 0
+[auth]
+mode = "dev"
 [admin]
 token = "cups-test-token"
 [tls]
@@ -33,6 +35,9 @@ export NO_PROXY='*'
 ipptool -t ipps://127.0.0.1:18632/ipp/secure get-printer-attributes.test
 lpadmin -p tq-ipps-test -E -v ipps://127.0.0.1:18632/ipp/secure -m everywhere
 echo "TapQueue over ipps" > "$work/page.txt"
+# Jobs nobody is signed in for are refused, so sign in from this machine as a tray app would.
+curl -fsS --noproxy '*' -H 'Content-Type: application/json' -d '{"username":"cups-test","hostname":"ci","platform":"linux-x64"}' \
+    http://127.0.0.1:18631/api/v1/client/session >/dev/null
 lp -d tq-ipps-test -t "over ipps" "$work/page.txt"
 
 for _ in $(seq 1 60); do
