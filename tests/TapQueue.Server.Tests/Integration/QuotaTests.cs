@@ -94,6 +94,28 @@ public sealed class QuotaTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task TwoReleasesAtOnceCantPassThePageLimitTogether()
+    {
+        // A tap at two stations, or a tap and the tray: each would see the limit as it was before the
+        // other's job counted. The printer is slow enough here that they'd overlap.
+        using var alice = await _server.SignInAsync("alice");
+        await SetOverrun(QuotaOverrun.Deny);
+        await SetUserQuota("alice", 5);
+        await _server.PrintAsync("first", ThreePages);
+        await _server.PrintAsync("second", ThreePages);
+        var held = await alice.GetFromJsonAsync<List<JobDto>>("/api/v1/me/jobs", TapQueueJson.Options);
+        _server.Printer.PrintJobDelay = TimeSpan.FromMilliseconds(400);
+
+        var releases = await Task.WhenAll(held!.Select(async job => (await TestServer.ReadAsync<ReleaseResponse>(
+            await alice.PostAsJsonAsync("/api/v1/me/release", new ReleaseRequest(TestServer.PrinterId, [job.Id]), TapQueueJson.Options))).Results.Single()));
+
+        Assert.Single(releases, r => r.Success);
+        Assert.Contains("would go over your page limit", releases.Single(r => !r.Success).Error);
+        Assert.Single(_server.Printer.Jobs);
+        Assert.Equal(3, (await Quota("alice")).Applies.Single().Used);
+    }
+
+    [Fact]
     public async Task CopiesCount()
     {
         using var alice = await _server.SignInAsync("alice");

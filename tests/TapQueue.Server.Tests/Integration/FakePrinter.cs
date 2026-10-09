@@ -22,6 +22,9 @@ public sealed class FakePrinter : IAsyncDisposable
     /// <summary>What Print-Job answers with; anything but OK means the printer refused the job.</summary>
     public short PrintJobStatus { get; set; } = IppStatus.Ok;
 
+    /// <summary>How long the printer takes to accept each Print-Job.</summary>
+    public TimeSpan PrintJobDelay { get; set; }
+
     /// <summary>Answer this many Print-Jobs with server-error-busy before accepting one.</summary>
     public int BusyCount { get; set; }
 
@@ -86,6 +89,7 @@ public sealed class FakePrinter : IAsyncDisposable
         }
         else if (request.Code == IppOperation.PrintJob)
         {
+            await Task.Delay(PrintJobDelay);
             response = IppMessage.CreateResponse(request, PrintJobStatus, PrintJobStatus == IppStatus.Ok ? null : "Out of paper");
             if (PrintJobStatus == IppStatus.Ok)
                 Jobs.Enqueue(new ReceivedJob(request, body.ToArray()[(int)body.Position..]));

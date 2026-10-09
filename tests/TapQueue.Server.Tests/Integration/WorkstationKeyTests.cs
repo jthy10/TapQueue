@@ -190,6 +190,28 @@ public sealed class WorkstationKeyTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AForgottenPcNeedsTheEnrollmentCodeToComeBack()
+    {
+        var (key, _) = await Enroll("OLD-PC");
+        using var service = _server.NewClient();
+        Task<HttpResponseMessage> CheckIn(string workstationKey, string? code) =>
+            service.PostAsJsonAsync("/api/v1/client/setup",
+                new ClientSetupRequest("OLD-PC", "0.9.5", null, null, ClientPlatform.Windows, workstationKey, code), TapQueueJson.Options);
+        var made = await TestServer.ReadAsync<EnrollmentCodeResponse>(await _server.Admin.PostAsync("/api/v1/admin/server/enrollment-code", null));
+        (await _server.Admin.DeleteAsync("/api/v1/admin/workstations/OLD-PC")).EnsureSuccessStatusCode();
+
+        // Its old key says nothing any more, and neither does asking for a new one without the code.
+        Assert.Equal(HttpStatusCode.Forbidden, (await CheckIn(key, null)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await CheckIn("", null)).StatusCode);
+        Assert.Empty((await _server.Admin.GetFromJsonAsync<List<WorkstationDto>>("/api/v1/admin/workstations", TapQueueJson.Options))!);
+
+        // The code as someone would paste it into client.toml, spaces and all.
+        var back = await TestServer.ReadAsync<ClientSetupResponse>(await CheckIn("", $"  {made.Code} "));
+        Assert.False(string.IsNullOrEmpty(back.WorkstationKey));
+        Assert.NotEqual(key, back.WorkstationKey);
+    }
+
+    [Fact]
     public async Task KeylessJobsAreMatchedByAddressUntilThatIsTurnedOff()
     {
         using var alice = await _server.SignInAsync("alice");
