@@ -11,6 +11,38 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+### Added
+- Enrolling a card by tapping it can be tied to one station. The console's **Enroll card** dialog
+  has a **Station** choice (remembered per browser) when there's more than one, and only a card
+  tapped there is picked up; `tapqueue-admin badges add <user> --last-tap --station <id>` and
+  `badges unknown --station <id>` do the same. Before, the newest unknown card tapped anywhere
+  was used, which with several readers could be someone else's. The server keeps the last 20
+  unknown taps of each station (it was 20 in all), so a busy reader can't push out another's.
+
+### Changed
+- Only operators and admins of People see cards nobody owns (`GET /api/v1/admin/badges/unknown`);
+  viewers no longer do. Those are whole card numbers, unlike enrolled cards, which are stored hashed.
+- Only a full admin can change the Active Directory domain controller, its CA certificate, or the
+  bind account and its password. Admins of the Active Directory area still change everything else.
+
+### Security
+- An admin of only the Active Directory area could point TapQueue at a domain controller of their
+  own and sign in to the console as any Active Directory admin. Changing where the directory is
+  read from now takes a full admin.
+- Card numbers longer than 128 characters are refused, and what a PC's check-in or sign-in says
+  about itself (version, computer and user names) is cut to a sane length, so whoever can reach
+  the server can't fill its database with them.
+- A job sent in several Send-Document requests is canceled once it passes 512 MB, the limit that
+  already applied to a job sent in one request.
+- Release stations write only the last four characters of an unknown card to their log.
+
+### Fixed
+- A malformed nameWithLanguage or textWithLanguage value in an IPP request was answered with a
+  server error instead of being read as empty.
+- A damaged stored console password hash is treated as a wrong password rather than an error.
+- `POST /api/v1/admin/release` and `/users/bulk` answer 404 or do nothing for a missing username
+  list instead of failing.
+
 ## [0.8.0] - 2026-10-08
 
 ### Added
