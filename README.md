@@ -84,7 +84,7 @@ Reference: [admin console](docs/admin-ui.md) · [TLS](docs/tls.md) · [backups](
 - [ ] Follow-me printing and cost accounting
 - [ ] Self-service badge enrollment from the tray app
 - [x] Database backups and restore
-- [ ] Notifications
+- [x] Email notifications for printer problems, offline stations and crashes (webhooks later)
 - [ ] Signed Windows builds; .deb packages; ARM builds for small release devices
 
 The full list, with what each item means, is in [docs/roadmap.md](docs/roadmap.md).

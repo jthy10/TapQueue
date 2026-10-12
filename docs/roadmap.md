@@ -41,8 +41,9 @@ checklist; [admin-ui.md](admin-ui.md#roadmap) has the admin console's own phases
 
 ## Operations
 
-12. **Notifications.** Email or webhook alerts for printer problems, stations going offline and
-    crash reports.
+12. **Notifications.** *(Email done in 0.15.0, see [notifications.md](notifications.md).)* Email
+    alerts for printer problems, stations going offline and crash reports, sent through the
+    mail server an admin enters in the console. Webhook alerts are still to do.
 13. **Backup and restore.** *(Done in 0.11.0, see [backup.md](backup.md).)* A daily backup of the
     database, certificate and AD CA, one before each upgrade, `tapqueue-admin backups` and the
     console's Server page, and `tapqueue-server --restore`.

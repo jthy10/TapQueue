@@ -11,6 +11,17 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+### Added
+- **Email notifications.** The server emails the people you list when a printer is unreachable or
+  stops (paper jam, out of paper), when a release station stops checking in, and when a PC's
+  client crashes, and again when a printer or station recovers. Low toner and other warnings can
+  be added. The emails go out through your own mail server or provider: enter its SMTP settings
+  on the console's new **Notifications** page (STARTTLS, TLS, or neither for a local relay), send
+  a test email, and turn them on. A printer or station has to stay wrong for 5 minutes first
+  (changeable), a PC that keeps crashing sends at most one email an hour, and an email that can't
+  be sent is tried again for a day. `tapqueue-admin notifications` shows the settings, sends a
+  test and turns them on or off. See [docs/notifications.md](docs/notifications.md).
+
 ## [0.14.0] - 2026-10-12
 
 ### Added
