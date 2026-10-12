@@ -955,3 +955,74 @@ public sealed record AdminMeDto(
 public sealed record SetPasswordRequest(string? Password);
 
 public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
+
+/// <summary>How the connection to the mail server is protected.</summary>
+public static class MailSecurity
+{
+    /// <summary>Starts plain and upgrades with STARTTLS before signing in (usually port 587). Refused if the server doesn't offer it.</summary>
+    public const string StartTls = "starttls";
+    /// <summary>TLS from the first byte (usually port 465).</summary>
+    public const string Tls = "tls";
+    /// <summary>No encryption: only for a relay on the same machine or a trusted network (usually port 25).</summary>
+    public const string None = "none";
+
+    public static readonly string[] All = [StartTls, Tls, None];
+}
+
+/// <summary>The mail server alerts are sent through and what's worth an email. The password is never sent back.</summary>
+/// <param name="Security">One of <see cref="MailSecurity"/>.</param>
+/// <param name="Username">Empty for a relay that doesn't ask anyone to sign in.</param>
+/// <param name="From">The address alerts come from; most providers only accept one that belongs to the account.</param>
+/// <param name="PrinterProblems">A printer is unreachable or has stopped (paper jam, out of paper).</param>
+/// <param name="PrinterWarnings">A printer still prints but wants attention soon (toner low).</param>
+/// <param name="DelayMinutes">How long a printer or station must stay that way before an email goes out.</param>
+public sealed record NotificationConfigDto(
+    bool Enabled,
+    string Host,
+    int Port,
+    string Security,
+    bool TlsSkipVerify,
+    string Username,
+    bool HasPassword,
+    string From,
+    string FromName,
+    IReadOnlyList<string> Recipients,
+    bool PrinterProblems,
+    bool PrinterWarnings,
+    bool StationsOffline,
+    bool CrashReports,
+    int DelayMinutes);
+
+/// <summary>Fields left null are unchanged. An empty password is ignored, so the console can leave it blank.</summary>
+public sealed record UpdateNotificationConfigRequest(
+    bool? Enabled = null,
+    string? Host = null,
+    int? Port = null,
+    string? Security = null,
+    bool? TlsSkipVerify = null,
+    string? Username = null,
+    string? Password = null,
+    string? From = null,
+    string? FromName = null,
+    IReadOnlyList<string>? Recipients = null,
+    bool? PrinterProblems = null,
+    bool? PrinterWarnings = null,
+    bool? StationsOffline = null,
+    bool? CrashReports = null,
+    int? DelayMinutes = null);
+
+/// <summary>Something an email went out about that hasn't recovered yet.</summary>
+/// <param name="Subject">Like "printer:m404n" or "station:office", as in the activity log.</param>
+public sealed record OpenAlertDto(string Subject, string Summary, DateTimeOffset Since);
+
+/// <param name="LastSentAt">When an email last went out, since the server started.</param>
+/// <param name="LastError">Why the last email couldn't be sent; null once one goes through.</param>
+/// <param name="Waiting">Emails that couldn't be sent yet and will be tried again.</param>
+public sealed record NotificationsDto(
+    NotificationConfigDto Config,
+    IReadOnlyList<OpenAlertDto> Alerts,
+    DateTimeOffset? LastSentAt,
+    string? LastError,
+    int Waiting);
+
+public sealed record NotificationTestResultDto(bool Success, string Message);
