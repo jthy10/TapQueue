@@ -8,10 +8,6 @@ server_url = "https://tapqueue-server:8632"
 # shows it). Leave empty to trust the certificate seen the first time the station connects.
 server_cert_fingerprint = ""
 
-# Only for station builds you make yourself: the public key you sign them with
-# (scripts/new-release-key.sh prints it). Leave empty to install TapQueue's own releases only.
-update_key = ""
-
 # From `tapqueue-admin stations add <station-id> <printer-id>`. The server decides which printer
 # this station releases to.
 token = ""

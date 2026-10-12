@@ -4,18 +4,16 @@
 #   scripts/package.sh server    server and station (they share <Version>):
 #     TapQueue_server_<version>_linux-x64.tar.gz    tapqueue-server, tapqueue-admin, libe_sqlite3.so, example config,
 #                                                   systemd units, install-server.sh, update-server.sh
-#     TapQueue_station_<version>_linux-x64.tar.gz   tapqueue-station and its signature, example config, systemd unit,
-#                                                   udev rule, install-station.sh
+#     TapQueue_station_<version>_linux-x64.tar.gz   tapqueue-station, example config, systemd unit, udev rule,
+#                                                   install-station.sh
 #   scripts/package.sh client    the Windows and Linux clients (<TapQueueClientVersion>):
-#     TapQueue_client_<version>_win-x64.zip         TapQueueClient.exe, its signature and version.txt, for
-#                                                   `tapqueue-admin clients publish`
+#     TapQueue_client_<version>_win-x64.zip         TapQueueClient.exe and version.txt, for `tapqueue-admin clients publish`
 #                                                   (the installer, TapQueue_client_<version>.exe, is built on Windows by
 #                                                   scripts/package-client-installer.ps1)
-#     TapQueue_client_<version>_linux-x64.tar.gz    tapqueue-client, its signature, version.txt, example config, systemd unit, desktop
+#     TapQueue_client_<version>_linux-x64.tar.gz    tapqueue-client, version.txt, example config, systemd unit, desktop
 #                                                   entry, install-client.sh; also what `clients publish` takes
 #   scripts/package.sh           both
 #
-# The client and station programs are signed with the release key if there is one (scripts/sign-build.sh).
 # Each run writes SHA256SUMS for what it built. Used by CI on every push and by the release workflow on tags.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -52,7 +50,6 @@ if [ "$what" != client ]; then
     tarball server "TapQueue_server_${version}_linux-x64"
 
     publish TapQueue.Station linux-x64 station
-    scripts/sign-build.sh "$out/station/tapqueue-station"
     cp config/station.example.toml deploy/systemd/tapqueue-station.service deploy/udev/60-tapqueue-pcprox.rules \
         deploy/install-station.sh "$out/station/"
     tarball station "TapQueue_station_${version}_linux-x64"
@@ -62,12 +59,9 @@ if [ "$what" != server ]; then
     publish TapQueue.Client.Windows win-x64 client -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true
     # `tapqueue-admin clients publish` reads this; it matches what the client reports (TapQueueVersion.Current).
     echo "$client_version+$(git rev-parse --short=7 HEAD)" > "$out/client/version.txt"
-    scripts/sign-build.sh "$out/client/TapQueueClient.exe"
-    (cd "$out/client" && zip -q "../../$dist/TapQueue_client_${client_version}_win-x64.zip" TapQueueClient.exe version.txt \
-        $([ ! -f TapQueueClient.exe.sig ] || echo TapQueueClient.exe.sig))
+    (cd "$out/client" && zip -q "../../$dist/TapQueue_client_${client_version}_win-x64.zip" TapQueueClient.exe version.txt)
 
     publish TapQueue.Client.Linux linux-x64 client-linux -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true
-    scripts/sign-build.sh "$out/client-linux/tapqueue-client"
     cp "$out/client/version.txt" config/client.example.toml deploy/systemd/tapqueue-client.service \
         deploy/linux/tapqueue-client.desktop deploy/install-client.sh "$out/client-linux/"
     tarball client-linux "TapQueue_client_${client_version}_linux-x64"

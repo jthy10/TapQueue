@@ -12,12 +12,6 @@ public sealed class StationConfig
     /// </summary>
     public string ServerCertFingerprint { get; set; } = "";
 
-    /// <summary>
-    /// For station builds made somewhere other than TapQueue's own releases: the public key their
-    /// builder signs them with, so this station installs those from the server too.
-    /// </summary>
-    public string UpdateKey { get; set; } = "";
-
     /// <summary>From `tapqueue-admin stations add`.</summary>
     public string Token { get; set; } = "";
 

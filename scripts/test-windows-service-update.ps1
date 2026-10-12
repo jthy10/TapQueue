@@ -17,29 +17,21 @@ $oldSha = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
 $newSha = (Get-FileHash $new -Algorithm SHA256).Hash.ToLower()
 if ($oldSha -eq $newSha) { throw '-From and -To are the same build.' }
 $port = 18631
-# The service only installs a signed build: a throwaway key signs the new one, and client.toml trusts it.
-$key = Join-Path $dir 'test-key.pem'
-openssl ecparam -name prime256v1 -genkey -noout -out $key
-openssl pkey -in $key -pubout -outform DER -out "$key.pub"
-openssl dgst -sha256 -sign $key -out "$dir\new.sig" $new
-if ($LASTEXITCODE -ne 0) { throw 'Signing the new build with openssl failed.' }
-$updateKey = [Convert]::ToBase64String([IO.File]::ReadAllBytes("$key.pub"))
-$signature = [Convert]::ToBase64String([IO.File]::ReadAllBytes("$dir\new.sig"))
 $config = Join-Path $dir 'client.toml'
-Set-Content $config "server_url = `"http://127.0.0.1:$port`"`ninstall_printers = false`nupdate_key = `"$updateKey`""
+Set-Content $config "server_url = `"http://127.0.0.1:$port`"`ninstall_printers = false"
 $checkIns = Join-Path $dir 'check-ins.txt'
 
 # The stand-in server: offers the new build at every check-in, serves it, and records each
 # check-in's reported SHA-256.
-$server = Start-Job -ArgumentList $port, $new, $newSha, $checkIns, $signature -ScriptBlock {
-    param($port, $new, $newSha, $checkIns, $signature)
+$server = Start-Job -ArgumentList $port, $new, $newSha, $checkIns -ScriptBlock {
+    param($port, $new, $newSha, $checkIns)
     $listener = [System.Net.HttpListener]::new()
     $listener.Prefixes.Add("http://127.0.0.1:$port/")
     $listener.Start()
     $size = (Get-Item $new).Length
     $setup = @{ queues = @(); command = $null; clientBuild = @{
         version = '9.9.9+test'; sha256 = $newSha; sizeBytes = $size; publishedAt = '2026-01-01T00:00:00Z'
-        downloadPath = "/api/v1/client/builds/$newSha"; platform = 'win-x64'; signature = $signature } } | ConvertTo-Json -Depth 5
+        downloadPath = "/api/v1/client/builds/$newSha"; platform = 'win-x64' } } | ConvertTo-Json -Depth 5
     while ($true) {
         $context = $listener.GetContext()
         $request = $context.Request

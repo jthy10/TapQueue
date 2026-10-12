@@ -73,7 +73,7 @@ internal sealed class StationRuntime(HttpClient http, StationConfig local, Actio
                 && DateTimeOffset.UtcNow - _lastUpdateAttempt > UpdateRetry)
             {
                 _lastUpdateAttempt = DateTimeOffset.UtcNow;
-                if (await SelfUpdate.InstallAsync(http, local.ServerUrl, build, ReleaseSignature.TrustedKeys(local.UpdateKey), log, ct))
+                if (await SelfUpdate.InstallAsync(http, local.ServerUrl, build, log, ct))
                     Restart($"installed station build {build.Version}");
             }
         }
@@ -123,16 +123,8 @@ internal sealed class StationRuntime(HttpClient http, StationConfig local, Actio
 /// </summary>
 internal static class SelfUpdate
 {
-    public static async Task<bool> InstallAsync(HttpClient http, string serverUrl, StationBuildDto build, IReadOnlyList<string> trustedKeys,
-        Action<string> log, CancellationToken ct)
+    public static async Task<bool> InstallAsync(HttpClient http, string serverUrl, StationBuildDto build, Action<string> log, CancellationToken ct)
     {
-        // The server passes builds on; whether one runs here is up to whoever signed it.
-        if (ReleaseSignature.Refusal("station build", build.Version, build.Sha256, build.Signature, trustedKeys) is { } refusal)
-        {
-            log(refusal);
-            return false;
-        }
-
         var stateDir = Environment.GetEnvironmentVariable("STATE_DIRECTORY");
         if (string.IsNullOrEmpty(stateDir))
         {
