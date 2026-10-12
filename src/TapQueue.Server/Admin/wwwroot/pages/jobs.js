@@ -63,6 +63,8 @@ export async function render(root, ctx) {
           ["Format", h("code", null, job.documentFormat)],
           ["Pages", [pages(job), job.copies > 1 ? `, ${job.copies} copies` : null,
             job.pages == null && h("span", { class: "sub" }, "Couldn't be counted, so it counts as 1 page (per copy) against page limits.")]],
+          job.refundedPages > 0 && ["Given back", [`${job.refundedPages} page${job.refundedPages === 1 ? "" : "s"}`,
+            h("span", { class: "sub" }, "Its owner stopped it at the printer before these printed, so they don't count against page limits.")]],
           ["Size", bytes(job.sizeBytes)],
         ]),
         sectionTitle("Timeline"),

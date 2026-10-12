@@ -14,7 +14,8 @@
 
 ```
 receiving ──▶ held ──▶ releasing ──▶ released
-    │           │          │
+    │           │          │             │
+    │           │          │             └─(owner stops it at the printer before it prints)──▶ canceled
     │           │          └─(printer refused, unreachable or stopped)──▶ held, with the error
     │           ├─(user deletes it)──▶ canceled
     │           └─(hold_hours pass)──▶ expired
@@ -28,6 +29,14 @@ receiving ──▶ held ──▶ releasing ──▶ released
 - Releasing sends jobs oldest first. If a printer answers "busy", the server retries for up to two
   minutes. A job that can't be sent goes back to **held**, so the user can try another printer.
 - The document is deleted from disk when the job is released, canceled or expires.
+- The person a job belongs to can delete it from the tray app's **My print queue**. A held job is
+  simply dropped; it never counted against a page limit. One that was already released is stopped
+  at the printer, if the printer still has it (IPP Cancel-Job, as the person who printed it), and
+  the pages that didn't print are given back: all of them if the printer hadn't started, and the
+  job then counts as **canceled**; the rest if it was part way and says how many it printed
+  (`job-impressions-completed`). A printer that had started and doesn't say gives nothing back,
+  since otherwise a job stopped on its last page would print for free. Reports and page limits
+  count what's left. A job that has finished printing can't be deleted.
 
 ## Printer health
 

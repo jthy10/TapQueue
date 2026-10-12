@@ -11,6 +11,22 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+### Added
+- People can delete a job they've already released, not only a held one (from the tray app's
+  **My print queue**, client 0.10 on). The server asks the printer to stop it and gives back the
+  pages that didn't print: all of them if the printer hadn't started, the rest if it was part way
+  and says how many it printed. A printer that had started and doesn't say gives nothing back.
+  Page limits and reports count what's left, and the job's page in the console shows what was
+  given back. Only jobs released from this version on can be stopped: the server has to have kept
+  the printer's number for the job.
+- `GET /api/v1/queues` for the tray app: the queues the signed-in person may print to, as they
+  are now rather than when they signed in.
+
+### Changed
+- Deleting your own job (`DELETE /api/v1/me/jobs/<id>`) now answers 200 with what happened
+  instead of an empty 204. Older tray apps don't mind.
+- The database moves to schema 17 (a backup is made first, as always).
+
 ## [0.13.0] - 2026-10-12
 
 ### Added
