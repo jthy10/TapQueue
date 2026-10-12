@@ -11,6 +11,8 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-12
+
 ### Added
 - People can delete a job they've already released, not only a held one (from the tray app's
   **My print queue**, client 0.10 on). The server asks the printer to stop it and gives back the
@@ -388,7 +390,8 @@ First working version.
   readers. A tap releases the user's held jobs to the station's printer.
 - Badge enrollment by an admin (`badges add --last-tap`).
 
-[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.13.0...HEAD
+[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.14.0...HEAD
+[0.14.0]: https://github.com/jthy10/TapQueue/compare/server-v0.13.0...server-v0.14.0
 [0.13.0]: https://github.com/jthy10/TapQueue/compare/server-v0.12.1...server-v0.13.0
 [0.12.1]: https://github.com/jthy10/TapQueue/compare/server-v0.12.0...server-v0.12.1
 [0.12.0]: https://github.com/jthy10/TapQueue/compare/server-v0.11.0...server-v0.12.0
