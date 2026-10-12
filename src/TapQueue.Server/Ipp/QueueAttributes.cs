@@ -1,19 +1,20 @@
 using System.Security.Cryptography;
 using System.Text;
 using TapQueue.Server.Data;
+using TapQueue.Server.Printers;
 
 namespace TapQueue.Server.Ipp;
 
 /// <summary>
 /// The printer attributes a TapQueue queue advertises. This is what Windows' built-in IPP class
 /// driver reads to decide what the print dialog offers, so it follows the IPP Everywhere
-/// (PWG 5100.14) required attribute set.
+/// (PWG 5100.14) required attribute set. What the queue can do (paper sizes, colour, two-sided,
+/// trays, formats) comes from the printers behind it: see <see cref="QueueCapabilities"/>.
 /// </summary>
 public static class QueueAttributes
 {
     /// <summary>Formats we accept. Jobs are passed through to the physical printer in the same format.</summary>
-    public static readonly string[] DocumentFormats =
-        ["application/pdf", "image/jpeg", "image/pwg-raster", "image/urf", "application/octet-stream"];
+    public static readonly string[] DocumentFormats = QueueCapabilities.AcceptedFormats;
 
     public static readonly int[] Operations =
     [
@@ -22,23 +23,18 @@ public static class QueueAttributes
         IppOperation.GetPrinterAttributes, IppOperation.CancelMyJobs, IppOperation.CloseJob, IppOperation.IdentifyPrinter,
     ];
 
-    // PWG media name → size in hundredths of a millimetre.
-    private static readonly (string Name, int X, int Y)[] Media =
-    [
-        ("na_letter_8.5x11in", 21590, 27940),
-        ("na_legal_8.5x14in", 21590, 35560),
-        ("na_executive_7.25x10.5in", 18415, 26670),
-        ("iso_a4_210x297mm", 21000, 29700),
-    ];
-
     private const int Margin = 423; // 4.23 mm, typical for office lasers
 
     private static readonly HashSet<string> GroupKeywords = ["all", "printer-description", "job-template"];
 
     /// <param name="printerUri">ipp:// or, over TLS, ipps://</param>
     /// <param name="httpBaseUrl">The server's http:// or https:// address as the client sees it, e.g. http://192.0.2.1:8631</param>
-    public static IppGroup Build(QueueRecord queue, string printerUri, string httpBaseUrl, int upTimeSeconds, int queuedJobCount, IReadOnlyCollection<string>? requested)
+    /// <param name="capabilities">What the printers behind the queue can do; what TapQueue offers by itself if not given.</param>
+    public static IppGroup Build(QueueRecord queue, string printerUri, string httpBaseUrl, int upTimeSeconds, int queuedJobCount, IReadOnlyCollection<string>? requested,
+        QueueCapabilities? capabilities = null)
     {
+        var can = capabilities ?? QueueCapabilities.For(queue, []);
+        var media = can.Media;
         var all = new IppGroup(IppTag.PrinterAttributes);
         var keywords = (IEnumerable<string> values) => values.Select(IppValue.Keyword);
 
@@ -56,7 +52,7 @@ public static class QueueAttributes
             .Add("printer-organizational-unit", IppValue.Text(""))
             .Add("printer-geo-location", IppValue.Unknown())
             .Add("printer-uuid", IppValue.Uri($"urn:uuid:{StableUuid(queue.Id)}"))
-            .Add("printer-device-id", IppValue.Text($"MFG:TapQueue;MDL:{queue.Name};CMD:PDF,PWGRaster,URF;CLS:PRINTER;"))
+            .Add("printer-device-id", IppValue.Text($"MFG:TapQueue;MDL:{queue.Name};CMD:{DeviceCommands(can.Formats)};CLS:PRINTER;"))
             .Add("printer-kind", IppValue.Keyword("document"));
 
         // State
@@ -100,31 +96,32 @@ public static class QueueAttributes
                 "page-ranges", "overrides", "print-content-optimize", "print-rendering-intent"]));
 
         // Document formats
-        all.Add("document-format-default", IppValue.MimeType("application/pdf"))
-            .Add("document-format-supported", DocumentFormats.Select(IppValue.MimeType));
+        all.Add("document-format-default", IppValue.MimeType(can.Formats.Contains("application/pdf") ? "application/pdf" : can.Formats[0]))
+            .Add("document-format-supported", can.Formats.Select(IppValue.MimeType));
 
         // Job template
-        var colorModes = queue.Color ? new[] { "auto", "color", "monochrome" } : ["monochrome"];
-        var sides = queue.Duplex ? new[] { "one-sided", "two-sided-long-edge", "two-sided-short-edge" } : ["one-sided"];
-        all.Add("color-supported", IppValue.Boolean(queue.Color))
-            .Add("print-color-mode-default", IppValue.Keyword(queue.Color ? "auto" : "monochrome"))
+        var colorModes = can.Color ? new[] { "auto", "color", "monochrome" } : ["monochrome"];
+        var sides = can.Duplex ? new[] { "one-sided", "two-sided-long-edge", "two-sided-short-edge" } : ["one-sided"];
+        var resolution = can.Resolutions.Contains(600) ? 600 : can.Resolutions[0];
+        all.Add("color-supported", IppValue.Boolean(can.Color))
+            .Add("print-color-mode-default", IppValue.Keyword(can.Color ? "auto" : "monochrome"))
             .Add("print-color-mode-supported", keywords(colorModes))
             .Add("sides-default", IppValue.Keyword("one-sided"))
             .Add("sides-supported", keywords(sides))
             .Add("copies-default", IppValue.Integer(1))
             .Add("copies-supported", IppValue.Range(1, 999))
             .Add("finishings-default", IppValue.Enum(3))
-            .Add("finishings-supported", IppValue.Enum(3))
+            .Add("finishings-supported", can.Finishings.Select(IppValue.Enum))
             .Add("orientation-requested-default", IppValue.Enum(3))
             .Add("orientation-requested-supported", IppValue.Enum(3), IppValue.Enum(4), IppValue.Enum(5), IppValue.Enum(6))
-            .Add("output-bin-default", IppValue.Keyword("face-down"))
-            .Add("output-bin-supported", IppValue.Keyword("face-down"))
+            .Add("output-bin-default", IppValue.Keyword(can.OutputBins.Contains("face-down") ? "face-down" : can.OutputBins[0]))
+            .Add("output-bin-supported", keywords(can.OutputBins))
             .Add("print-quality-default", IppValue.Enum(4))
             .Add("print-quality-supported", IppValue.Enum(3), IppValue.Enum(4), IppValue.Enum(5))
             .Add("print-scaling-default", IppValue.Keyword("auto"))
             .Add("print-scaling-supported", keywords(["auto", "auto-fit", "fill", "fit", "none"]))
-            .Add("printer-resolution-default", IppValue.Resolution(600, 600))
-            .Add("printer-resolution-supported", IppValue.Resolution(600, 600))
+            .Add("printer-resolution-default", IppValue.Resolution(resolution, resolution))
+            .Add("printer-resolution-supported", can.Resolutions.Select(r => IppValue.Resolution(r, r)))
             .Add("number-up-default", IppValue.Integer(1))
             .Add("number-up-supported", IppValue.Integer(1))
             .Add("job-sheets-default", IppValue.Keyword("none"))
@@ -137,33 +134,32 @@ public static class QueueAttributes
             .Add("print-rendering-intent-default", IppValue.Keyword("auto"))
             .Add("print-rendering-intent-supported", IppValue.Keyword("auto"))
             .Add("pages-per-minute", IppValue.Integer(40));
-        if (queue.Color)
+        if (can.Color)
             all.Add("pages-per-minute-color", IppValue.Integer(40));
 
         // Raster formats (used if the client chooses PWG raster or Apple raster over PDF)
         all.Add("pwg-raster-document-resolution-supported", IppValue.Resolution(300, 300), IppValue.Resolution(600, 600))
-            .Add("pwg-raster-document-type-supported", keywords(queue.Color ? ["black_1", "sgray_8", "srgb_8"] : ["black_1", "sgray_8"]))
+            .Add("pwg-raster-document-type-supported", keywords(can.Color ? ["black_1", "sgray_8", "srgb_8"] : ["black_1", "sgray_8"]))
             .Add("pwg-raster-document-sheet-back", IppValue.Keyword("normal"))
             .Add("urf-supported", keywords([
                 "V1.4", "CP1", "PQ3-4-5", "RS300-600", "W8",
-                .. queue.Color ? new[] { "SRGB24" } : [],
-                .. queue.Duplex ? new[] { "DM1" } : []]));
+                .. can.Color ? new[] { "SRGB24" } : [],
+                .. can.Duplex ? new[] { "DM1" } : []]));
 
         // Media
-        var defaultMedia = Media.FirstOrDefault(m => m.Name == queue.DefaultMedia);
-        if (defaultMedia.Name is null) defaultMedia = Media[0];
+        var defaultMedia = media.FirstOrDefault(m => m.Name == queue.DefaultMedia) ?? media[0];
         all.Add("media-default", IppValue.Keyword(defaultMedia.Name))
-            .Add("media-supported", Media.Select(m => IppValue.Keyword(m.Name)))
+            .Add("media-supported", media.Select(m => IppValue.Keyword(m.Name)))
             .Add("media-ready", IppValue.Keyword(defaultMedia.Name))
             .Add("media-col-default", IppValue.Collection(MediaCol(defaultMedia.X, defaultMedia.Y)))
             .Add("media-col-ready", IppValue.Collection(MediaCol(defaultMedia.X, defaultMedia.Y)))
-            .Add("media-col-database", Media.Select(m => IppValue.Collection(MediaCol(m.X, m.Y))))
+            .Add("media-col-database", media.Select(m => IppValue.Collection(MediaCol(m.X, m.Y))))
             .Add("media-col-supported", keywords([
                 "media-size", "media-top-margin", "media-bottom-margin", "media-left-margin",
                 "media-right-margin", "media-source", "media-type"]))
-            .Add("media-size-supported", Media.Select(m => IppValue.Collection(MediaSize(m.X, m.Y))))
-            .Add("media-source-supported", IppValue.Keyword("auto"))
-            .Add("media-type-supported", IppValue.Keyword("stationery"))
+            .Add("media-size-supported", media.Select(m => IppValue.Collection(MediaSize(m.X, m.Y))))
+            .Add("media-source-supported", keywords(can.Sources))
+            .Add("media-type-supported", keywords(can.Types))
             .Add("media-top-margin-supported", IppValue.Integer(Margin))
             .Add("media-bottom-margin-supported", IppValue.Integer(Margin))
             .Add("media-left-margin-supported", IppValue.Integer(Margin))
@@ -176,6 +172,16 @@ public static class QueueAttributes
         filtered.Attributes.AddRange(all.Attributes.Where(a => requested.Contains(a.Name)));
         return filtered;
     }
+
+    /// <summary>The CMD part of the IEEE 1284 device id, which names the formats the way drivers look for them.</summary>
+    private static string DeviceCommands(IReadOnlyList<string> formats) => string.Join(",", formats.Select(f => f switch
+    {
+        "application/pdf" => "PDF",
+        "image/pwg-raster" => "PWGRaster",
+        "image/urf" => "URF",
+        "image/jpeg" => "JPEG",
+        _ => null,
+    }).OfType<string>());
 
     private static IppCollection MediaSize(int x, int y) => new IppCollection()
         .Add("x-dimension", IppValue.Integer(x))

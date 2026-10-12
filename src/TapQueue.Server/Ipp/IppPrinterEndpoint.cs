@@ -17,6 +17,7 @@ public sealed class IppPrinterEndpoint(
     UserStore users,
     AccessPolicy access,
     EventLog events,
+    Printers.PrinterRegistry printers,
     ILogger<IppPrinterEndpoint> logger)
 {
     private readonly RecentSources _unownedRefusals = new(TimeSpan.FromMinutes(1));
@@ -123,7 +124,8 @@ public sealed class IppPrinterEndpoint(
         var requested = RequestedAttributes(c.Request);
         var response = IppMessage.CreateResponse(c.Request, IppStatus.Ok);
         response.Groups.Add(QueueAttributes.Build(
-            c.Queue, c.PrinterUri, $"{c.Http.Request.Scheme}://{c.Http.Request.Host}", ServerClock.UpTimeSeconds, jobs.CountHeld(), requested));
+            c.Queue, c.PrinterUri, $"{c.Http.Request.Scheme}://{c.Http.Request.Host}", ServerClock.UpTimeSeconds, jobs.CountHeld(), requested,
+            printers.CapabilitiesFor(c.Queue)));
         return response;
     }
 
