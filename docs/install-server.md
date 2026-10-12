@@ -76,6 +76,9 @@ Then set up the [Windows client](windows-client.md) and a [release station](rele
 | `auth.session_timeout_minutes` | `10` | Client sessions without a heartbeat for this long end |
 | `admin.token` | | Used by `tapqueue-admin`; gives full admin access |
 | `jobs.hold_hours` | `24` | Held jobs not released within this time are deleted |
+| `server.trusted_proxies` | `[]` | Reverse proxies whose `X-Forwarded-For` is believed; see [below](#behind-a-reverse-proxy) |
+| `backup.copy_to` | `""` | A second folder (another disk, a mounted share) every backup is copied to; see [backup.md](backup.md#keep-copies-somewhere-else) |
+| `backup.passphrase` | `""` | Encrypts backups; see [backup.md](backup.md#encrypting-backups) |
 
 Queues, printers, users, badges and stations live in the database and are managed with
 `tapqueue-admin`. Changes to them take effect immediately. Changes to `server.toml` need
@@ -84,6 +87,50 @@ Queues, printers, users, badges and stations live in the database and are manage
 `auth.session_timeout_minutes` and `jobs.hold_hours` are only defaults: they can be changed while
 the server runs from the console's Server page or with `tapqueue-admin server set`, and those
 values are kept in the database until they're set back to `default`.
+
+More settings live only there (**Server → Settings**, `tapqueue-admin server`), each with a
+default that suits a small office:
+
+| Setting | Default | |
+|---|---|---|
+| `time-zone` | the server machine's | Where days start: page limit periods, reports, and the times of the daily backup and directory sync. An IANA name like `Europe/Oslo`. A server whose clock is on UTC resets "daily" limits at UTC midnight until you set this |
+| `job-history` | `0` (for ever) | Days finished jobs' history (document names, owners, source PCs) is kept. `0`, or 32 and up; reports reach back only as far |
+| `activity-log` | `90` | Days the activity log is kept. `0` = for ever |
+| `tap-wait` | `5` | Seconds a tap at a station waits for the printer before the station reads the next card ([release-station.md](release-station.md)) |
+| `printer-busy` | `120` | Seconds a printer that answers "busy" is retried before the job is held again |
+| `printer-send` | `300` | Seconds sending one job to a printer may take |
+| `sign-in-attempts` | `5` | Wrong passwords for a name from one address before sign-in is refused there ([admin-roles.md](admin-roles.md)) |
+| `sign-in-lockout` | `15` | Minutes it stays refused |
+
+### Behind a reverse proxy
+
+TapQueue serves HTTPS itself ([tls.md](tls.md)) and doesn't need a proxy. If you put one in front
+anyway (nginx, Caddy, a load balancer), every connection reaches the server from the proxy's
+address. Unless told otherwise the server takes that as the caller's: five wrong passwords from
+anyone lock everyone out, jobs without a PC key are matched to the wrong people, and the activity
+log shows one address for everybody.
+
+So tell it which proxies to believe:
+
+```toml
+[server]
+trusted_proxies = ["10.0.0.5"]        # addresses, or networks like "10.0.0.0/24"
+```
+
+For connections from those addresses, and only those, the caller's address comes from
+`X-Forwarded-For` (the last entry that isn't itself a trusted proxy) and whether they used HTTPS
+from `X-Forwarded-Proto`. The proxy has to set both: nginx's `proxy_set_header X-Forwarded-For
+$proxy_add_x_forwarded_for;` and `proxy_set_header X-Forwarded-Proto $scheme;`, and Caddy does
+by itself. The headers are ignored from everyone else, since anyone can send them. Things to get
+right:
+
+- List only the proxy. Anything on a trusted address can claim to be any caller.
+- Make the server reachable only through the proxy (a firewall, or `server.listen =
+  "127.0.0.1:8631"` when the proxy is on the same machine). Trusting `127.0.0.1` also trusts
+  every program on the server machine.
+- Print jobs are IPP over HTTP POST with bodies up to 512 MB: raise the proxy's body size limit
+  and turn off request buffering for `/ipp/`.
+- `tapqueue-admin server` and the console's Server page show which proxies are trusted.
 
 ## Upgrading
 

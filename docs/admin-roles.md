@@ -85,8 +85,14 @@ The console signs in with a username and password:
   password, checked by binding to AD as them over LDAPS. It must be the same AD account the sync
   linked to that user.
 
-After 5 wrong passwords for a name, or 20 from one address, within 15 minutes, sign-in is refused
-for 15 minutes.
+After 5 wrong passwords for a name from one address within 15 minutes, sign-in as that name is
+refused from that address for 15 minutes; an address that gets 20 wrong, whatever the names, is
+refused altogether. It's counted per address so that someone guessing at an admin's name locks
+themselves out, not the admin. Both numbers can be changed: **Server → Settings**, or
+`tapqueue-admin server set sign-in-attempts 10` and `sign-in-lockout 30` (the address limit is
+four times the attempts). Behind a reverse proxy, set `server.trusted_proxies`
+([install-server.md](install-server.md#behind-a-reverse-proxy)), or every sign-in comes from the
+proxy's address.
 
 A session is an HTTP-only, `SameSite=Strict` cookie. It ends after 8 hours without use, when the
 admin signs out, or when they're disabled. Changing a local password signs that user out

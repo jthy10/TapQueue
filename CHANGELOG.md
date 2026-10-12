@@ -11,6 +11,51 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+### Added
+- **A tap no longer holds up the next person.** A release station used to wait for the whole
+  release (up to 2 minutes of retrying a busy printer, 5 minutes to send each job) before it read
+  another card. Now the server answers a tap after at most 5 seconds and carries on sending by
+  itself, and the station reads cards while earlier taps are still being answered. What came of a
+  slow release is in the activity log; a job the printer refuses is held again. The wait, how long
+  a busy printer is retried and how long one job may take to send are settings (`tap-wait`,
+  `printer-busy`, `printer-send`).
+- **Job history and the activity log are kept as long as you choose.** `job-history` deletes
+  finished jobs (document names, owners, source PCs) after a number of days; the default is still
+  for ever. `activity-log` replaces the fixed 90 days. Reports reach back only as far as job
+  history is kept.
+- **Colour and two-sided printing are recorded for each job** and added up in reports, the CSV
+  and `tapqueue-admin report`, from the print dialog's choices or what a raster document says. A
+  job that left colour to the printer counts as neither; so do jobs from before this version.
+- **A time zone setting** (`time-zone`, e.g. `Europe/Oslo`) for where days start: page limit
+  periods, reports, and the times of the daily backup and directory sync. Until now it was the
+  server machine's, so a server on UTC reset "daily" limits at UTC midnight. The default is
+  still the machine's.
+- **Reverse proxies**: `server.trusted_proxies` in `server.toml` lists proxies whose
+  `X-Forwarded-For` and `X-Forwarded-Proto` are believed, so callers behind one are told apart.
+  See [docs/install-server.md](docs/install-server.md#behind-a-reverse-proxy).
+- **Encrypted backups, and backups off the server's disk.** `backup.passphrase` in `server.toml`
+  encrypts every new backup (AES-256-GCM); `backup.copy_to` copies each one to a second folder,
+  such as a mounted network share, and keeps that folder in step with what the server keeps.
+  `tapqueue-server --restore` decrypts with the passphrase from `server.toml` or
+  `--passphrase-file`. See [docs/backup.md](docs/backup.md).
+- All of the settings above are on the console's Server page and in `tapqueue-admin server set`.
+
+### Changed
+- **Sign-in lockout is per name and address**, not per name. Five wrong passwords for a name used
+  to lock that name for everyone, so anyone on the network could keep an admin out of the console.
+  Now they lock that name from that address only, and an address that gets 20 wrong over any
+  names is refused altogether. The number of tries and the minutes are settings
+  (`sign-in-attempts`, `sign-in-lockout`).
+- **Card numbers are hashed with a secret key** (HMAC-SHA-256) instead of plain SHA-256, which
+  for numbers that short could be reversed by trying them all. The key is made on first start in
+  `data_dir/secrets/badge.key` and is included in backups. Stored cards are converted when this
+  version first starts; nobody has to tap again. **Going back to 0.15 after that needs the
+  `upgrade` backup made at that start** (as any downgrade does): 0.15 can't read the new hashes.
+  If you copy the database to another machine by hand, copy `secrets/` with it.
+- Backups now hold `secrets/` as well, and the daily backup's time is in the time zone setting.
+- A release station that taps while the server is busy with an earlier tap may get the new
+  outcome `releasing` ("your jobs are on their way") instead of `released`.
+
 ## [0.15.0] - 2026-10-12
 
 ### Added

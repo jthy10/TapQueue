@@ -34,7 +34,8 @@ checklist; [admin-ui.md](admin-ui.md#roadmap) has the admin console's own phases
    printer, queue, day and month over any period, in the console and `tapqueue-admin report`, with
    CSV export. Scheduled email is still to do, with notifications (item 12).
 9. **Cost accounting.** Per-page prices (mono/colour, simplex/duplex), balances or charge-back
-   to departments.
+   to departments. *(From 0.16.0 each job records whether it was sent in colour and on both
+   sides, and reports add those up; prices are still to do.)*
 10. **Self-service badge enrollment.** Tap an unknown badge, confirm it from the tray app.
 11. **Release from a phone or the tray.** Pick jobs, delete them, change copies, for the day the
     badge is at home.

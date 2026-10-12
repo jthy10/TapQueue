@@ -159,8 +159,24 @@ decides ownership.
   machines out, not your own users; send it over `https://`. `server enrollment-code off` stops asking.
 - Releasing to a printer uses whatever its `uri` says: `ipps://` encrypts it, and
   `--tls-skip-verify` accepts the printer's own self-signed certificate.
-- Tokens (user, station, session) are stored hashed. Badge numbers are stored hashed, with only
-  the last four characters kept so admins can tell badges apart.
+- Tokens (user, station, session) are long random values, stored as SHA-256 hashes. Badge numbers
+  are short, so a plain hash of one could be found by trying every number; they're stored as an
+  HMAC-SHA-256 made with a key that isn't in the database (`/var/lib/tapqueue/secrets/badge.key`,
+  made on first start, readable only by the `tapqueue` user), with only the last four characters
+  kept so admins can tell badges apart. Someone who gets the database, or a copy of it, without
+  that key learns nothing about the cards. Someone who gets the whole data directory, or an
+  unencrypted backup (the key is in backups, or cards couldn't be matched after a restore), can
+  still work the numbers out: encrypt backups ([backup.md](backup.md)). Cards stored by servers
+  before 0.16 are converted when 0.16 first starts.
+- Wrong passwords are counted for each name from each address: after 5 (changeable), sign-in as
+  that name is refused from that address for 15 minutes, and an address that gets 20 wrong over
+  any names is refused altogether. It isn't per name alone, or anyone on the network could keep
+  an admin out of the console by guessing at their name.
+- Behind a reverse proxy, every connection comes from the proxy. List it in
+  `server.trusted_proxies` ([install-server.md](install-server.md#behind-a-reverse-proxy)) and the
+  server takes each caller's address from `X-Forwarded-For`; without that, don't put a proxy in
+  front: everyone would share one address, so one person's wrong passwords would lock everybody
+  out, and jobs matched by address would go to the wrong people.
 - Held documents live in `/var/lib/tapqueue/spool`, readable only by the `tapqueue` user.
 - A job's pages are counted from the document itself, and for a PDF that means the page count
   the file states. Someone who edits their PDFs by hand can make a long job count as a short one,

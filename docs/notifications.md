@@ -64,7 +64,7 @@ Front desk printer is unreachable
 
 Everything found in one look (the server looks every 30 seconds) goes out as one email, so a
 switch that takes five printers with it sends one email listing five, not five emails. Times are
-on the server's clock.
+in the server's time zone (**Server → Settings**).
 
 ## When an email can't be sent
 

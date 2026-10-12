@@ -9,6 +9,12 @@ data_dir = "/var/lib/tapqueue"
 # UDP port for answering "is there a TapQueue server here?", so the Windows installer finds this
 # server by itself. 0 = don't answer (people type the address instead).
 discovery_port = 8631
+# Only if a reverse proxy (nginx, Caddy, a load balancer) sits in front of this server: its
+# address, or a network like "10.0.0.0/24". For connections from these, and only these, each
+# caller's own address is taken from X-Forwarded-For and HTTPS from X-Forwarded-Proto. Without
+# it, everyone behind the proxy shares the proxy's address: one person's wrong passwords lock
+# everybody out. See docs/install-server.md.
+trusted_proxies = []
 
 [auth]
 # "dev":   the client config only needs a username; unknown users are created automatically.
@@ -44,6 +50,20 @@ require = false
 [jobs]
 # Held jobs not released within this many hours are deleted.
 hold_hours = 24
+
+[backup]
+# Backups are made in data_dir/backups, on this machine's own disk. Name a folder on another disk
+# or a mounted network share and every backup is copied there too. The service has to be allowed
+# to write there (ReadWritePaths in the systemd unit); see docs/backup.md.
+copy_to = ""
+# Encrypt backups with a key made from this passphrase (at least 12 characters). A backup holds
+# password hashes, the badge key and this server's private key. Restoring needs the same
+# passphrase: keep a copy of it somewhere that isn't this server. "" = not encrypted.
+passphrase = ""
+
+# More settings are changed while the server runs, in the console (Server -> Settings) or with
+# `tapqueue-admin server set`: the time zone days start in, how long job history and the activity
+# log are kept, how long a tap waits for a slow printer, and the sign-in lockout.
 
 # Queues (the printer users see in Windows) and printers (where held jobs are released) are
 # stored in the database. Add them once the server is running:

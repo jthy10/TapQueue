@@ -102,7 +102,7 @@ wrong scope or a DC answering with half the directory. Check the preview, then *
 ## The daily sync
 
 Turn on **Daily sync** and pick a time (01:00 by default). The time is in the server's time zone
-(`timedatectl` on the server shows it). If the server was down at that time, the sync runs a
+(**Server → Settings → Time zone**; the server machine's own unless you set one). If the server was down at that time, the sync runs a
 minute after it starts, as long as the last one was more than 25 hours ago.
 
 The daily sync only starts once an admin has run a sync by hand, so the first one, which can add

@@ -71,6 +71,14 @@ lists what was tapped there.
 A tap then sends all of that user's held jobs to the station's printer. If a job can't be sent,
 it stays held so the user can try again at another printer.
 
+A tap doesn't hold up the next person. The server answers once the jobs are at the printer, or
+after 5 seconds if that takes longer (a big job, a printer that's busy); it carries on sending
+by itself, and the station reads the next card meanwhile. What came of a slow release is in the
+activity log, and a job the printer refused is held again. **Server → Settings** (or
+`tapqueue-admin server set`) changes the wait (`tap-wait`, 0 to 120 seconds), how long a printer
+that says it's busy is retried (`printer-busy`, 120 seconds) and how long sending one job may
+take (`printer-send`, 300 seconds).
+
 > Card numbers from cheap 125 kHz and MIFARE readers are easy to copy, just like a building badge.
 > TapQueue treats a tap as "this person is standing at the printer", nothing stronger.
 

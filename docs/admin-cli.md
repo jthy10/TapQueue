@@ -74,6 +74,20 @@ tapqueue-admin server set address-matching on|off|default
                                                (see how-it-works.md)
 tapqueue-admin server set held-limit <megabytes|0|default>
                                                How much one person may have waiting at once (default 2048 MB)
+tapqueue-admin server set job-history <days|0|default>
+                                               Delete finished jobs' history after this many days
+                                               (default 0: never; otherwise at least 32)
+tapqueue-admin server set activity-log <days|0|default>
+                                               Keep the activity log this long (default 90; 0: for ever)
+tapqueue-admin server set time-zone <name|default>
+                                               Where days start for page limits, reports and the daily
+                                               backup and sync, e.g. Europe/Oslo (default: the server's own)
+tapqueue-admin server set tap-wait|printer-busy|printer-send <seconds|default>
+                                               How long a tap waits for the printer (5), a busy printer
+                                               is retried (120) and one job may take to send (300)
+tapqueue-admin server set sign-in-attempts|sign-in-lockout <number|default>
+                                               Wrong passwords before sign-in is refused (5), and for
+                                               how many minutes (15); see admin-roles.md
 tapqueue-admin server log [--follow]           Recent server log lines; --follow keeps printing new ones
 tapqueue-admin server restart                  Restart tapqueue-server (only when systemd runs it)
 tapqueue-admin server enrollment-code new|off  Make new PCs give a code to register (shown once), or stop asking
@@ -83,7 +97,7 @@ tapqueue-admin backups create                  Make a backup now
 tapqueue-admin backups download <name|latest> [file]
                                                Copy a backup here
 tapqueue-admin backups delete <name>           Delete a backup
-tapqueue-admin backups schedule <HH:MM|off>    When the daily backup runs, on the server's clock
+tapqueue-admin backups schedule <HH:MM|off>    When the daily backup runs, in the server's time zone
 tapqueue-admin backups keep <number>           How many daily backups to keep
 
 tapqueue-admin notifications                   Email alerts: the mail server, who gets them, what's wrong now (see notifications.md)
@@ -96,7 +110,7 @@ tapqueue-admin notifications on|off            Turn the emails on or off (the ma
 ## Page limits
 
 A page limit is a number of pages per day, week (from Monday) or calendar month, counted in the
-server's time zone (set it with `timedatectl set-timezone`). Pages are counted when a job is
+server's time zone (the server machine's own unless you set one: `tapqueue-admin server set time-zone Europe/Oslo`). Pages are counted when a job is
 released: its pages (after any page range the user picked) times copies. TapQueue counts pages
 in PDF, PWG raster, Apple raster and JPEG documents; anything else counts as 1 page per copy and
 shows `?` in `tapqueue-admin jobs`.
