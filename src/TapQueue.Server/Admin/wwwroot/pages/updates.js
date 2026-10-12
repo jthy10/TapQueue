@@ -109,7 +109,7 @@ export async function render(root, ctx) {
 
   // PCs and stations check the signature themselves; this only says whether there's one for them to check.
   function signed(build) {
-    return build.signature ? "Yes" : h("span", { title: "Clients from 0.11 and stations from 0.17 won't install an unsigned build" }, pill("Unsigned", "warn"));
+    return build.signature ? "Yes" : h("span", { title: "Clients and stations from 0.17 won't install an unsigned build" }, pill("Unsigned", "warn"));
   }
 
   /** The .sig file chosen in an upload form as base64 for the address, or "" if none was chosen. */
@@ -129,7 +129,7 @@ export async function render(root, ctx) {
         field("Program", input("file", { type: "file", required: true }),
           "Windows: TapQueueClient.exe from TapQueue_client_<version>_win-x64.zip. Linux: tapqueue-client from TapQueue_client_<version>_linux-x64.tar.gz."),
         field("Version", input("version", { required: true, placeholder: "e.g. 0.5.0+1a2b3c4" }), "As in the archive's version.txt. Shown on this page and in each client's tray menu."),
-        field("Signature", input("signature", { type: "file" }), "The .sig file next to the program in the archive. Clients from 0.11 don't install a build without one."),
+        field("Signature", input("signature", { type: "file" }), "The .sig file next to the program in the archive. Clients from 0.17 don't install a build without one."),
       ],
       onSubmit: async ({ platform, file, version, signature }) => {
         if (!file) throw new Error("Choose the client program.");

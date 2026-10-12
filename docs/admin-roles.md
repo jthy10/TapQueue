@@ -63,7 +63,7 @@ areas cover.
   hashed passwords and the server's private key included.
 
 An **admin of Updates** decides which build every PC's TapQueue service installs and runs as
-SYSTEM (Windows) or root (Linux), and which every station runs. Clients from 0.11 and stations
+SYSTEM (Windows) or root (Linux), and which every station runs. Clients and stations
 from 0.17 only install builds [signed](releasing.md#signed-updates) with a key they trust, so
 what the role can do there is choose between releases, including older ones, not run a program of
 their own. Older clients and stations install whatever is published: until they're all updated,

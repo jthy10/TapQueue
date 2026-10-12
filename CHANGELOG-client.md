@@ -10,6 +10,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+From this release the clients carry the same version number as the server and station, so one
+number says what a site runs. This one is 0.17.0; there is no client 0.11 to 0.16.
+
 ### Added
 - **My print queue** says whether a job you released is still **printing** or has **printed**,
   with a 0.17 server and a printer that can be asked.

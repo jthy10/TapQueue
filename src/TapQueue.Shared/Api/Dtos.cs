@@ -542,7 +542,7 @@ public sealed record ClientSignOutRequest(string? RememberToken);
 /// </summary>
 /// <param name="Signature">
 /// Whoever built it's signature of the program (<see cref="ReleaseSignature"/>), if it was published
-/// with one. Clients from 0.11 install nothing without one they trust.
+/// with one. Clients from 0.17 install nothing without one they trust.
 /// </param>
 public sealed record ClientBuildDto(string Version, string Sha256, long SizeBytes, DateTimeOffset PublishedAt, string DownloadPath,
     string Platform = ClientPlatform.Windows, string? Signature = null);

@@ -108,7 +108,7 @@ service installs the published build if it differs and the tray app restarts int
 says the PC is up to date, that the server publishes no client, or why the update failed. It also
 retries a build that failed to install before. If the service isn't running, it says so.
 
-**Updates are signed** (clients from 0.11). A build is signed where it's made, with a key the
+**Updates are signed** (clients from 0.17). A build is signed where it's made, with a key the
 TapQueue server never has, and the service checks that signature before it downloads anything. So
 a server, or someone who has taken it over, can pass on builds but can't make PCs run a program
 of its own. A build with no signature, or one from a key the PC doesn't trust, is refused, and

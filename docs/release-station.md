@@ -111,7 +111,7 @@ happened for a few seconds:
 The colour is never the only signal; the mark and the sentence say the same.
 
 Without a screen, people still find out, a little later: their tray app shows a notification on
-their PC saying why a tap printed nothing (clients from 0.11). A card nobody has can't be
+their PC saying why a tap printed nothing (clients from 0.17). A card nobody has can't be
 explained that way, since there's nobody to tell; it's in the activity log under Taps.
 
 The link carries a key, and anyone who has it can see what's shown at that station, people's

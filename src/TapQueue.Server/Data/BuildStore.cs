@@ -20,7 +20,7 @@ public sealed record BuildRecord(long Id, string Version, string Sha256, long Si
 
     /// <summary>What PCs or stations will make of it, to end the sentence that says it was published.</summary>
     public string SignatureNote => SignedByReleaseKey ? ""
-        : Signature is null ? " It isn't signed: only clients before 0.11 and stations before 0.17 will install it."
+        : Signature is null ? " It isn't signed: only clients and stations before 0.17 will install it."
         : " It isn't signed with TapQueue's release key: only computers whose update_key is its signer's will install it.";
 }
 

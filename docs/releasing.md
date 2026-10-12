@@ -7,6 +7,9 @@ TapQueue has two release tracks, each with its own version, changelog and tag:
 | Server, station and `tapqueue-admin` | `<Version>` | `CHANGELOG.md` | `server-vX.Y.Z` |
 | Windows and Linux clients | `<TapQueueClientVersion>` | `CHANGELOG-client.md` | `client-vX.Y.Z` |
 
+From 0.17 the two versions are kept the same and released together, so one number says what a
+site runs; a fix to one side alone still bumps both.
+
 Both use [Semantic Versioning](https://semver.org/). Before 1.0, bump the minor version
 (0.**x**.0) for anything that breaks an existing install (config, API, database), and the patch
 version for fixes. The server has to keep working with older clients, and the other way round,
@@ -45,7 +48,7 @@ asset names below, so keep them as they are.
 PCs and stations install new builds from their TapQueue server by themselves, as SYSTEM or root.
 So that a server can only hand out builds and not invent them, the client and station programs are
 signed with a release key when they're packaged, and every PC and station checks the signature
-before installing (clients from 0.11, stations from 0.17). The server never has the private key.
+before installing (clients and stations from 0.17). The server never has the private key.
 
 - `scripts/new-release-key.sh` makes the key (ECDSA P-256) in `~/.config/tapqueue/release-key.pem`
   and prints its public half. Keep the private key somewhere that isn't the TapQueue server, and

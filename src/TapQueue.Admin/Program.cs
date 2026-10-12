@@ -1283,7 +1283,7 @@ async Task<int> PublishClient(string path, string? version, string? platform)
         Console.WriteLine($"Published {ClientPlatform.DisplayName(build.Platform)} client {build.Version} ({FormatSize(build.SizeBytes)}).");
         if (!ReleaseSignature.IsValid(build.Sha256, build.Signature, ReleaseSignature.ReleaseKeys))
             Console.WriteLine(build.Signature is null
-                ? "It isn't signed (no .sig with the program): clients from 0.11 won't install it. See docs/releasing.md, \"Signed updates\"."
+                ? "It isn't signed (no .sig with the program): clients from 0.17 won't install it. See docs/releasing.md, \"Signed updates\"."
                 : "It isn't signed with TapQueue's release key: only PCs whose client.toml has its signer's update_key will install it.");
         Console.WriteLine("PCs install it when they next check in, within about a minute. Watch with: tapqueue-admin workstations");
         return 0;

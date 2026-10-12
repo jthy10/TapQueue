@@ -264,7 +264,7 @@ public static class AdminApi
     /// The request body is the client program (TapQueueClient.exe or tapqueue-client) for
     /// <paramref name="platform"/>, Windows if not given. PCs of that platform install it when they next check in.
     /// </summary>
-    /// <param name="signature">The base64 of the .sig file packaged with the program; clients from 0.11 need it.</param>
+    /// <param name="signature">The base64 of the .sig file packaged with the program; clients from 0.17 need it.</param>
     private static async Task<IResult> PublishClientBuild(HttpContext http, string? version, string? platform, string? signature, ClientBuildStore builds, EventLog events, ILoggerFactory loggers)
     {
         version = Clean(version);
