@@ -10,6 +10,12 @@ on:
 permissions:
   contents: write
 
+# Releases are signed (scripts/sign-build.sh), or they don't go out: PCs and stations install
+# nothing from their server that isn't. The secret is the private key from scripts/new-release-key.sh.
+env:
+  TAPQUEUE_RELEASE_KEY: ${{ secrets.TAPQUEUE_RELEASE_KEY }}
+  TAPQUEUE_REQUIRE_SIGNING: 1
+
 jobs:
   server:
     if: startsWith(github.ref_name, 'server-v')

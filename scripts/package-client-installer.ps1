@@ -1,7 +1,7 @@
 # Builds the Windows client release into dist/. Runs on Windows (Inno Setup is Windows-only);
 # used by CI and the release workflow.
 #   TapQueue_client_<version>.exe            the installer (what people download and run)
-#   TapQueue_client_<version>_win-x64.zip    TapQueueClient.exe + version.txt, for `tapqueue-admin clients publish`
+#   TapQueue_client_<version>_win-x64.zip    TapQueueClient.exe, its signature and version.txt, for `tapqueue-admin clients publish`
 #   SHA256SUMS
 $ErrorActionPreference = 'Stop'
 Set-Location (Join-Path $PSScriptRoot '..')
@@ -27,7 +27,11 @@ if ($LASTEXITCODE -ne 0) { throw 'Inno Setup failed' }
 
 # What the client reports as its version (TapQueueVersion.Current); `tapqueue-admin clients publish` reads it.
 "$version+$(git rev-parse --short=7 HEAD)" | Set-Content -NoNewline out/client/version.txt
-Compress-Archive -Force -Path out/client/TapQueueClient.exe, out/client/version.txt -DestinationPath "dist/TapQueue_client_${version}_win-x64.zip"
+# Signed with the release key if there is one, so PCs install it from their server (scripts/sign-build.sh).
+bash scripts/sign-build.sh out/client/TapQueueClient.exe
+if ($LASTEXITCODE -ne 0) { throw 'Signing the client failed' }
+$packaged = @('out/client/TapQueueClient.exe', 'out/client/version.txt') + @('out/client/TapQueueClient.exe.sig' | Where-Object { Test-Path $_ })
+Compress-Archive -Force -Path $packaged -DestinationPath "dist/TapQueue_client_${version}_win-x64.zip"
 
 Get-ChildItem dist -File | Where-Object Name -ne SHA256SUMS | ForEach-Object {
     "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
