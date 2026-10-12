@@ -168,6 +168,58 @@ public sealed record UpdateServerSettingsRequest(
     int? SignInLockoutMinutes = null);
 
 /// <summary>
+/// The server.toml settings that are read when the server starts and can be changed from the console
+/// too. A change is kept in the database and used from the next restart.
+/// </summary>
+/// <param name="Running">What the server started with.</param>
+/// <param name="Next">What it will start with next time: server.toml with the console's changes over it.</param>
+/// <param name="File">What server.toml says.</param>
+/// <param name="SetHere">The settings (by their names here, in camelCase) whose value comes from the console, not server.toml.</param>
+/// <param name="RestartNeeded">True when <paramref name="Next"/> differs from <paramref name="Running"/>.</param>
+/// <param name="Listen">server.listen, <paramref name="DataDir"/> and the admin token are only ever read from server.toml.</param>
+public sealed record StartupSettingsDto(
+    StartupValuesDto Running,
+    StartupValuesDto Next,
+    StartupValuesDto File,
+    IReadOnlyList<string> SetHere,
+    bool RestartNeeded,
+    bool CanRestart,
+    string Listen,
+    string DataDir);
+
+/// <param name="TlsListen">"" when HTTPS and IPPS are off.</param>
+/// <param name="BackupEncrypted">Whether there's a backup passphrase. The passphrase itself is never sent.</param>
+public sealed record StartupValuesDto(
+    int DiscoveryPort,
+    IReadOnlyList<string> TrustedProxies,
+    string AuthMode,
+    string TlsListen,
+    string TlsCertFile,
+    string TlsKeyFile,
+    IReadOnlyList<string> TlsNames,
+    bool TlsRequire,
+    string BackupCopyTo,
+    bool BackupEncrypted);
+
+/// <summary>
+/// Null leaves a setting as it is. A value the same as server.toml's goes back to following the
+/// file; <see cref="Reset"/> names ones (as in <see cref="StartupSettingsDto.SetHere"/>) to take from it again.
+/// </summary>
+/// <param name="BackupPassphrase">"" for backups that aren't encrypted.</param>
+public sealed record UpdateStartupSettingsRequest(
+    int? DiscoveryPort = null,
+    IReadOnlyList<string>? TrustedProxies = null,
+    string? AuthMode = null,
+    string? TlsListen = null,
+    string? TlsCertFile = null,
+    string? TlsKeyFile = null,
+    IReadOnlyList<string>? TlsNames = null,
+    bool? TlsRequire = null,
+    string? BackupCopyTo = null,
+    string? BackupPassphrase = null,
+    IReadOnlyList<string>? Reset = null);
+
+/// <summary>
 /// Upgrading the server itself to a newer GitHub release: what's running, what's out, and any
 /// upgrade that's scheduled, running or just finished.
 /// </summary>

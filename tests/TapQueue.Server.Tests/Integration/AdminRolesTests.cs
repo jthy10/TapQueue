@@ -49,6 +49,8 @@ public sealed class AdminRolesTests
     [InlineData("PUT", "/users/alice/password")]
     [InlineData("PUT", "/users/alice/PASSWORD")]
     [InlineData("GET", "/something-new")]
+    [InlineData("GET", "/server/startup")]
+    [InlineData("PATCH", "/server/startup")]
     public void AdminsPasswordsAndUnknownPathsNeedAFullAdmin(string method, string path)
     {
         Assert.Equal(AdminRequirement.FullAdminOnly, AdminAccess.Requirement(method, path));

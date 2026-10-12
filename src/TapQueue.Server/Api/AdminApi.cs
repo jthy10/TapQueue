@@ -26,6 +26,7 @@ public static class AdminApi
         admin.MapGet("/server", ServerInfo);
         admin.MapPatch("/server/settings", UpdateServerSettings);
         admin.MapServerApi();
+        admin.MapStartupSettingsApi();
         admin.MapBackupsApi();
         admin.MapNotificationsApi();
         admin.MapReportsApi();
