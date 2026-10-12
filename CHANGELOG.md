@@ -20,6 +20,18 @@ breaking changes; they're listed under **Changed** with what to do.
   when the printer says how many did. The console, `tapqueue-admin jobs` and the API's `printState`
   say **printing**, **printed** or **stopped**, and `printedPages` is the printer's own count
   where it gives one. Printers that can't be asked about a job behave as before. Database schema 19.
+- **Signed updates.** Client and station builds are signed with a release key when they're
+  packaged, and the server keeps the signature and hands it out with the build. Stations from this
+  version, and clients from 0.11, install nothing from their server that isn't signed with a key
+  they trust: a server, or whoever has taken it over, can pass on releases but not run a program
+  of its own on every PC. **Updates** shows which builds are signed, and the upload forms and
+  `tapqueue-admin clients publish` take the `.sig` that comes with a program. Database schema 20.
+  See [docs/releasing.md](docs/releasing.md#signed-updates).
+
+### Changed
+- **Stations only install signed builds.** A station on this version ignores an unsigned build
+  and logs why. If you build TapQueue yourself, sign your builds and set `update_key` in
+  `station.toml` ([docs/releasing.md](docs/releasing.md#signed-updates)).
 
 ## [0.16.0] - 2026-10-12
 

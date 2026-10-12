@@ -14,6 +14,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - **My print queue** says whether a job you released is still **printing** or has **printed**,
   with a 0.17 server and a printer that can be asked.
 
+### Changed
+- **Updates have to be signed.** The TapQueue service used to install whatever build its server
+  published, checking only a checksum the server itself sent. It now installs a build only if
+  it's signed with TapQueue's release key, or with the key in `client.toml`'s new `update_key`
+  for clients you build yourself, and checks before downloading. An unsigned build is refused and
+  **Workstations** in the console says why. Needs a 0.17 server to pass the signature on; with an
+  older server this client doesn't update itself.
+
 ## [0.10.0] - 2026-10-12
 
 ### Added
