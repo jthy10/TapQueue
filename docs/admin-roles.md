@@ -39,7 +39,7 @@ from server.toml.
 | Active Directory | Active Directory | run a sync |
 | Fleet | Printers, Queues, Stations, Workstations | restart stations, sign people out of PCs, update or forget a PC |
 | Updates | Updates | |
-| Server | Server, crash reports | clear crash reports |
+| Server | Server, Notifications, crash reports | clear crash reports |
 
 Overview and Activity are open to every admin. So are the lists of printers and queues, because
 releasing jobs and editing groups need their names. Overview only shows the parts the admin's

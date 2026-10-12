@@ -85,6 +85,10 @@ tapqueue-admin backups download <name|latest> [file]
 tapqueue-admin backups delete <name>           Delete a backup
 tapqueue-admin backups schedule <HH:MM|off>    When the daily backup runs, on the server's clock
 tapqueue-admin backups keep <number>           How many daily backups to keep
+
+tapqueue-admin notifications                   Email alerts: the mail server, who gets them, what's wrong now (see notifications.md)
+tapqueue-admin notifications test              Send a test email to everyone on the list
+tapqueue-admin notifications on|off            Turn the emails on or off (the mail server is set in the console)
 ```
 
 `tapqueue-admin --help` shows every option.
