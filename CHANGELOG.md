@@ -11,6 +11,20 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+### Added
+- **Startup settings in the console.** The settings that could only be changed by editing
+  `server.toml` on the server can now be changed by a full admin on the **Server** page: client
+  sign-in (`auth.mode`), HTTPS and IPPS (`tls.listen`, `tls.require`, the certificate files and
+  names), discovery, reverse proxies, and where backups are copied and their passphrase. A change
+  is checked first (a certificate file is loaded, a new port tried, and switching to tokens is
+  refused while nobody could sign in to the console), kept in the database, and used from the
+  next restart, which the page offers; until then it shows both what's running and what's saved.
+  What's saved there wins over `server.toml`; a setting nobody changed keeps following the file.
+  `server.listen`, `server.data_dir` and `admin.token` stay in the file only. If a saved setting
+  keeps the server from starting, `tapqueue-server --forget-console-settings` goes back to the
+  file. `GET` and `PATCH /api/v1/admin/server/startup`. See
+  [docs/install-server.md](docs/install-server.md#changing-them-in-the-console).
+
 ## [0.17.0] - 2026-10-12
 
 ### Added

@@ -61,6 +61,12 @@ copy_to = ""
 # passphrase: keep a copy of it somewhere that isn't this server. "" = not encrypted.
 passphrase = ""
 
+# auth.mode, [tls], server.discovery_port, server.trusted_proxies and [backup] can also be changed
+# in the console (Server -> Startup settings) by a full admin. What's saved there is kept in the
+# database and wins over this file from the next restart; `tapqueue-server
+# --forget-console-settings` goes back to this file. server.listen, server.data_dir and
+# admin.token are only read from here.
+#
 # More settings are changed while the server runs, in the console (Server -> Settings) or with
 # `tapqueue-admin server set`: the time zone days start in, how long job history and the activity
 # log are kept, how long a tap waits for a slow printer, and the sign-in lockout.

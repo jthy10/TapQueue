@@ -84,6 +84,34 @@ Queues, printers, users, badges and stations live in the database and are manage
 `tapqueue-admin`. Changes to them take effect immediately. Changes to `server.toml` need
 `sudo systemctl restart tapqueue-server` (or Restart on the console's Server page).
 
+### Changing them in the console
+
+Most of these don't need the file edited. A full admin can change them on the console's
+**Server** page, under **Startup settings**: `auth.mode`, everything under `tls.`,
+`server.discovery_port`, `server.trusted_proxies`, `backup.copy_to` and `backup.passphrase`. A
+change is checked the way the file is at startup (and a certificate file is loaded, a new HTTPS
+port tried), saved in the database, and used from the next restart, which the page offers. Until
+then the page shows both what's running and what's saved.
+
+A value saved there wins over `server.toml`'s. Only values that differ from the file's are kept,
+so a setting nobody changed in the console keeps following the file, and **Go back to
+server.toml's** forgets them all. They're in the database, so they're in backups and come back
+with a restore.
+
+`server.listen`, `server.data_dir` and `admin.token` are only ever read from the file: the
+database is in `data_dir`, and `tapqueue-admin` and the install scripts find the server on its
+own machine by the other two.
+
+If a setting saved in the console keeps the server from starting (a certificate file that's
+since been deleted, a port something else took), the console can't be used to fix it. The
+server's error in `journalctl -u tapqueue-server` names what was set there; forget them and
+start with the file alone:
+
+```sh
+sudo -u tapqueue /opt/tapqueue/tapqueue-server --forget-console-settings
+sudo systemctl restart tapqueue-server
+```
+
 `auth.session_timeout_minutes` and `jobs.hold_hours` are only defaults: they can be changed while
 the server runs from the console's Server page or with `tapqueue-admin server set`, and those
 values are kept in the database until they're set back to `default`.

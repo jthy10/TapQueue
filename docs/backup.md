@@ -47,7 +47,7 @@ Backups are written to `/var/lib/tapqueue/backups`, on the server's own disk. Th
 upgrade or a mistake; it doesn't cover the disk or the machine. There are two ways to get them off.
 
 **Have the server copy them.** Mount another disk or a network share (NFS, SMB) on the server and
-name a folder on it in `server.toml`:
+name a folder on it, in the console (**Server**, **Startup settings**) or in `server.toml`:
 
 ```toml
 [backup]
@@ -90,13 +90,17 @@ readable only by you.
 passphrase = "a long sentence nobody would guess"    # at least 12 characters
 ```
 
+Or set it in the console: **Server**, **Startup settings**, **Backup encryption**.
+
 After a restart, every new backup is encrypted with a key made from the passphrase (AES-256-GCM;
 PBKDF2-SHA-256, 600,000 rounds) and named `.tar.gz.enc`. Without the passphrase such a file gives
 away nothing but its size, and a changed or cut-short one is refused rather than restored.
 Backups made before stay as they were.
 
-**Restoring needs the same passphrase, and there's no way round it.** `server.toml` isn't in the
-backup, so keep the passphrase (and a copy of `server.toml`) somewhere that isn't the server: a
+**Restoring needs the same passphrase, and there's no way round it.** A passphrase set in the
+console is kept in the database, which is inside the encrypted backup, and `server.toml` isn't in
+the backup at all: on a new machine, give it with `--passphrase-file`. So keep the passphrase
+(and a copy of `server.toml`) somewhere that isn't the server: a
 password manager, a sealed envelope. Changing the passphrase doesn't re-encrypt old backups;
 restore one of those with the passphrase it was made with (`--passphrase-file`, below).
 

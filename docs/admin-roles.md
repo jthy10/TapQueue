@@ -23,11 +23,15 @@ from several places gets the highest one per area.
      connection.
 
    The Admins page warns you while nobody can sign in as a full admin.
-5. Set `auth.mode = "token"` and restart the server. The console now asks everyone to sign in,
-   and each person sees and does only what their roles allow.
+5. On **Server**, under **Startup settings**, switch **Client sign-in** to tokens and restart the
+   server (or set `auth.mode = "token"` in server.toml and restart). The console refuses the
+   switch while nobody could sign in as a full admin. After the restart it asks everyone to sign
+   in, and each person sees and does only what their roles allow.
 
 If you lock yourself out (the full admin left, or AD is down), set `auth.mode = "dev"` again as
-root, fix the roles, and switch back. `tapqueue-admin` also keeps full access with `admin.token`
+root, fix the roles, and switch back. If the mode was set in the console, server.toml's is
+overridden: run `sudo -u tapqueue /opt/tapqueue/tapqueue-server --forget-console-settings` first,
+which goes back to the file for every [startup setting](install-server.md#configuration). `tapqueue-admin` also keeps full access with `admin.token`
 from server.toml.
 
 ## Areas
