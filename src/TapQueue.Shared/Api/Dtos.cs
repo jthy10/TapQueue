@@ -540,11 +540,17 @@ public sealed record ClientSignOutRequest(string? RememberToken);
 /// The client build every PC of a <see cref="Platform"/> should be running. A PC whose own program
 /// has a different SHA-256 downloads <see cref="DownloadPath"/> and installs it.
 /// </summary>
+/// <param name="Signature">
+/// Whoever built it's signature of the program (<see cref="ReleaseSignature"/>), if it was published
+/// with one. Clients from 0.11 install nothing without one they trust.
+/// </param>
 public sealed record ClientBuildDto(string Version, string Sha256, long SizeBytes, DateTimeOffset PublishedAt, string DownloadPath,
-    string Platform = ClientPlatform.Windows);
+    string Platform = ClientPlatform.Windows, string? Signature = null);
 
 /// <summary>The release station build every station should be running. Downloaded with the station token.</summary>
-public sealed record StationBuildDto(string Version, string Sha256, long SizeBytes, DateTimeOffset PublishedAt, string DownloadPath);
+/// <param name="Signature">As for <see cref="ClientBuildDto"/>; stations from 0.17 need one they trust.</param>
+public sealed record StationBuildDto(string Version, string Sha256, long SizeBytes, DateTimeOffset PublishedAt, string DownloadPath,
+    string? Signature = null);
 
 public sealed record ClientHeartbeatResponse(ClientBuildDto? ClientBuild);
 

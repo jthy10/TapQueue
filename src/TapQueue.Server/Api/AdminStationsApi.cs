@@ -145,7 +145,7 @@ public static class AdminStationsApi
     }
 
     /// <summary>The request body is the tapqueue-station program. Stations install it on their next heartbeat.</summary>
-    private static async Task<IResult> PublishBuild(HttpContext http, string? version, StationBuildStore builds, EventLog events)
+    private static async Task<IResult> PublishBuild(HttpContext http, string? version, string? signature, StationBuildStore builds, EventLog events)
     {
         version = AdminApi.Clean(version);
         if (version is null)
@@ -153,13 +153,13 @@ public static class AdminStationsApi
         BuildRecord build;
         try
         {
-            build = await builds.PublishAsync(version, http.Request.Body, http.RequestAborted);
+            build = await builds.PublishAsync(version, http.Request.Body, http.RequestAborted, signature);
         }
         catch (InvalidDataException ex)
         {
             return Results.BadRequest(new ErrorResponse(ex.Message));
         }
-        events.Admin(null, $"Published station build {build.Version}; stations install it on their next heartbeat.");
+        events.Admin(null, $"Published station build {build.Version}; stations install it on their next heartbeat.{build.SignatureNote}");
         return Results.Ok(build.ToStationDto());
     }
 }
