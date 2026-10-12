@@ -108,7 +108,6 @@ public static class AdminApi
         admin.MapAdminsApi();
 
         admin.MapGet("/client-builds", (ClientBuildStore builds) => builds.List().Select(b => b.ToDto()));
-        admin.MapPost("/client-builds", PublishClientBuild);
         admin.MapGet("/clients", (SessionStore sessions, ServerSettings settings) => sessions.ListActive(settings.SessionTimeout));
     }
 
@@ -258,33 +257,6 @@ public static class AdminApi
             ? "not matched to anyone"
             : "matched to whoever is signed in at the address they came from";
         static string Plural(int n, string unit) => n == 1 ? $"1 {unit}" : $"{n} {unit}s";
-    }
-
-    /// <summary>
-    /// The request body is the client program (TapQueueClient.exe or tapqueue-client) for
-    /// <paramref name="platform"/>, Windows if not given. PCs of that platform install it when they next check in.
-    /// </summary>
-    private static async Task<IResult> PublishClientBuild(HttpContext http, string? version, string? platform, ClientBuildStore builds, EventLog events, ILoggerFactory loggers)
-    {
-        version = Clean(version);
-        if (version is null)
-            return Results.BadRequest(new ErrorResponse("version is required, e.g. ?version=0.2.0+1a2b3c4."));
-        if (ClientPlatform.Parse(platform) is not { } parsed)
-            return Results.BadRequest(new ErrorResponse($"Unknown platform \"{platform}\". Known: {string.Join(", ", ClientPlatform.All)}."));
-        BuildRecord build;
-        try
-        {
-            build = await builds.PublishAsync(parsed, version, http.Request.Body, http.RequestAborted);
-        }
-        catch (InvalidDataException ex)
-        {
-            return Results.BadRequest(new ErrorResponse(ex.Message));
-        }
-        loggers.CreateLogger("TapQueue.Server.Api.AdminApi").LogInformation(
-            "Published {Platform} client {Version} ({Size} bytes, sha256 {Sha256}); PCs will update when they next check in",
-            ClientPlatform.DisplayName(parsed), build.Version, build.SizeBytes, build.Sha256);
-        events.Admin(null, $"Published {ClientPlatform.DisplayName(parsed)} client {build.Version}; PCs install it when they next check in.");
-        return Results.Ok(build.ToDto());
     }
 
     private static IResult CancelJob(long id, JobStore jobs, Spool spool, EventLog events, ILoggerFactory loggers)

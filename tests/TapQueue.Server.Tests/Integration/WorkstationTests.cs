@@ -47,7 +47,7 @@ public sealed class WorkstationTests : IAsyncLifetime
         await CheckIn();
         Assert.Equal(HttpStatusCode.Conflict, (await _server.Admin.PostAsync("/api/v1/admin/workstations/TEST-PC/update", null)).StatusCode);
 
-        await _server.Admin.PostAsync("/api/v1/admin/client-builds?version=0.3.0%2Bnew", new ByteArrayContent("MZ new client"u8.ToArray()));
+        await _server.PublishClientAsync("0.3.0+new", "MZ new client"u8.ToArray());
         Assert.False(Assert.Single(await Workstations()).UpToDate);
         Assert.Equal(HttpStatusCode.Accepted, (await _server.Admin.PostAsync("/api/v1/admin/workstations/test-pc/update", null)).StatusCode);
 

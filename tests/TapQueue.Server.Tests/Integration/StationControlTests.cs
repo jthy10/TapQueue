@@ -105,8 +105,7 @@ public sealed class StationControlTests : IAsyncLifetime
     public async Task StationsAreOfferedThePublishedBuildAndCanDownloadIt()
     {
         var program = Encoding.ASCII.GetBytes("\u007fELF pretend station build");
-        var published = await TestServer.ReadAsync<StationBuildDto>(await _server.Admin.PostAsync(
-            "/api/v1/admin/station-builds?version=0.3.1", new ByteArrayContent(program)));
+        var published = await _server.PublishStationAsync("0.3.1", program);
 
         var beat = await Heartbeat();
         var download = await _station.GetByteArrayAsync(beat.Build!.DownloadPath);

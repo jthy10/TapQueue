@@ -15,7 +15,7 @@ public sealed record BuildRecord(long Id, string Version, string Sha256, long Si
 }
 
 /// <summary>
-/// Client builds published with `tapqueue-admin clients publish`, one line of them per platform. The
+/// Client builds taken from TapQueue's GitHub releases (<see cref="Updates.BuildUpdater"/>), one line of them per platform. The
 /// newest one for a platform is what every PC of that platform should be running; PCs running
 /// anything else download it and install it.
 /// </summary>
@@ -82,7 +82,7 @@ public abstract class BuildStore
     public List<BuildRecord> List() =>
         _database.Query($"SELECT {_columns} FROM {_table} ORDER BY id DESC", Map);
 
-    /// <summary>Stores an uploaded program and makes it the build everything (of that platform) should run.</summary>
+    /// <summary>Stores a program and makes it the build everything (of that platform) should run.</summary>
     protected async Task<BuildRecord> PublishAsync(string version, Stream exe, string? platform, CancellationToken ct)
     {
         var temp = Path.Combine(_directory, $"upload-{Guid.NewGuid():N}.tmp");

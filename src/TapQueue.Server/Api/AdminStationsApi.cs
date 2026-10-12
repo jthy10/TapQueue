@@ -23,7 +23,6 @@ public static class AdminStationsApi
         admin.MapDelete("/stations/{id}", Delete);
 
         admin.MapGet("/station-builds", (StationBuildStore builds) => builds.List().Select(b => b.ToStationDto()));
-        admin.MapPost("/station-builds", PublishBuild);
     }
 
     private static IResult NotFound(string id) => Results.NotFound(new ErrorResponse($"No station \"{id}\"."));
@@ -164,24 +163,5 @@ public static class AdminStationsApi
             return NotFound(id);
         events.Admin(EventLog.Station(id), $"Removed station {id}.");
         return Results.NoContent();
-    }
-
-    /// <summary>The request body is the tapqueue-station program. Stations install it on their next heartbeat.</summary>
-    private static async Task<IResult> PublishBuild(HttpContext http, string? version, StationBuildStore builds, EventLog events)
-    {
-        version = AdminApi.Clean(version);
-        if (version is null)
-            return Results.BadRequest(new ErrorResponse("version is required, e.g. ?version=0.3.0+1a2b3c4."));
-        BuildRecord build;
-        try
-        {
-            build = await builds.PublishAsync(version, http.Request.Body, http.RequestAborted);
-        }
-        catch (InvalidDataException ex)
-        {
-            return Results.BadRequest(new ErrorResponse(ex.Message));
-        }
-        events.Admin(null, $"Published station build {build.Version}; stations install it on their next heartbeat.");
-        return Results.Ok(build.ToStationDto());
     }
 }

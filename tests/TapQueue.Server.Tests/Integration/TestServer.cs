@@ -68,6 +68,16 @@ public sealed class TestServer : IAsyncDisposable
         return server;
     }
 
+    /// <summary>
+    /// Hands out a client build, as publishing a GitHub release does. There's no way to upload one:
+    /// builds only come from releases.
+    /// </summary>
+    public async Task<ClientBuildDto> PublishClientAsync(string version, byte[] program, string platform = ClientPlatform.Windows) =>
+        (await Service<Data.ClientBuildStore>().PublishAsync(platform, version, new MemoryStream(program), CancellationToken.None)).ToDto();
+
+    public async Task<StationBuildDto> PublishStationAsync(string version, byte[] program) =>
+        (await Service<Data.StationBuildStore>().PublishAsync(version, new MemoryStream(program), CancellationToken.None)).ToStationDto();
+
     public T Service<T>() where T : notnull => _app.Services.GetRequiredService<T>();
 
     public HttpClient NewClient(string? bearerToken = null)

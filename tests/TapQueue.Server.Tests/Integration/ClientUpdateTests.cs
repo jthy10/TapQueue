@@ -17,10 +17,8 @@ public sealed class ClientUpdateTests : IAsyncLifetime
 
     public async Task DisposeAsync() => await _server.DisposeAsync();
 
-    private async Task<ClientBuildDto> PublishAsync(string version, byte[] exe, string? platform = null) =>
-        await TestServer.ReadAsync<ClientBuildDto>(await _server.Admin.PostAsync(
-            $"/api/v1/admin/client-builds?version={Uri.EscapeDataString(version)}" + (platform is null ? "" : $"&platform={platform}"),
-            new ByteArrayContent(exe)));
+    private Task<ClientBuildDto> PublishAsync(string version, byte[] exe, string? platform = null) =>
+        _server.PublishClientAsync(version, exe, platform ?? ClientPlatform.Windows);
 
     private async Task<ClientSetupResponse> CheckInAsync(string computer, string? platform) =>
         await TestServer.ReadAsync<ClientSetupResponse>(await _server.NewClient().PostAsJsonAsync("/api/v1/client/setup",
@@ -85,13 +83,14 @@ public sealed class ClientUpdateTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task PublishingNeedsTheAdminToken()
+    public async Task NobodyCanUploadABuild()
     {
-        using var alice = await _server.SignInAsync("alice");
+        // Builds only come from TapQueue's GitHub releases; not even an admin can hand the server a program.
+        using var client = await _server.Admin.PostAsync("/api/v1/admin/client-builds?version=0.3.0", new ByteArrayContent(Exe));
+        using var station = await _server.Admin.PostAsync("/api/v1/admin/station-builds?version=0.3.0", new ByteArrayContent(Exe));
 
-        using var response = await alice.PostAsync("/api/v1/admin/client-builds?version=0.3.0", new ByteArrayContent(Exe));
-
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal((HttpStatusCode.MethodNotAllowed, HttpStatusCode.MethodNotAllowed), (client.StatusCode, station.StatusCode));
+        Assert.Empty((await _server.Admin.GetFromJsonAsync<List<ClientBuildDto>>("/api/v1/admin/client-builds", TapQueueJson.Options))!);
     }
 
     [Fact]
@@ -132,10 +131,9 @@ public sealed class ClientUpdateTests : IAsyncLifetime
     [Fact]
     public async Task UnknownPlatformsAreRejected()
     {
-        using var publish = await _server.Admin.PostAsync("/api/v1/admin/client-builds?version=0.5.0&platform=amiga", new ByteArrayContent(Exe));
         using var checkIn = await _server.NewClient().PostAsJsonAsync("/api/v1/client/setup",
             new ClientSetupRequest("PC", "0.5.0", "aaaa", null, "amiga"), TapQueueJson.Options);
 
-        Assert.Equal((HttpStatusCode.BadRequest, HttpStatusCode.BadRequest), (publish.StatusCode, checkIn.StatusCode));
+        Assert.Equal(HttpStatusCode.BadRequest, checkIn.StatusCode);
     }
 }

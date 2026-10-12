@@ -28,7 +28,7 @@ public sealed class AdminRolesTests
     [InlineData("POST", "/stations/office/restart", AdminArea.Fleet, AdminRole.Operator)]
     [InlineData("POST", "/directory/sync", AdminArea.Directory, AdminRole.Operator)]
     [InlineData("PATCH", "/directory/config", AdminArea.Directory, AdminRole.Admin)]
-    [InlineData("POST", "/client-builds", AdminArea.Updates, AdminRole.Admin)]
+    [InlineData("POST", "/client-builds/release", AdminArea.Updates, AdminRole.Admin)]
     [InlineData("POST", "/server/restart", AdminArea.Server, AdminRole.Admin)]
     [InlineData("GET", "/server/update", AdminArea.Server, AdminRole.Viewer)]
     [InlineData("POST", "/server/update", AdminArea.Server, AdminRole.Admin)]

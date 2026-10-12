@@ -1,5 +1,5 @@
 import { api } from "../api.js";
-import { h, pageHead, panel, button, pill, time, dateTime, bytes, table, empty, field, input, select, formDialog, confirm, attempt, toast, loading, plural } from "../ui.js";
+import { h, pageHead, panel, button, pill, time, dateTime, bytes, table, empty, confirm, attempt, toast, loading, plural } from "../ui.js";
 
 const platforms = [["win-x64", "Windows"], ["linux-x64", "Linux"]];
 const platformName = (p) => platforms.find(([v]) => v === p)?.[1] ?? p;
@@ -17,10 +17,8 @@ export async function render(root, ctx) {
     what: "station build",
     confirmMessage: (v) => `The server downloads the station build of release ${v} from GitHub, checks it against the release's SHA256SUMS and publishes it. Every station installs it within about 15 seconds and restarts.`,
   });
-  root.append(pageHead("Updates", "Builds the server hands out. Clients and stations compare themselves to the newest one and install it on their own.",
-    button("Upload station build", { iconName: "updates", onclick: publishStation }),
-    button("Upload client build", { iconName: "updates", onclick: publish })),
-  panel({ title: "Clients", description: "Each PC installs the newest build for its platform, within about a minute. Publishing an older build again rolls PCs back.",
+  root.append(pageHead("Updates", "Builds the server hands out, taken from TapQueue's releases on GitHub. Clients and stations compare themselves to the newest one and install it on their own."),
+  panel({ title: "Clients", description: "Each PC installs the newest build for its platform, within about a minute. To go back to an older release, use Downgrade on the Server page.",
     actions: clients.button, flush: true, body: [clients.status, list] }),
   panel({ title: "Release stations", description: "Stations install the newest build within 15 seconds and restart. Installing an archive by hand on a station takes over from this.",
     actions: stationRelease.button, flush: true, body: [stationRelease.status, stationList] }));
@@ -104,44 +102,4 @@ export async function render(root, ctx) {
       ],
     }));
   }
-
-  function publish() {
-    formDialog({
-      title: "Upload a client build",
-      description: "For a build that isn't a GitHub release. Every PC of that platform downloads and installs it when it next checks in.",
-      submitLabel: "Publish",
-      body: [
-        field("Platform", select("platform", platforms, "win-x64")),
-        field("Program", input("file", { type: "file", required: true }),
-          "Windows: TapQueueClient.exe from TapQueue_client_<version>_win-x64.zip. Linux: tapqueue-client from TapQueue_client_<version>_linux-x64.tar.gz."),
-        field("Version", input("version", { required: true, placeholder: "e.g. 0.5.0+1a2b3c4" }), "As in the archive's version.txt. Shown on this page and in each client's tray menu."),
-      ],
-      onSubmit: async ({ platform, file, version }) => {
-        if (!file) throw new Error("Choose the client program.");
-        await api.upload(`client-builds?version=${encodeURIComponent(version)}&platform=${encodeURIComponent(platform)}`, file);
-        await load();
-      },
-    });
-  }
-
-  function publishStation() {
-    formDialog({
-      title: "Upload a station build",
-      description: "For a build that isn't a GitHub release. Every station downloads it, checks it runs, installs it and restarts, within about 15 seconds.",
-      submitLabel: "Publish",
-      body: [
-        field("tapqueue-station", input("file", { type: "file", required: true }), "The program from the station archive (TapQueue_station_<version>_linux-x64.tar.gz)."),
-        field("Version", input("version", { required: true, placeholder: "e.g. 0.3.0+1a2b3c4" }), "What `tapqueue-station --version` prints."),
-      ],
-      onSubmit: async ({ file, version }) => {
-        if (!file) throw new Error("Choose the tapqueue-station program.");
-        await api.upload(`station-builds?version=${encodeURIComponent(version)}`, file);
-        await load();
-      },
-    });
-  }
-
-  await load();
-  // What the last check found, if there was one since the server started.
-  await Promise.all([clients.load(), stationRelease.load()]);
 }

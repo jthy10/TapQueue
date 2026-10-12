@@ -134,8 +134,8 @@ public sealed class BuildReleaseTests : IAsyncLifetime
     [Fact]
     public async Task AnOlderBuildOnOnePlatformStillCountsAsAnUpdate()
     {
-        (await _server.Admin.PostAsync("/api/v1/admin/client-builds?version=0.9.7%2Bbe5698f&platform=linux-x64", new ByteArrayContent(LinuxClient))).EnsureSuccessStatusCode();
-        (await _server.Admin.PostAsync("/api/v1/admin/client-builds?version=0.9.6%2B685bd8e&platform=win-x64", new ByteArrayContent([.. WindowsClient, 1]))).EnsureSuccessStatusCode();
+        await _server.PublishClientAsync("0.9.7+be5698f", LinuxClient, ClientPlatform.Linux);
+        await _server.PublishClientAsync("0.9.6+685bd8e", [.. WindowsClient, 1]);
 
         Assert.True((await Check("client")).UpdateAvailable);
         var after = await TestServer.ReadAsync<BuildReleaseDto>(await Publish("client", "0.9.7"));
@@ -146,10 +146,10 @@ public sealed class BuildReleaseTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task ANewerBuildPublishedByHandIsntCalledOutOfDate()
+    public async Task ANewerBuildThanTheNewestReleaseIsntCalledOutOfDate()
     {
         foreach (var platform in ClientPlatform.All)
-            (await _server.Admin.PostAsync($"/api/v1/admin/client-builds?version=0.10.0%2Bdev&platform={platform}", new ByteArrayContent(WindowsClient))).EnsureSuccessStatusCode();
+            await _server.PublishClientAsync("0.10.0+dev", WindowsClient, platform);
 
         Assert.False((await Check("client")).UpdateAvailable);
     }

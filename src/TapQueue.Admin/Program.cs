@@ -67,10 +67,6 @@ const string Usage = """
       tapqueue-admin stations remove <station-id>    Delete a station
 
       tapqueue-admin clients                         Signed-in clients and the version each runs
-      tapqueue-admin clients publish <TapQueue_client_X.Y.Z_win-x64.zip | TapQueue_client_X.Y.Z_linux-x64.tar.gz
-                                      | TapQueueClient.exe | tapqueue-client> [--platform win-x64|linux-x64] [--version-name ...]
-                                                     Push a client build out; every PC of that platform
-                                                     installs it when it next checks in (about a minute)
       tapqueue-admin clients update [--check]        Publish the newest client release from GitHub (the server
                                                      downloads and checks it); --check only says what's there
       tapqueue-admin stations update [--check]       The same for the station build that goes with this server
@@ -173,7 +169,7 @@ for (var i = 0; i < args.Length; i++)
     }
     if (args[i].StartsWith("--"))
     {
-        var takesValue = args[i] is "--server" or "--token" or "--fingerprint" or "--name" or "--status" or "--uri" or "--location" or "--description" or "--media" or "--version-name" or "--platform" or "--area" or "--station" or "--by" or "--from" or "--to";
+        var takesValue = args[i] is "--server" or "--token" or "--fingerprint" or "--name" or "--status" or "--uri" or "--location" or "--description" or "--media" or "--area" or "--station" or "--by" or "--from" or "--to";
         var switchWithValue = args[i] is "--tls-skip-verify" or "--color" or "--duplex" && i + 1 < args.Length && ParseSwitch(args[i + 1]) is not null;
         options[args[i]] = (takesValue || switchWithValue) && i + 1 < args.Length ? args[++i] : null;
     }
@@ -256,7 +252,6 @@ try
             await Delete($"stations/{Uri.EscapeDataString(positional[2])}/screen", $"Station {positional[2]}'s screen link no longer works."),
         ("stations", "remove") when positional.Count == 3 => await RemoveStation(positional[2]),
         ("clients", null) => await ListClients(),
-        ("clients", "publish") when positional.Count == 3 => await PublishClient(positional[2], options.GetValueOrDefault("--version-name"), options.GetValueOrDefault("--platform")),
         ("clients", "builds") when positional.Count == 2 => await ListClientBuilds(),
         ("clients", "sign-out") when positional.Count == 3 => await Delete($"clients/{long.Parse(positional[2])}", $"Signed out session {positional[2]}."),
         ("workstations", null) => await ListWorkstations(),
@@ -1218,75 +1213,6 @@ async Task<int> ListClientBuilds()
         b.Platform, b.Version, Ago(b.PublishedAt), FormatSize(b.SizeBytes), b.Sha256[..16] + "…",
     }));
     return 0;
-}
-
-// Takes a release package from scripts/package.sh (the Windows zip or the Linux tarball: the client
-// program plus version.txt) or a bare program. The platform comes from the program itself.
-async Task<int> PublishClient(string path, string? version, string? platform)
-{
-    if (!File.Exists(path))
-    {
-        Console.Error.WriteLine($"{path} not found.");
-        return 2;
-    }
-    if (platform is not null && ClientPlatform.Parse(platform) is null)
-    {
-        Console.Error.WriteLine($"Unknown platform \"{platform}\". Use one of: {string.Join(", ", ClientPlatform.All)}.");
-        return 2;
-    }
-
-    // The program is copied out of the package so its first bytes can be checked before uploading.
-    var program = Path.GetTempFileName();
-    try
-    {
-        string? packagedVersion;
-        try
-        {
-            packagedVersion = await ClientPackage.ExtractAsync(path, program);
-        }
-        catch (InvalidDataException ex)
-        {
-            Console.Error.WriteLine(ex.Message);
-            return 2;
-        }
-        version ??= packagedVersion;
-        if (string.IsNullOrEmpty(version))
-        {
-            Console.Error.WriteLine("Can't tell which version this is. Pass --version-name, e.g. --version-name 0.2.0+1a2b3c4.");
-            return 2;
-        }
-        var detected = ClientPackage.PlatformOf(program);
-        platform = ClientPlatform.Parse(platform ?? detected);
-        if (platform is null)
-        {
-            Console.Error.WriteLine($"{path} isn't a Windows or Linux program. Pass --platform if it really is a TapQueue client.");
-            return 2;
-        }
-        if (detected is not null && detected != platform)
-        {
-            Console.Error.WriteLine($"{path} is a {ClientPlatform.DisplayName(detected)} program, not {ClientPlatform.DisplayName(platform)}.");
-            return 2;
-        }
-
-        await using var upload = File.OpenRead(program);
-        using var content = new StreamContent(upload);
-        content.Headers.ContentType = new("application/octet-stream");
-        using var response = await http.PostAsync(
-            $"client-builds?version={Uri.EscapeDataString(version)}&platform={platform}", content);
-        if (!response.IsSuccessStatusCode)
-        {
-            await PrintError(response);
-            return 1;
-        }
-        var build = (await response.Content.ReadFromJsonAsync<ClientBuildDto>(TapQueueJson.Options))!;
-        Console.WriteLine($"Published {ClientPlatform.DisplayName(build.Platform)} client {build.Version} ({FormatSize(build.SizeBytes)}).");
-        Console.WriteLine("PCs install it when they next check in, within about a minute. Watch with: tapqueue-admin workstations");
-        return 0;
-    }
-    finally
-    {
-        File.Delete(program);
-    }
 }
 
 async Task<int> Delete(string path, string doneMessage)
