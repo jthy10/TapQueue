@@ -11,6 +11,8 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-10-12
+
 ### Added
 - **Released jobs are followed at the printer.** "Released" used to mean the printer accepted the
   job; what happened to it afterwards was never looked at, and the document was already gone. Now
@@ -499,7 +501,8 @@ First working version.
   readers. A tap releases the user's held jobs to the station's printer.
 - Badge enrollment by an admin (`badges add --last-tap`).
 
-[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.16.0...HEAD
+[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.17.0...HEAD
+[0.17.0]: https://github.com/jthy10/TapQueue/compare/server-v0.16.0...server-v0.17.0
 [0.16.0]: https://github.com/jthy10/TapQueue/compare/server-v0.15.0...server-v0.16.0
 [0.15.0]: https://github.com/jthy10/TapQueue/compare/server-v0.14.0...server-v0.15.0
 [0.14.0]: https://github.com/jthy10/TapQueue/compare/server-v0.13.0...server-v0.14.0
