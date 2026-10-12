@@ -41,6 +41,8 @@ public static class ClientApi
         // What the session was given at sign-in, as it is now: the queues this person may print to.
         me.MapGet("/queues", (HttpContext http, QueueStore queues, AccessPolicy access) =>
             queues.List().Where(q => access.CanPrintTo(CurrentUser(http).Id, q.Id)).Select(q => ToDto(q)));
+        // What happened at a printer while they weren't at their PC, for the tray to show.
+        me.MapGet("/me/notices", (HttpContext http, UserNotices notices, long? after) => notices.For(CurrentUser(http).Id, after ?? 0));
         me.MapPost("/client/sign-out", SignOut);
         me.MapDelete("/me/jobs/{id:long}", CancelJob);
         me.MapPost("/me/release", Release);

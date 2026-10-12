@@ -779,6 +779,10 @@ public static class TapOutcome
     public const string Failed = "failed";
 }
 
+/// <summary>Something the tray app should tell its person, about a tap or a job at a printer (servers from 0.17).</summary>
+/// <param name="Id">Goes up with each one; ask for newer ones with <c>after</c>.</param>
+public sealed record UserNoticeDto(long Id, string Message, int AgeSeconds);
+
 /// <summary>What a station's screen shows: the printer's state, and the last tap if there was one.</summary>
 /// <param name="PrinterProblem">What's wrong with the printer in a few words ("paper jam"), when it can't print.</param>
 /// <param name="Notice">The station's out-of-service message, when it's disabled and has one.</param>

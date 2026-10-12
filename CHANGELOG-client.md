@@ -13,6 +13,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ### Added
 - **My print queue** says whether a job you released is still **printing** or has **printed**,
   with a 0.17 server and a printer that can be asked.
+- **The tray says why a tap at a printer printed nothing**, with a 0.17 server: nothing was
+  waiting, you're over your page limit, the printer can't print right now, or you aren't allowed
+  to print there. It also says when a printer gave up on a job and it's waiting again.
 - Releasing from the tray says when a job won't come out as it was sent: in black and white, or
   on one side, because the printer you chose can't do otherwise.
 

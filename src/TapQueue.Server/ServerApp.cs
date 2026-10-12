@@ -88,6 +88,7 @@ public static class ServerApp
         builder.Services.AddSingleton<BadgeStore>();
         builder.Services.AddSingleton<StationStore>();
         builder.Services.AddSingleton<StationScreens>();
+        builder.Services.AddSingleton<UserNotices>();
         builder.Services.AddSingleton<WorkstationStore>();
         builder.Services.AddSingleton<CrashStore>();
         builder.Services.AddSingleton<PrinterStore>();

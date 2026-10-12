@@ -183,6 +183,19 @@ public sealed class TapQueueApi(ClientConfig config) : IDisposable
         }
     }
 
+    /// <summary>What to tell the person about taps and jobs at a printer, newer than <paramref name="after"/>; null from servers older than 0.17.</summary>
+    public async Task<List<UserNoticeDto>?> GetNoticesAsync(long after, CancellationToken ct = default)
+    {
+        try
+        {
+            return await SendAsync<List<UserNoticeDto>>(HttpMethod.Get, $"api/v1/me/notices?after={after}", null, ct);
+        }
+        catch (TapQueueApiException ex) when (ex.Status is HttpStatusCode.NotFound or HttpStatusCode.MethodNotAllowed)
+        {
+            return null;
+        }
+    }
+
     public async Task<ReleaseResponse> ReleaseAsync(string printerId, IReadOnlyList<long>? jobIds, CancellationToken ct = default) =>
         (await SendAsync<ReleaseResponse>(HttpMethod.Post, "api/v1/me/release", new ReleaseRequest(printerId, jobIds), ct))!;
 

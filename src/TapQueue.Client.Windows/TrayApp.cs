@@ -16,6 +16,7 @@ public sealed class TrayApp : ApplicationContext
 
     private readonly string[] _args;
     private readonly TapQueueApi _api;
+    private readonly TapNotices _notices;
     private readonly NotifyIcon _tray;
     private readonly Icon _connectedIcon = TrayIcon.Create(connected: true);
     private readonly Icon _disconnectedIcon = TrayIcon.Create(connected: false);
@@ -44,6 +45,7 @@ public sealed class TrayApp : ApplicationContext
     {
         _args = start.AppArgs;
         _api = new TapQueueApi(config) { VerifySession = UpdateCheckPipe.VerifySessionAsync };
+        _notices = new TapNotices(_api.GetNoticesAsync);
         _tray = new NotifyIcon
         {
             Icon = _disconnectedIcon,
@@ -195,6 +197,9 @@ public sealed class TrayApp : ApplicationContext
             _knownJobIds = ids;
             UpdateTooltip();
             _window?.RefreshView();
+            // A tap at a printer that printed nothing, and why: there's nothing at the printer to say so.
+            foreach (var notice in await _notices.NewAsync())
+                Notify("At the printer", notice, ToolTipIcon.Warning);
         }
         catch (Exception ex) when (ex is HttpRequestException or TapQueueApiException or TaskCanceledException)
         {

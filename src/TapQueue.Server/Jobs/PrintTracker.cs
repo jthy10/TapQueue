@@ -18,7 +18,8 @@ namespace TapQueue.Server.Jobs;
 /// fixed, so it just stays "printing". Printers that give jobs no number, or forget them before
 /// they can be asked, leave things as they were before 0.17: released means the printer took it.
 /// </summary>
-public sealed class PrintTracker(JobStore jobs, Spool spool, PrinterRegistry printers, EventLog events, ServerSettings settings, ILogger<PrintTracker> logger)
+public sealed class PrintTracker(JobStore jobs, Spool spool, PrinterRegistry printers, EventLog events, ServerSettings settings, Api.UserNotices notices,
+    ILogger<PrintTracker> logger)
     : BackgroundService
 {
     public static readonly TimeSpan Interval = TimeSpan.FromSeconds(5);
@@ -144,6 +145,8 @@ public sealed class PrintTracker(JobStore jobs, Spool spool, PrinterRegistry pri
         var error = $"{printer.Name} gave up on this job{why}. It's on hold again and doesn't count against a page limit.";
         if (!jobs.ReturnToHold(job.Id, error, DateTimeOffset.UtcNow.AddHours(settings.HoldHours)))
             return;
+        if (job.UserId is { } owner)
+            notices.Add(owner, $"{printer.Name} gave up on \"{job.Name}\"{why}. It's waiting again; release it there or at another printer.");
         logger.LogWarning("{Printer} aborted job {JobId} \"{Name}\" for {User}{Why}; it's held again", printer.Id, job.Id, job.Name, who, why);
         events.Record(EventCategory.Job, EventLog.System, job.Username is null ? EventLog.Job(job.Id) : EventLog.User(job.Username),
             $"{printer.Name} gave up on {who}'s \"{job.Name}\" (job #{job.Id}){why}" +

@@ -34,7 +34,7 @@ public static class StationApi
 
     private static async Task<IResult> Tap(StationTapRequest request, HttpContext http, BadgeStore badges, UserStore users,
         PrinterRegistry printers, ReleaseService release, UnknownTaps unknownTaps, AccessPolicy access, EventLog events, ServerSettings settings,
-        StationScreens screens, ILoggerFactory loggers)
+        StationScreens screens, UserNotices notices, ILoggerFactory loggers)
     {
         // Whatever the tap comes to is also what the station's screen shows, if it has one.
         IResult Answer(StationTapResponse response)
@@ -85,6 +85,7 @@ public static class StationApi
         {
             events.Record(EventCategory.Tap, EventLog.Station(station.Id), EventLog.User(user.Username),
                 $"{user.Username} tapped at station {station.Id}, but their groups don't allow printing at {printer.Name}.");
+            notices.Add(user.Id, $"You tapped at {printer.Name}, but you aren't allowed to print there.");
             return Answer(new StationTapResponse(TapOutcome.NotAllowed, $"Sorry {user.DisplayName}, you can't print at {printer.Name}.", user.ToDto(), []));
         }
 
@@ -101,7 +102,10 @@ public static class StationApi
                     logger.LogError(t.Exception, "Releasing {User}'s jobs at station {Station} failed", user.Username, station.Id);
                 // The tap was answered "on their way"; if some didn't get there, the screen says so after all.
                 else if (t.Result.Results.FirstOrDefault(r => !r.Success) is { } failure)
+                {
                     screens.Show(station.Id, TapOutcome.Failed, $"Couldn't print: {failure.Error}");
+                    notices.Add(user.Id, $"Your tap at {printer.Name} didn't print everything: {failure.Error}");
+                }
             }, TaskScheduler.Default);
             logger.LogInformation("{User} tapped at station {Station}: still sending to {Printer}", user.Username, station.Id, printer.Id);
             return Answer(new StationTapResponse(TapOutcome.Releasing, $"Hi {user.DisplayName}, your jobs are on their way to {printer.Name}.", user.ToDto(), []));
@@ -121,6 +125,11 @@ public static class StationApi
             (0, _) => (TapOutcome.Failed, $"Couldn't print: {result.Results.First(r => !r.Success).Error}"),
             _ => (TapOutcome.Failed, $"Printing {Plural(sent, "job")}; {failed} couldn't be sent and are still held."),
         };
+        // They're standing at a printer with nothing coming out; their PC is where they'll look next.
+        if (sent + failed == 0)
+            notices.Add(user.Id, $"You tapped at {printer.Name}, but nothing was waiting to print.");
+        else if (failed > 0)
+            notices.Add(user.Id, $"Your tap at {printer.Name} didn't print{(sent == 0 ? "" : " everything")}: {result.Results.First(r => !r.Success).Error}");
         return Answer(new StationTapResponse(outcome, message, user.ToDto(), result.Results));
     }
 

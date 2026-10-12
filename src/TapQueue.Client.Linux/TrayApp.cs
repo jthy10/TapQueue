@@ -28,6 +28,7 @@ public sealed class TrayApp : Application
     private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(15);
 
     private TapQueueApi _api = null!;
+    private TapNotices _notices = null!;
     private TrayIcon _tray = null!;
     private WindowIcon _connectedIcon = null!;
     private WindowIcon _disconnectedIcon = null!;
@@ -76,6 +77,7 @@ public sealed class TrayApp : Application
     public override void OnFrameworkInitializationCompleted()
     {
         _api = new TapQueueApi(Start.Config) { VerifySession = UpdateCheckSocket.VerifySessionAsync };
+        _notices = new TapNotices(_api.GetNoticesAsync);
         _connectedIcon = TrayIconImage.Create(connected: true);
         _disconnectedIcon = TrayIconImage.Create(connected: false);
         _tray = new TrayIcon
@@ -214,6 +216,9 @@ public sealed class TrayApp : Application
                 BuildMenu();
             }
             _window?.RefreshView();
+            // A tap at a printer that printed nothing, and why: there's nothing at the printer to say so.
+            foreach (var notice in await _notices.NewAsync())
+                Notify("At the printer", notice, urgent: true);
         }
         catch (Exception ex) when (ex is HttpRequestException or TapQueueApiException or TaskCanceledException)
         {

@@ -110,6 +110,28 @@ public sealed class StationScreenTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ATapThatPrintedNothingIsAlsoToldToThePersonsTray()
+    {
+        using var alice = await _server.SignInAsync("alice");
+        using var bob = await _server.SignInAsync("bob");
+        await _server.Admin.PostAsJsonAsync("/api/v1/admin/badges", new CreateBadgeRequest("alice", "04A1B2C3"), TapQueueJson.Options);
+        Assert.Empty((await alice.GetFromJsonAsync<List<UserNoticeDto>>("/api/v1/me/notices", TapQueueJson.Options))!);
+
+        await TapAsync("04a1b2c3");
+        (await _server.Admin.PutAsJsonAsync("/api/v1/admin/users/alice/quota", new QuotaDto(0, QuotaPeriod.Month), TapQueueJson.Options)).EnsureSuccessStatusCode();
+        await _server.PrintAsync("Report", Pdf, requestingUser: "alice");
+        await TapAsync("04a1b2c3");
+
+        var notices = (await alice.GetFromJsonAsync<List<UserNoticeDto>>("/api/v1/me/notices", TapQueueJson.Options))!;
+        Assert.Equal(2, notices.Count);
+        Assert.Equal("You tapped at Office printer, but nothing was waiting to print.", notices[0].Message);
+        Assert.StartsWith("Your tap at Office printer didn't print: You've used all 0 pages", notices[1].Message);
+        Assert.Equal(notices[1], Assert.Single((await alice.GetFromJsonAsync<List<UserNoticeDto>>($"/api/v1/me/notices?after={notices[0].Id}", TapQueueJson.Options))!));
+        // Nobody else's.
+        Assert.Empty((await bob.GetFromJsonAsync<List<UserNoticeDto>>("/api/v1/me/notices", TapQueueJson.Options))!);
+    }
+
+    [Fact]
     public async Task AWaitingScreenHearsOfATapAtOnceAndOfAPrinterProblemSoon()
     {
         var before = await ScreenAsync();

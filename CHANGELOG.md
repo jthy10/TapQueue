@@ -38,6 +38,9 @@ breaking changes; they're listed under **Changed** with what to do.
   `tapqueue-admin stations screen <id>`, makes its address. The station program isn't involved,
   so it works with stations on any version. Database schema 21. See
   [docs/release-station.md](docs/release-station.md#a-screen-at-the-station).
+- **A tap that printed nothing is explained on the person's PC.** With a 0.11 client, the tray
+  says "You tapped at Office printer, but nothing was waiting to print", or why a release was
+  refused, or that a printer gave up on a job and it's waiting again (`GET /api/v1/me/notices`).
 - **Signed updates.** Client and station builds are signed with a release key when they're
   packaged, and the server keeps the signature and hands it out with the build. Stations from this
   version, and clients from 0.11, install nothing from their server that isn't signed with a key
