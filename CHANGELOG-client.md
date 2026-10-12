@@ -10,6 +10,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-10-12
+
+No changes to the clients themselves: released with server 0.18.0, so one number still says what
+a site runs.
+
 ## [0.17.0] - 2026-10-12
 
 From this release the clients carry the same version number as the server and station, so one
@@ -176,7 +181,8 @@ number says what a site runs. This one is 0.17.0; there is no client 0.11 to 0.1
 First working version: a tray app configured by a file that signs in, adds the printer, and shows
 and releases held jobs.
 
-[Unreleased]: https://github.com/jthy10/TapQueue/compare/client-v0.17.0...HEAD
+[Unreleased]: https://github.com/jthy10/TapQueue/compare/client-v0.18.0...HEAD
+[0.18.0]: https://github.com/jthy10/TapQueue/compare/client-v0.17.0...client-v0.18.0
 [0.17.0]: https://github.com/jthy10/TapQueue/compare/client-v0.10.0...client-v0.17.0
 [0.10.0]: https://github.com/jthy10/TapQueue/compare/client-v0.9.7...client-v0.10.0
 [0.9.7]: https://github.com/jthy10/TapQueue/compare/client-v0.9.6...client-v0.9.7
