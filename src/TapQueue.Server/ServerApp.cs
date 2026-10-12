@@ -28,7 +28,9 @@ namespace TapQueue.Server;
 public static class ServerApp
 {
     /// <param name="configureServices">Lets tests swap services, like the directory for a fake one.</param>
-    public static WebApplication Build(ServerConfig config, string[]? args = null, Action<IServiceCollection>? configureServices = null)
+    /// <param name="fileConfig">server.toml as it is on disk, when <paramref name="config"/> has the console's startup settings over it.</param>
+    public static WebApplication Build(ServerConfig config, string[]? args = null, Action<IServiceCollection>? configureServices = null,
+        ServerConfig? fileConfig = null)
     {
         Directory.CreateDirectory(config.Server.DataDir);
         var backups = new BackupStore(config);
@@ -71,6 +73,7 @@ public static class ServerApp
         builder.Services.AddSingleton<BackupService>();
         builder.Services.AddHostedService(services => services.GetRequiredService<BackupService>());
         builder.Services.AddSingleton<ServerSettings>();
+        builder.Services.AddSingleton(new StartupSettings(database, fileConfig ?? StartupSettings.Copy(config), config));
         builder.Services.AddSingleton<EventLog>();
         builder.Services.AddSingleton<AnonymousEventLimits>();
         builder.Services.AddSingleton<UserStore>();

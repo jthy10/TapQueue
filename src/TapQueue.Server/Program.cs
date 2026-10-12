@@ -19,16 +19,23 @@ if (args.Contains("--schema-version"))
 }
 
 var configPath = ConfigPath(args);
-ServerConfig config;
+ServerConfig fileConfig, config;
+// Startup settings changed in the console, which are laid over server.toml's.
+List<string> fromConsole = [];
 try
 {
-    config = TomlConfig.Load<ServerConfig>(configPath);
+    fileConfig = TomlConfig.Load<ServerConfig>(configPath);
     ServerConfig.RejectRemovedSections(File.ReadAllText(configPath));
+    if (args.Contains(StartupSettings.ForgetFlag))
+        return ForgetConsoleSettings(fileConfig);
+    var saved = StartupSettings.Read(fileConfig.Server.DataDir);
+    fromConsole = StartupSettings.Keys.Where(saved.ContainsKey).ToList();
+    config = StartupSettings.Overlay(fileConfig, saved);
     config.Validate();
 }
-catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or Microsoft.Data.Sqlite.SqliteException)
 {
-    Console.Error.WriteLine($"tapqueue-server: {ex.Message}");
+    Console.Error.WriteLine($"tapqueue-server: {ex.Message}{ConsoleSettingsHint(fromConsole)}");
     return 1;
 }
 
@@ -65,11 +72,11 @@ if (Array.IndexOf(args, "--downgrade-schema") is >= 0 and var downgradeAt)
 WebApplication app;
 try
 {
-    app = ServerApp.Build(config, args);
+    app = ServerApp.Build(config, args, fileConfig: fileConfig);
 }
 catch (InvalidDataException ex) // a TLS certificate that can't be loaded
 {
-    Console.Error.WriteLine($"tapqueue-server: {ex.Message}");
+    Console.Error.WriteLine($"tapqueue-server: {ex.Message}{ConsoleSettingsHint(fromConsole)}");
     return 1;
 }
 
@@ -106,8 +113,18 @@ if (app.Services.GetRequiredService<BackupStore>() is { CopyTo: { } copyTo } bac
     app.Logger.LogInformation("Backups are {Encrypted}copied to {CopyTo}", backupStore.Encrypts ? "encrypted and " : "", copyTo);
 if (config.Auth.Mode == "dev")
     app.Logger.LogWarning("auth.mode = \"dev\": anyone can sign in as any username. Use \"token\" outside of testing.");
+if (fromConsole.Count > 0)
+    app.Logger.LogInformation("Set in the console, over {Path}: {Settings}", configPath, string.Join(", ", fromConsole));
 
-app.Run();
+try
+{
+    app.Run();
+}
+catch (IOException ex) when (fromConsole.Count > 0) // an address that can't be listened on
+{
+    Console.Error.WriteLine($"tapqueue-server: {ex.Message}{ConsoleSettingsHint(fromConsole)}");
+    return 1;
+}
 // Non-zero when an admin asked for a restart (see AdminServerApi), so systemd starts it again.
 return Environment.ExitCode;
 
@@ -172,6 +189,20 @@ static int DowngradeSchema(ServerConfig config, int schema)
         return 1;
     }
 }
+
+// For when a setting saved in the console keeps the server from starting, and so the console from fixing it.
+static int ForgetConsoleSettings(ServerConfig fileConfig)
+{
+    var forgotten = StartupSettings.Forget(fileConfig.Server.DataDir);
+    Console.WriteLine(forgotten.Count == 0
+        ? "No startup settings were saved in the console; the server starts with server.toml's."
+        : $"Forgot the console's {string.Join(", ", forgotten)}. The server starts with server.toml's: sudo systemctl restart tapqueue-server");
+    return 0;
+}
+
+static string ConsoleSettingsHint(List<string> fromConsole) => fromConsole.Count == 0 ? "" :
+    $"\nThese were set in the console, over server.toml: {string.Join(", ", fromConsole)}. To start with server.toml alone, run once:\n" +
+    $"  sudo -u tapqueue {Environment.ProcessPath} {StartupSettings.ForgetFlag}";
 
 static string ConfigPath(string[] args)
 {
