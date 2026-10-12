@@ -11,6 +11,8 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-10-11
+
 ### Added
 - A limit on how much one person can have waiting to print: 2048 MB of held documents unless
   changed with `tapqueue-admin server set held-limit <megabytes>` or under **Server → Settings**
@@ -359,7 +361,8 @@ First working version.
   readers. A tap releases the user's held jobs to the station's printer.
 - Badge enrollment by an admin (`badges add --last-tap`).
 
-[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.12.0...HEAD
+[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.12.1...HEAD
+[0.12.1]: https://github.com/jthy10/TapQueue/compare/server-v0.12.0...server-v0.12.1
 [0.12.0]: https://github.com/jthy10/TapQueue/compare/server-v0.11.0...server-v0.12.0
 [0.11.0]: https://github.com/jthy10/TapQueue/compare/server-v0.10.0...server-v0.11.0
 [0.10.0]: https://github.com/jthy10/TapQueue/compare/server-v0.9.5...server-v0.10.0
