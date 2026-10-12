@@ -15,6 +15,10 @@ server_cert_fingerprint = ""
 # `tapqueue-admin server enrollment-code new`). Only needed until this PC has registered.
 enrollment_code = ""
 
+# Only for clients you build yourself: the public key you sign them with
+# (scripts/new-release-key.sh prints it). Leave empty to install TapQueue's own releases only.
+update_key = ""
+
 # Your TapQueue username. Leave empty to use the name you sign in to the PC with.
 username = ""
 

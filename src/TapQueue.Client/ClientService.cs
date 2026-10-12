@@ -51,7 +51,7 @@ public sealed class ClientService(
             config.ServerUrl, certificate.Subject, ServerCertificatePin.FingerprintOf(certificate), pin.SavedPath);
         using var http = config.CreateHttpClient(pin, TimeSpan.FromMinutes(10));
         var printers = new PrinterSync(installer, logger);
-        var updater = new ClientUpdater(http, logger);
+        var updater = new ClientUpdater(http, logger, ReleaseSignature.TrustedKeys(config.UpdateKey));
 
         var checks = Channel.CreateUnbounded<UpdateCheck.Request>();
         using var stopListening = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);

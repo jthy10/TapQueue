@@ -8,13 +8,17 @@ namespace TapQueue.Client;
 /// <summary>
 /// Installs the client build the server says every PC of this platform should run. Run by the
 /// TapQueue service, which can write to where the client is installed (Program Files, /opt). If
-/// the running program's SHA-256 differs from the server's build, it downloads the build next to
-/// it, verifies it and swaps the files (Windows allows renaming a running exe). An installed Linux
+/// the running program's SHA-256 differs from the server's build, it checks that the build is signed
+/// with a key this PC trusts (<see cref="ReleaseSignature"/>: the server only passes builds on, it
+/// doesn't get to choose what runs here), downloads it next to the running program, verifies it and
+/// swaps the files (Windows allows renaming a running exe). An installed Linux
 /// client instead adds the build next to the others and repoints the launcher (<see cref="LinuxBuilds"/>).
 /// Tray apps notice their program changed and restart themselves; the service restarts itself.
 /// </summary>
-public sealed class ClientUpdater(HttpClient http, ILogger logger)
+/// <param name="trustedKeys">The keys whose signature makes a build installable; TapQueue's release keys if not given.</param>
+public sealed class ClientUpdater(HttpClient http, ILogger logger, IReadOnlyList<string>? trustedKeys = null)
 {
+    private readonly IReadOnlyList<string> _trustedKeys = trustedKeys ?? ReleaseSignature.ReleaseKeys;
     private readonly string _exePath = Environment.ProcessPath!;
     private readonly string? _linuxLauncher = LinuxBuilds.LauncherFor(Environment.ProcessPath!);
     private string? _ownSha256;
@@ -55,6 +59,14 @@ public sealed class ClientUpdater(HttpClient http, ILogger logger)
         {
             LastError = null;
             return UpdateOutcome.UpToDate;
+        }
+
+        if (ReleaseSignature.Refusal("client", build.Version, build.Sha256, build.Signature, _trustedKeys) is { } refusal)
+        {
+            _failedSha256 = build.Sha256;
+            LastError = refusal;
+            logger.LogError("Not installing client {Version}: {Error}", build.Version, refusal);
+            return UpdateOutcome.Failed;
         }
 
         logger.LogInformation("Installing TapQueue client {Version} (running {Current})", build.Version, Shared.TapQueueVersion.Current);

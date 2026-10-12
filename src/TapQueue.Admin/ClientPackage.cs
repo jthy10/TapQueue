@@ -13,8 +13,21 @@ public static class ClientPackage
     /// Copies the client program out of <paramref name="path"/> (a .zip, a .tar.gz, or the bare
     /// program) to <paramref name="destination"/>, and returns the version.txt packaged with it, if any.
     /// </summary>
-    public static async Task<string?> ExtractAsync(string path, string destination)
+    public static async Task<string?> ExtractAsync(string path, string destination) => (await ExtractSignedAsync(path, destination)).Version;
+
+    /// <summary>
+    /// The same, with the base64 of the program's signature: the .sig packaged with it, or for a bare
+    /// program the .sig file next to it. Null if there's none.
+    /// </summary>
+    public static async Task<(string? Version, string? Signature)> ExtractSignedAsync(string path, string destination)
     {
+        static async Task<string?> SignatureAsync(Stream from)
+        {
+            using var bytes = new MemoryStream();
+            await from.CopyToAsync(bytes);
+            return bytes.Length is > 0 and <= 384 ? Convert.ToBase64String(bytes.ToArray()) : null;
+        }
+
         if (path.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
         {
             using var zip = ZipFile.OpenRead(path);
@@ -23,15 +36,22 @@ public static class ClientPackage
             await using (var from = program.Open())
             await using (var to = File.Create(destination))
                 await from.CopyToAsync(to);
+            string? zipSignature = null;
+            if (zip.Entries.FirstOrDefault(e => e.Name == program.Name + ".sig") is { } signatureEntry)
+            {
+                await using var from = signatureEntry.Open();
+                zipSignature = await SignatureAsync(from);
+            }
             if (zip.Entries.FirstOrDefault(e => e.Name == "version.txt") is not { } versionEntry)
-                return null;
+                return (null, zipSignature);
             using var reader = new StreamReader(versionEntry.Open());
-            return (await reader.ReadToEndAsync()).Trim();
+            return ((await reader.ReadToEndAsync()).Trim(), zipSignature);
         }
 
         if (path.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".tgz", StringComparison.OrdinalIgnoreCase))
         {
             string? version = null;
+            string? signature = null;
             var found = false;
             await using var gzip = new GZipStream(File.OpenRead(path), CompressionMode.Decompress);
             await using var tar = new TarReader(gzip);
@@ -51,12 +71,19 @@ public static class ClientPackage
                     using var reader = new StreamReader(entry.DataStream);
                     version = (await reader.ReadToEndAsync()).Trim();
                 }
+                else if (ProgramNames.Any(p => name == p + ".sig"))
+                {
+                    signature = await SignatureAsync(entry.DataStream);
+                }
             }
-            return found ? version : throw new InvalidDataException($"{path} has no TapQueueClient.exe or tapqueue-client in it.");
+            return found ? (version, signature) : throw new InvalidDataException($"{path} has no TapQueueClient.exe or tapqueue-client in it.");
         }
 
         File.Copy(path, destination, overwrite: true);
-        return null;
+        if (!File.Exists(path + ".sig"))
+            return (null, null);
+        await using var bare = File.OpenRead(path + ".sig");
+        return (null, await SignatureAsync(bare));
     }
 
     /// <summary>The platform a program is built for, from its first bytes, or null if it's neither.</summary>

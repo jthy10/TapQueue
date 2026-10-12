@@ -29,6 +29,13 @@ public sealed class ClientConfig
     /// </summary>
     public string EnrollmentCode { get; set; } = "";
 
+    /// <summary>
+    /// For clients built somewhere other than TapQueue's own releases: the public key their builder
+    /// signs them with (<see cref="ReleaseSignature"/>), so this PC installs those from the server too.
+    /// Empty: only TapQueue's releases.
+    /// </summary>
+    public string UpdateKey { get; set; } = "";
+
     /// <summary>Let the TapQueue service add the server's print queues to this PC as printers.</summary>
     public bool InstallPrinters { get; set; } = true;
 
