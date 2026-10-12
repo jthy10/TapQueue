@@ -478,3 +478,7 @@ dialog.wide { width: min(720px, calc(100vw - 32px)); }
 .supply-level { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
 .supply-level.low { color: var(--warn); font-weight: 600; }
 .plain-list { margin: 0; padding-left: 18px; }
+
+/* Reports: each row's pages against the biggest row's. */
+.report-bar { min-width: 120px; height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+.report-bar > span { display: block; height: 100%; border-radius: 4px; background: var(--accent); }

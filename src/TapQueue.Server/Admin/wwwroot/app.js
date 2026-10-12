@@ -12,6 +12,7 @@ const nav = [
     { id: "overview", label: "Overview", icon: "overview" },
     { id: "jobs", label: "Jobs", icon: "jobs", area: "jobs" },
     { id: "activity", label: "Activity", icon: "activity" },
+    { id: "reports", label: "Reports", icon: "reports", area: "jobs" },
   ] },
   { group: "People", items: [
     { id: "users", label: "Users", icon: "users", area: "people" },
