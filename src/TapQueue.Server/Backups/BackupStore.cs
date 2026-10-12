@@ -64,7 +64,7 @@ public sealed partial class BackupStore
     /// <summary>Why backups couldn't be copied to <see cref="CopyTo"/> the last time it was tried; null once it works.</summary>
     public string? CopyError { get; private set; }
 
-    [GeneratedRegex(@"^tapqueue-(\d{8}T\d{6}Z)-(daily|manual|upgrade)\.tar\.gz(\.enc)?$")]
+    [GeneratedRegex(@"^tapqueue-(\d{8}T\d{6}Z)-(daily|manual|upgrade|downgrade)\.tar\.gz(\.enc)?$")]
     private static partial Regex NamePattern();
 
     /// <summary>Newest first.</summary>

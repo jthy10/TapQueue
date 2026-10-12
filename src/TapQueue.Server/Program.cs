@@ -11,6 +11,13 @@ if (args.Contains("--version"))
     return 0;
 }
 
+// For update-server.sh, which asks an older release's program what schema it needs before going back to it.
+if (args.Contains("--schema-version"))
+{
+    Console.WriteLine(Database.LatestSchemaVersion);
+    return 0;
+}
+
 var configPath = ConfigPath(args);
 ServerConfig config;
 try
@@ -43,6 +50,16 @@ if (Array.IndexOf(args, "--restore") is >= 0 and var restoreAt)
         passphrase = File.ReadAllText(args[passphraseAt + 1]).Trim();
     }
     return Restore(config, args[restoreAt + 1], args.Contains("--as-root"), passphrase);
+}
+
+if (Array.IndexOf(args, "--downgrade-schema") is >= 0 and var downgradeAt)
+{
+    if (downgradeAt + 1 >= args.Length || !int.TryParse(args[downgradeAt + 1], out var schema))
+    {
+        Console.Error.WriteLine("tapqueue-server: --downgrade-schema needs the schema number to go back to.");
+        return 1;
+    }
+    return DowngradeSchema(config, schema);
 }
 
 WebApplication app;
@@ -119,6 +136,37 @@ static int Restore(ServerConfig config, string file, bool asRoot, string? passph
         return 0;
     }
     catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException)
+    {
+        Console.Error.WriteLine($"tapqueue-server: {ex.Message}");
+        return 1;
+    }
+}
+
+// Run by update-server.sh, as the server's user and with the server stopped, just before it installs
+// an older release: the older program can't read a newer database, so this one steps it back first.
+static int DowngradeSchema(ServerConfig config, int schema)
+{
+    try
+    {
+        var path = Path.Combine(config.Server.DataDir, "tapqueue.db");
+        if (!File.Exists(path))
+        {
+            Console.Error.WriteLine($"tapqueue-server: there's no database at {path}.");
+            return 1;
+        }
+        var database = new Database(path);
+        if (database.SchemaVersion() == schema)
+        {
+            Console.WriteLine($"The database is at schema {schema} already.");
+            return 0;
+        }
+        // What the newer version added is lost going back, so it's kept here.
+        var backup = new BackupStore(config).Create(TapQueue.Shared.Api.BackupKind.Downgrade);
+        var from = database.DowngradeTo(schema);
+        Console.WriteLine($"Took the database from schema {from} back to {schema}. As it was before: {backup.Name}");
+        return 0;
+    }
+    catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException or Microsoft.Data.Sqlite.SqliteException)
     {
         Console.Error.WriteLine($"tapqueue-server: {ex.Message}");
         return 1;

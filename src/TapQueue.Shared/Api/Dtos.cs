@@ -91,6 +91,8 @@ public static class BackupKind
     public const string Manual = "manual";
     /// <summary>By a newer server, before it changed the database for itself.</summary>
     public const string Upgrade = "upgrade";
+    /// <summary>Before the database was stepped back for an older server. Kept until an admin deletes it.</summary>
+    public const string Downgrade = "downgrade";
 }
 
 /// <summary>One backup file in data_dir/backups.</summary>
@@ -215,6 +217,21 @@ public sealed record ScheduledUpdateDto(string Version, DateTimeOffset At, strin
 
 /// <param name="State">running, done or failed.</param>
 public sealed record UpdateRunDto(string State, string Version, DateTimeOffset? At, string Message);
+
+/// <summary>The older releases this server, with its PCs and stations, can go back to.</summary>
+/// <param name="Oldest">The first release that can be gone back to; nothing before it is ever listed.</param>
+/// <param name="Versions">Newest first; empty before the first check, or when there's nothing older to go to.</param>
+public sealed record ServerDowngradeDto(
+    string Current,
+    string Oldest,
+    IReadOnlyList<ServerReleaseDto> Versions,
+    DateTimeOffset? CheckedAt,
+    string? CheckError,
+    bool CanApply,
+    string? CannotApplyReason);
+
+/// <summary>Take the server, and the clients and stations it hands out, back to <see cref="Version"/>.</summary>
+public sealed record DowngradeRequest(string Version);
 
 /// <summary>Upgrade to <see cref="Version"/> now, or at <see cref="At"/> if it's given.</summary>
 public sealed record ApplyServerUpdateRequest(string Version, DateTimeOffset? At = null);

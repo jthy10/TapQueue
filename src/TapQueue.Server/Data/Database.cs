@@ -466,6 +466,54 @@ public sealed class Database
         """,
     ];
 
+    /// <summary>
+    /// The schema of server 0.17.0, the oldest version a server can be taken back to
+    /// (<see cref="Updates.ServerDowngrade"/>). Migrations up to here are never undone.
+    /// </summary>
+    public const int FloorSchema = 20;
+
+    /// <summary>
+    /// How to undo each migration after <see cref="FloorSchema"/>, in the same order: the first entry
+    /// takes schema 21 back to 20, and so on. Every new migration needs its entry here, or the server
+    /// can't be downgraded past it (a test checks there's one for each). Undoing loses what the
+    /// migration added, so a backup is made first.
+    /// </summary>
+    private static readonly string[] Downgrades =
+    [
+    ];
+
+    /// <summary>
+    /// Takes the database back to <paramref name="schema"/>, for an older server that's about to be
+    /// installed over this one. Run with the server stopped. Returns the schema it was at.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">It can't go there; the message says why.</exception>
+    public int DowngradeTo(int schema) => DowngradeTo(schema, Downgrades);
+
+    internal int DowngradeTo(int schema, IReadOnlyList<string> downgrades)
+    {
+        using var db = Open();
+        var from = SchemaVersion(db);
+        if (schema < FloorSchema)
+            throw new InvalidOperationException($"Schema {schema} is from before TapQueue server 0.17.0, the oldest version a server can go back to.");
+        if (schema > from)
+            throw new InvalidOperationException($"The database is at schema {from}; schema {schema} is newer, not older.");
+        if (from - FloorSchema > downgrades.Count)
+            throw new InvalidOperationException($"This tapqueue-server doesn't know how to undo schema {from}.");
+        for (var at = from; at > schema; at--)
+        {
+            using var transaction = db.BeginTransaction();
+            using var cmd = db.CreateCommand();
+            cmd.Transaction = transaction;
+            cmd.CommandText = downgrades[at - FloorSchema - 1] + $"\nPRAGMA user_version = {at - 1};";
+            cmd.ExecuteNonQuery();
+            transaction.Commit();
+        }
+        return from;
+    }
+
+    /// <summary>Whether every migration after <see cref="FloorSchema"/> can be undone.</summary>
+    internal static bool EveryMigrationCanBeUndone => Downgrades.Length == Migrations.Length - FloorSchema;
+
     public void Migrate()
     {
         using var db = Open();
