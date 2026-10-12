@@ -14,7 +14,8 @@ public sealed record PrinterStatus(
     IReadOnlyList<string> DocumentFormats,
     DateTimeOffset CheckedAt,
     PrinterHealthReport? Health = null,
-    DateTimeOffset? HealthSince = null)
+    DateTimeOffset? HealthSince = null,
+    PrinterCapabilities? Capabilities = null)
 {
     public string Level => Health?.Level ?? PrinterHealthLevel.Offline;
 
@@ -36,6 +37,9 @@ public sealed class PrinterRegistry(PrinterStore store, EventLog events, ILogger
     public PrinterRecord? Find(string id) => store.Get(id);
 
     public PrinterStatus? StatusOf(string id) => _status.GetValueOrDefault(id);
+
+    /// <summary>What <paramref name="queue"/> offers PCs, from what the printers have said they can do.</summary>
+    public QueueCapabilities CapabilitiesFor(QueueRecord queue) => QueueCapabilities.For(queue, All.Select(p => StatusOf(p.Id)));
 
     /// <summary>Drops what we knew about a printer that was removed or pointed somewhere else.</summary>
     public void Forget(string id) => _status.TryRemove(id, out _);
@@ -64,7 +68,8 @@ public sealed class PrinterRegistry(PrinterStore store, EventLog events, ILogger
             IppValue.Keyword("printer-make-and-model"),
             IppValue.Keyword("printer-state-message"),
             IppValue.Keyword("document-format-supported"));
-        request.Group(IppTag.OperationAttributes).Find("requested-attributes")!.Values.AddRange(PrinterHealth.Attributes.Select(IppValue.Keyword));
+        request.Group(IppTag.OperationAttributes).Find("requested-attributes")!.Values.AddRange(
+            PrinterHealth.Attributes.Concat(PrinterCapabilities.Attributes).Select(IppValue.Keyword));
 
         var previous = StatusOf(printer.Id);
         PrinterStatus status;
@@ -85,11 +90,14 @@ public sealed class PrinterRegistry(PrinterStore store, EventLog events, ILogger
                 StateMessage: message,
                 DocumentFormats: formats,
                 CheckedAt: DateTimeOffset.UtcNow,
-                Health: health);
+                Health: health,
+                Capabilities: PrinterCapabilities.Read(response));
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
-            status = new PrinterStatus(false, previous?.MakeAndModel, ex.Message, previous?.DocumentFormats ?? [], DateTimeOffset.UtcNow);
+            // What it could do when it last answered still goes for the queues' print dialogs.
+            status = new PrinterStatus(false, previous?.MakeAndModel, ex.Message, previous?.DocumentFormats ?? [], DateTimeOffset.UtcNow,
+                Capabilities: previous?.Capabilities);
         }
 
         // Probes can overlap (the monitor, a release, "Check now"), so each change is reported once.

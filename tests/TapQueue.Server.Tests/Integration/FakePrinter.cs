@@ -36,6 +36,12 @@ public sealed class FakePrinter : IAsyncDisposable
     /// <summary>The black toner's level in percent (its low level is 10).</summary>
     public int TonerLevel { get; set; } = 80;
 
+    /// <summary>What the printer says it can do; null leaves the attribute out, as a printer that doesn't say.</summary>
+    public string[]? Media { get; set; }
+    public bool? Color { get; set; }
+    public string[]? Sides { get; set; }
+    public string[] Formats { get; set; } = ["application/pdf", "application/octet-stream"];
+
     /// <summary>The state jobs are in once accepted: by default they've printed by the time anyone asks.</summary>
     public int NewJobState { get; set; } = IppJobState.Completed;
 
@@ -91,7 +97,13 @@ public sealed class FakePrinter : IAsyncDisposable
                 .Add("marker-levels", IppValue.Integer(TonerLevel))
                 .Add("marker-low-levels", IppValue.Integer(10))
                 .Add("marker-high-levels", IppValue.Integer(100))
-                .Add("document-format-supported", IppValue.MimeType("application/pdf"), IppValue.MimeType("application/octet-stream"));
+                .Add("document-format-supported", Formats.Select(IppValue.MimeType));
+            if (Media is not null)
+                response.Group(IppTag.PrinterAttributes).Add("media-supported", Media.Select(IppValue.Keyword));
+            if (Color is { } color)
+                response.Group(IppTag.PrinterAttributes).Add("color-supported", IppValue.Boolean(color));
+            if (Sides is not null)
+                response.Group(IppTag.PrinterAttributes).Add("sides-supported", Sides.Select(IppValue.Keyword));
         }
         else if (request.Code == IppOperation.PrintJob && BusyCount > 0)
         {
