@@ -31,6 +31,7 @@ A sidebar groups pages by what you're doing; each page is a list with a detail d
 | **Operate** | Overview | Health at a glance: held jobs, printers, stations and clients online, things that need attention, recent activity. |
 | | Jobs | Held jobs and history. Filter by user, queue, status. Release to a printer, cancel. |
 | | Activity | The audit trail: who changed what, badge taps, releases, sign-ins. |
+| | Reports | Pages printed over a period, by person, group, printer, queue, day or month; CSV download. See [reports.md](reports.md). |
 | **People** | Users | Create, edit, enable/disable, reset token. A user's detail shows their cards, groups, jobs, sessions and quota. |
 | | Groups | Groups of users, which queues and printers they may use, and their quotas. |
 | | Cards | Every badge. Enroll by tapping at a station, reassign, label, remove. Unknown taps. |

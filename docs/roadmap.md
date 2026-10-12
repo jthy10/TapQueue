@@ -30,8 +30,9 @@ checklist; [admin-ui.md](admin-ui.md#roadmap) has the admin console's own phases
 
 7. **Follow-me printing.** One queue, release at any station; the job goes to whichever
    printer you tap at.
-8. **Reports.** Pages by user, group, printer and period, with CSV export and scheduled email.
-   Page counts already exist for quotas.
+8. **Reports.** *(Done in 0.12.0, see [reports.md](reports.md).)* Pages by person, group,
+   printer, queue, day and month over any period, in the console and `tapqueue-admin report`, with
+   CSV export. Scheduled email is still to do, with notifications (item 12).
 9. **Cost accounting.** Per-page prices (mono/colour, simplex/duplex), balances or charge-back
    to departments.
 10. **Self-service badge enrollment.** Tap an unknown badge, confirm it from the tray app.

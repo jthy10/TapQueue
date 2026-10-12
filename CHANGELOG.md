@@ -11,6 +11,17 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+### Added
+- Reports: pages printed over any period, added up by person, group, printer, queue, day or
+  month. **Reports** in the console (for anyone with a role in Jobs) with a CSV download,
+  `tapqueue-admin report [--by ...] [--from ...] [--to ...] [--csv]`, and
+  `GET /api/v1/admin/reports/usage`. They count what page limits count: released jobs, pages times
+  copies. See [docs/reports.md](docs/reports.md).
+
+### Changed
+- The database goes to schema 16 (an index for reports). The server backs it up first, as it
+  does before every schema change since 0.11.
+
 ## [0.11.0] - 2026-10-11
 
 ### Added

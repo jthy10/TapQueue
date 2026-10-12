@@ -34,7 +34,7 @@ from server.toml.
 
 | Area | Pages | Operators may also |
 |------|-------|--------------------|
-| Jobs | Jobs | release and cancel jobs |
+| Jobs | Jobs, Reports | release and cancel jobs |
 | People | Users, Groups, Cards, page limits | link, edit and remove cards, and see cards nobody owns yet |
 | Active Directory | Active Directory | run a sync |
 | Fleet | Printers, Queues, Stations, Workstations | restart stations, sign people out of PCs, update or forget a PC |

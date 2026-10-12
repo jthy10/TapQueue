@@ -23,6 +23,9 @@ tapqueue-admin printers edit <id> [--uri] [--name] [--location] [--tls-skip-veri
 tapqueue-admin printers remove <id>
 
 tapqueue-admin jobs [--status held]            List recent jobs
+tapqueue-admin report [--by user|group|printer|queue|day|month] [--from 2026-10-01] [--to 2026-10-31] [--csv]
+                                               Pages printed; this month by person unless told otherwise
+                                               (see reports.md)
 tapqueue-admin release <user> <printer> [ids]  Release a user's held jobs to a printer
 
 tapqueue-admin badges [username]               List badges
