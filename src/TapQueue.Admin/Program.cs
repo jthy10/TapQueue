@@ -888,7 +888,7 @@ async Task<int> ShowServer()
     Console.WriteLine(server.TrustedProxies is { Count: > 0 } proxies
         ? $"trusted proxies  {string.Join(", ", proxies)} (server.toml; X-Forwarded-For is believed from these)"
         : "trusted proxies  none   (server.trusted_proxies in server.toml, if the server is behind a reverse proxy)");
-    Console.WriteLine($"auth.mode        {server.AuthMode,-6} (server.toml; restart to change)");
+    Console.WriteLine($"auth.mode        {server.AuthMode,-6} (server.toml, or Startup settings in the console; restart to change)");
     Console.WriteLine(server.EnrollmentCodeRequired
         ? "new PCs          need the enrollment code (`server enrollment-code new` makes another, `off` stops asking)"
         : "new PCs          any PC that can reach the server can register (`server enrollment-code new` to ask for a code)");

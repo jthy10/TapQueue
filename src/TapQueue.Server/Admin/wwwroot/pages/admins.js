@@ -45,7 +45,7 @@ export async function render(root, ctx) {
 
     const dev = ctx.session.authMode === "dev";
     warning.replaceChildren(data.fullAdmins > 0 ? "" : h("div", { class: `callout ${dev ? "info" : "bad"}` }, dev
-      ? "Nobody can sign in as a full admin yet. Before you set auth.mode = \"token\", make someone an admin in every area and give them a way to sign in (a password, or an Active Directory account). Otherwise only admin.token can manage the server."
+      ? "Nobody can sign in as a full admin yet. Before you switch sign-in to tokens (Server, Startup settings), make someone an admin in every area and give them a way to sign in (a password, or an Active Directory account). Otherwise only admin.token can manage the server."
       : "Nobody can sign in as a full admin. Make someone an admin in every area, and check they can sign in."));
 
     people.replaceChildren(table({

@@ -1,5 +1,5 @@
 import { api, enc } from "../api.js";
-import { h, pageHead, panel, button, pill, props, time, dateTime, duration, plural, bytes, table, empty, field, input, select, formDialog, confirm, attempt, toast } from "../ui.js";
+import { h, pageHead, panel, button, pill, props, time, dateTime, duration, plural, bytes, table, empty, field, checkField, input, checkbox, select, formDialog, confirm, attempt, toast } from "../ui.js";
 
 const MAX_LINES = 2000;
 
@@ -11,9 +11,12 @@ export async function render(root, ctx) {
   let d = u && await api.maybe("server/downgrade", null);
   // Null for everyone but full admins: a backup holds everything.
   let b = await api.maybe("server/backups", null);
+  // The server.toml settings a restart applies. Null for everyone but full admins: sign-in mode and the backup passphrase are among them.
+  let st = await api.maybe("server/startup", null);
   if (!ctx.current) return;
 
   const status = h("div");
+  const startup = h("div");
   const backups = h("div");
   const settings = h("div");
   const updates = h("div");
@@ -26,6 +29,12 @@ export async function render(root, ctx) {
   h("div", { class: "grid two" },
     panel({ title: "Status", body: status }),
     panel({ title: "Settings", actions: button("Edit", { small: true, onclick: edit }), body: settings })),
+  st && panel({
+    title: "Startup settings",
+    description: "What the server reads when it starts: sign-in, HTTPS, discovery, reverse proxies and where backups go. A change here is used from the next restart, in place of server.toml's.",
+    actions: button("Edit", { small: true, onclick: editStartup }),
+    body: startup,
+  }),
   u && panel({ title: "Updates", description: "New TapQueue server releases on GitHub.", actions: checkButton, body: updates }),
   d && panel({ title: "Downgrade", description: "Take the server, and every PC and station, back to an older release when an update turned out badly.",
     actions: olderButton, body: downgrades }),
@@ -73,8 +82,8 @@ export async function render(root, ctx) {
       ["Wrong passwords", [`${s.signInAttempts} tries, then ${plural(s.signInLockoutMinutes, "minute")} locked`,
         h("span", { class: "sub" }, "Counted for each name from each address, so guessing from one machine doesn't lock the person out everywhere.")]],
       ["Reverse proxies", s.trustedProxies?.length
-        ? [h("code", null, s.trustedProxies.join(", ")), h("span", { class: "sub" }, "Callers' addresses are taken from X-Forwarded-For when a request comes from these. server.trusted_proxies in server.toml.")]
-        : ["None", h("span", { class: "sub" }, "If the server is behind one, set server.trusted_proxies in server.toml, or everyone shares the proxy's address.")]],
+        ? [h("code", null, s.trustedProxies.join(", ")), h("span", { class: "sub" }, "Callers' addresses are taken from X-Forwarded-For when a request comes from these.")]
+        : ["None", h("span", { class: "sub" }, "If the server is behind one, name it under Startup settings, or everyone shares the proxy's address.")]],
       ["Jobs without a PC key", [s.addressMatching === "off" ? "Refused" : "Matched by address",
         h("span", { class: "sub" }, s.addressMatching === "off"
           ? "Only jobs from PCs whose TapQueue client has a key (0.8 on) go to someone."
@@ -87,9 +96,130 @@ export async function render(root, ctx) {
           button(s.enrollmentCodeRequired ? "New code…" : "Require a code…", { small: true, onclick: newEnrollmentCode }),
           s.enrollmentCodeRequired && button("Stop asking", { small: true, kind: "ghost danger", onclick: stopEnrollmentCode }))]],
       ["Client sign-in", s.authMode === "dev"
-        ? [pill("Dev", "bad"), h("span", { class: "sub" }, "Anyone can sign in as any username, and this console is open. Set auth.mode in server.toml and restart to change it.")]
+        ? [pill("Dev", "bad"), h("span", { class: "sub" }, "Anyone can sign in as any username, and this console is open. Change it under Startup settings.")]
         : [pill("Tokens", "ok"), h("span", { class: "sub" }, "Clients need the token from Users.")]],
     ]));
+  }
+
+  function drawStartup() {
+    const n = st.next, r = st.running;
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    // Where a value comes from, and whether the server is using it yet.
+    const notes = (...keys) => [
+      keys.some((k) => !same(n[k], r[k])) && pill("After a restart", "warn"),
+      h("span", { class: "sub" }, keys.some((k) => st.setHere.includes(k === "backupEncrypted" ? "backupPassphrase" : k)) ? "Set here." : "From server.toml."),
+    ];
+    const tlsOn = n.tlsListen !== "";
+    startup.replaceChildren(...[
+      st.restartNeeded ? h("div", { class: "callout", style: "display:flex;align-items:center;gap:12px" },
+        h("span", { style: "flex:1" }, st.canRestart
+          ? "Saved, but not in use yet: the server reads these when it starts."
+          : "Saved, but not in use yet: restart the server where you started it."),
+        st.canRestart && button("Restart now", { small: true, iconName: "refresh", onclick: restart })) : null,
+      props([
+        ["Client sign-in", [n.authMode === "dev" ? pill("Dev", "bad") : pill("Tokens", "ok"),
+          h("span", { class: "sub" }, n.authMode === "dev"
+            ? "Anyone can sign in as any username, and this console is open to anyone who can reach it. For setting up and testing."
+            : "Clients need the token from Users, and this console asks for a sign-in."),
+          ...notes("authMode")]],
+        ["HTTPS and IPPS", [tlsOn ? h("code", null, n.tlsListen) : pill("Off", "bad"),
+          h("span", { class: "sub" }, !tlsOn ? "Print jobs and tokens cross the network unencrypted."
+            : n.tlsRequire ? "Plain HTTP is refused from other machines."
+            : "Plain HTTP still answers too. Refuse it once every PC and station uses https://."),
+          ...notes("tlsListen", "tlsRequire")]],
+        tlsOn && ["Certificate", [n.tlsCertFile ? h("code", null, n.tlsCertFile) : "Self-signed, made by this server",
+          h("span", { class: "sub" }, n.tlsCertFile ? `Private key: ${n.tlsKeyFile}`
+            : n.tlsNames.length ? `Also for the names ${n.tlsNames.join(", ")}.` : "For this machine's own name and addresses."),
+          ...notes("tlsCertFile", "tlsKeyFile", "tlsNames")]],
+        ["Finding the server", [n.discoveryPort ? `Answers on UDP port ${n.discoveryPort}` : "Off",
+          h("span", { class: "sub" }, n.discoveryPort ? "The client installers find this server by themselves." : "People type the server's address when they install a client."),
+          ...notes("discoveryPort")]],
+        ["Reverse proxies", [n.trustedProxies.length ? h("code", null, n.trustedProxies.join(", ")) : "None",
+          h("span", { class: "sub" }, n.trustedProxies.length
+            ? "Callers' addresses are taken from X-Forwarded-For when a request comes from these."
+            : "Every caller's address is the one it connects from."),
+          ...notes("trustedProxies")]],
+        ["Backups copied to", [n.backupCopyTo ? h("code", null, n.backupCopyTo) : "Nowhere else", ...notes("backupCopyTo")]],
+        ["Backup encryption", [n.backupEncrypted ? pill("With a passphrase", "ok") : pill("Not encrypted", "warn"), ...notes("backupEncrypted")]],
+        ["Only in server.toml", [h("span", null, "Plain HTTP on ", h("code", null, st.listen), ", data in ", h("code", null, st.dataDir), ", and the admin token."),
+          h("span", { class: "sub" }, "tapqueue-admin and the install scripts find the server by these, so they're changed in the file.")]],
+      ]),
+      st.setHere.length ? h("div", { style: "margin-top:12px" },
+        button("Go back to server.toml's", { small: true, kind: "ghost", onclick: useFile })) : null,
+    ].filter(Boolean));
+  }
+
+  function editStartup() {
+    const n = st.next;
+    const list = (text) => text.split(/[\s,]+/).filter(Boolean);
+    const encryption = select("encryption", [
+      ["keep", n.backupEncrypted ? "Keep the passphrase there is" : "Not encrypted"],
+      ["new", n.backupEncrypted ? "Change the passphrase" : "Encrypt with a passphrase"],
+      ...(n.backupEncrypted ? [["off", "Stop encrypting"]] : []),
+    ], "keep");
+    const passphraseField = field("Backup passphrase", input("backupPassphrase", { type: "password", autocomplete: "new-password", minlength: 12 }),
+      "At least 12 characters. Restoring a backup needs it, and it can't be read back here: keep a copy that isn't on this server. Backups made before keep the passphrase they were made with.");
+    passphraseField.hidden = true;
+    encryption.onchange = () => { passphraseField.hidden = encryption.value !== "new"; };
+    formDialog({
+      title: "Startup settings",
+      description: "Saved now, used from the next restart. A value the same as server.toml's follows the file.",
+      wide: true,
+      body: [
+        field("Client sign-in", select("authMode", [
+          ["token", "Tokens: clients need their token, the console needs a sign-in"],
+          ["dev", "Dev: a username is enough, and the console is open"],
+        ], n.authMode),
+          n.authMode === "dev"
+            ? "Before switching to tokens, make someone a full admin under Admins, or nobody can sign in to this console."
+            : "Dev is for setting up and testing: anyone who can reach the server can print as anyone and change anything here."),
+        field("HTTPS and IPPS on", input("tlsListen", { value: n.tlsListen, placeholder: "0.0.0.0:8632" }),
+          "An address and port, like 0.0.0.0:8632 for every address this machine has. Empty turns HTTPS off: PCs and stations set up with https:// stop working."),
+        checkField("Refuse plain HTTP from other machines", checkbox("tlsRequire", n.tlsRequire),
+          "Only once every PC and station uses https://, and you've opened this console over https:// yourself."),
+        field("Certificate file", input("tlsCertFile", { value: n.tlsCertFile, placeholder: "/etc/tapqueue/server.crt" }),
+          "PEM, with any intermediate certificates after the server's. Empty for the self-signed certificate this server makes. The server has to be able to read it."),
+        field("Private key file", input("tlsKeyFile", { value: n.tlsKeyFile, placeholder: "/etc/tapqueue/server.key" })),
+        field("More names for the self-signed certificate", input("tlsNames", { value: n.tlsNames.join(", "), placeholder: "print.example.com, 10.0.0.5" }),
+          "Names or addresses PCs reach this server by, besides this machine's own. A certificate that's already made isn't remade: see docs/tls.md."),
+        field("Answer installers looking for a server on UDP port", input("discoveryPort", { type: "number", min: 0, max: 65535, required: true, value: n.discoveryPort }),
+          "0 for no answer; people then type the server's address."),
+        field("Reverse proxies", input("trustedProxies", { value: n.trustedProxies.join(", "), placeholder: "10.0.0.5, 10.0.1.0/24" }),
+          "Addresses or networks of proxies in front of this server. Only from these is X-Forwarded-For believed. Empty if there's none."),
+        field("Copy every backup to", input("backupCopyTo", { value: n.backupCopyTo, placeholder: "/mnt/nas/tapqueue" }),
+          "A folder on another disk or a mounted share. The service has to be allowed to write there (ReadWritePaths in its systemd unit): see docs/backup.md."),
+        field("Backup encryption", encryption),
+        passphraseField,
+      ],
+      onSubmit: async (v) => {
+        const body = {
+          authMode: v.authMode, tlsListen: v.tlsListen, tlsRequire: v.tlsRequire, tlsCertFile: v.tlsCertFile, tlsKeyFile: v.tlsKeyFile,
+          tlsNames: list(v.tlsNames), discoveryPort: Number(v.discoveryPort), trustedProxies: list(v.trustedProxies), backupCopyTo: v.backupCopyTo,
+        };
+        if (v.encryption === "new") {
+          if (!v.backupPassphrase) throw new Error("Type the passphrase to encrypt backups with.");
+          body.backupPassphrase = v.backupPassphrase;
+        } else if (v.encryption === "off") {
+          body.backupPassphrase = "";
+        }
+        st = await api.patch("server/startup", body);
+        drawStartup();
+        toast(st.restartNeeded ? "Saved. Restart the server to use them." : "Startup settings saved");
+      },
+    });
+  }
+
+  async function useFile() {
+    if (!await confirm({
+      title: "Go back to server.toml's settings?",
+      message: "Everything changed here is forgotten, and from the next restart the server uses what server.toml says.",
+      confirmLabel: "Use server.toml",
+    })) return;
+    const updated = await attempt(() => api.patch("server/startup", { reset: st.setHere }));
+    if (!updated || !ctx.current) return;
+    st = updated;
+    drawStartup();
+    toast(st.restartNeeded ? "Restart the server to use server.toml's settings." : "Using server.toml's settings");
   }
 
   function drawUpdates() {
@@ -136,11 +266,11 @@ export async function render(root, ctx) {
             h("span", { class: "sub" }, b.copyError ? `The last copy failed: ${b.copyError}. Backups made meanwhile follow when it works again.`
               : "Every backup is copied here as it's made, and deleted here when it's deleted above.")]
           : [pill("Nowhere else", "warn"), h("span", { class: "sub" },
-            "If this disk dies, so do the backups. Set backup.copy_to in server.toml to another disk or a mounted share.")]],
+            "If this disk dies, so do the backups. Name a folder on another disk or a mounted share under Startup settings.")]],
         ["Encryption", b.encrypted
-          ? [pill("Encrypted", "ok"), h("span", { class: "sub" }, "With backup.passphrase from server.toml. Restoring needs it: keep a copy that isn't on this server.")]
+          ? [pill("Encrypted", "ok"), h("span", { class: "sub" }, "With the backup passphrase. Restoring needs it: keep a copy that isn't on this server.")]
           : [pill("Not encrypted", "warn"), h("span", { class: "sub" },
-            "A backup holds password hashes, the badge key and this server's private key. Set backup.passphrase in server.toml to encrypt them.")]],
+            "A backup holds password hashes, the badge key and this server's private key. Set a passphrase under Startup settings to encrypt them.")]],
       ]),
       table({
         rows: b.backups,
@@ -431,6 +561,7 @@ export async function render(root, ctx) {
         if (now.startedAt !== before) {
           s = now;
           draw();
+          if (st) { st = await api.maybe("server/startup", st); drawStartup(); }
           toast(`Server is back (${s.version})`);
           return;
         }
@@ -440,6 +571,7 @@ export async function render(root, ctx) {
   }
 
   draw();
+  if (st) drawStartup();
   if (u) drawUpdates();
   if (d) drawDowngrades();
   if (b) drawBackups();
@@ -447,7 +579,8 @@ export async function render(root, ctx) {
     s = await api.get("server");
     if (u) u = await api.get("server/update");
     if (b) b = await api.get("server/backups");
-    if (ctx.current) { draw(); if (u) drawUpdates(); if (b) drawBackups(); }
+    if (st) st = await api.get("server/startup");
+    if (ctx.current) { draw(); if (st) drawStartup(); if (u) drawUpdates(); if (b) drawBackups(); }
   });
 }
 
