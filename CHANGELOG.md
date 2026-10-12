@@ -11,6 +11,8 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-10-12
+
 ### Added
 - **Startup settings in the console.** The settings that could only be changed by editing
   `server.toml` on the server can now be changed by a full admin on the **Server** page: client
@@ -515,7 +517,8 @@ First working version.
   readers. A tap releases the user's held jobs to the station's printer.
 - Badge enrollment by an admin (`badges add --last-tap`).
 
-[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.17.0...HEAD
+[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.18.0...HEAD
+[0.18.0]: https://github.com/jthy10/TapQueue/compare/server-v0.17.0...server-v0.18.0
 [0.17.0]: https://github.com/jthy10/TapQueue/compare/server-v0.16.0...server-v0.17.0
 [0.16.0]: https://github.com/jthy10/TapQueue/compare/server-v0.15.0...server-v0.16.0
 [0.15.0]: https://github.com/jthy10/TapQueue/compare/server-v0.14.0...server-v0.15.0
