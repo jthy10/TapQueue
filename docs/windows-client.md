@@ -25,10 +25,21 @@ desktops, see the [Linux client](linux-client.md).
 4. Print something to it, then tap a badge at a release station, or right-click the tray icon →
    **Release all to** → pick a printer.
 
-If a TapQueue printer goes missing or stops working, choose **Refresh printers** in the tray menu.
-The TapQueue service checks with the server straight away, then removes and adds each TapQueue
-printer again, and the tray app says how many it reinstalled (or what went wrong). Any user of the
-PC may do this; it only ever installs the queues the server lists.
+The tray menu's **View printers and queue…** opens a window with two tabs:
+
+- **Printers**: the queues you print to, and whether this PC has each installed as a printer, and
+  the printers you can pick your pages up at, with where they are and how they're doing.
+- **My print queue**: your jobs that are waiting, and the ones sent to a printer in the last day.
+  Release the waiting ones here, or delete them. You can also delete a job that's already at the
+  printer: with a 0.14 server, TapQueue asks the printer to stop it and gives back the pages that
+  hadn't printed to your page limit, if you have one. A job that has finished printing stays as
+  it is. (Double-clicking the tray icon opens this tab.)
+
+If a TapQueue printer goes missing or stops working, or the tray app is out of sorts, choose
+**Refresh TapQueue** in the tray menu. The TapQueue service checks with the server straight away,
+then removes and adds each TapQueue printer again; the tray app then starts afresh, signs in again
+and says how many printers were reinstalled (or what went wrong). Any user of the PC may do this;
+it only ever installs the queues the server lists.
 
 What goes where:
 

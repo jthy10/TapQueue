@@ -35,9 +35,15 @@ every print dialog. The tray app starts the next time someone signs in to the de
 now, open **TapQueue** from the app menu. Print something to it, then tap a badge at a release
 station, or click the tray icon → **Release all to** → pick a printer.
 
-If a TapQueue printer goes missing or stops working, choose **Refresh printers** in the tray menu:
+The tray menu's **View printers and queue…** opens a window with two tabs, the same as on
+[Windows](windows-client.md): **Printers** lists the queues you print to (and whether CUPS has
+each one) and the printers you can pick up at; **My print queue** lists your waiting jobs and the
+ones sent to a printer in the last day, to release or delete. Deleting one that's already at the
+printer stops it there and gives back the pages that hadn't printed (0.14 servers).
+
+If a TapQueue printer goes missing or stops working, choose **Refresh TapQueue** in the tray menu:
 the service checks with the server straight away, then removes and adds each TapQueue printer in
-CUPS again.
+CUPS again, and the tray app starts afresh and says how it went.
 
 What goes where:
 

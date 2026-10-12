@@ -75,7 +75,7 @@ service adds it there (only it: it's removed again when the server changes certi
 client is uninstalled). It refuses to for a certificate that could vouch for anything else: a CA,
 one with a wildcard, or one that also names hosts outside the server's and the PC's DNS domains.
 A server reached by a bare IP address needs its other names to be in the PC's domain too. If it
-refuses, the tray app's **Refresh printers** says why; use a certificate from your own CA.
+refuses, the tray app's **Refresh TapQueue** says why; use a certificate from your own CA.
 
 **Linux printing.** CUPS trusts a printer's certificate the first time it connects, the same way.
 

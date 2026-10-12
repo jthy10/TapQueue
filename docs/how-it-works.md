@@ -120,7 +120,7 @@ refused.
 ### Moving over
 
 Nothing to do but update. A PC's service gets its key at its first check-in on client 0.8 with a
-0.8 server, re-adds its printers with the print key (once, like **Refresh printers**), and tray
+0.8 server, re-adds its printers with the print key (once, like **Refresh TapQueue**), and tray
 apps are vouched for at their next sign-in or heartbeat. Jobs already held keep their owner.
 
 - A PC that was **reinstalled** loses its key, and its service is then turned away ("already has a

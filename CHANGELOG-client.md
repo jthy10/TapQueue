@@ -10,6 +10,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Added
+- **View printers and queue…** in the tray menu (Windows and Linux), in place of **Held jobs…**.
+  It opens a window with two tabs. **Printers** lists the queues you print to, with whether this
+  PC has each one installed, and the printers you can pick up at, with their location, status and
+  model. **My print queue** lists your waiting jobs and the ones sent to a printer in the last
+  day, with their pages, and is where you release or delete them.
+- Deleting a job that's already at the printer. With a 0.14 server, TapQueue asks the printer to
+  stop it and gives back the pages that hadn't printed to your page limit, and tells you what
+  happened. Older servers still only delete waiting jobs, and the window says so.
+
+### Changed
+- **Refresh printers** in the tray menu is now **Refresh TapQueue**: it reinstalls the PC's
+  TapQueue printers as before, then starts the tray app afresh, so it signs in again and picks up
+  anything that changed on the server.
+
 ## [0.9.7] - 2026-10-11
 
 ### Fixed
