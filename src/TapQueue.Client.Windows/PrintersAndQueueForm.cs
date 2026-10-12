@@ -39,21 +39,21 @@ public sealed class PrintersAndQueueForm : Form
         Text = "TapQueue — printers and print queue";
         Icon = TrayIcon.Create(connected: true);
         StartPosition = FormStartPosition.CenterScreen;
-        Size = new Size(820, 460);
+        Size = new Size(900, 480);
         MinimumSize = new Size(600, 320);
 
         _printerList.Columns.Add("Name", 220);
-        _printerList.Columns.Add("Description or location", 240);
-        _printerList.Columns.Add("Status", 190);
-        _printerList.Columns.Add("Model", 130);
+        _printerList.Columns.Add("Description or location", 230);
+        _printerList.Columns.Add("Status", 240);
+        _printerList.Columns.Add("Model", 170);
         _printerList.Groups.AddRange([_queueGroup, _printerGroup]);
         _printerList.MultiSelect = false;
         var printersBar = Bar(_refresh, _printersStatus);
         _printersTab.Controls.Add(_printerList);
         _printersTab.Controls.Add(printersBar);
 
-        _jobList.Columns.Add("Document", 270);
-        _jobList.Columns.Add("Status", 230);
+        _jobList.Columns.Add("Document", 260);
+        _jobList.Columns.Add("Status", 300);
         _jobList.Columns.Add("Pages", 60, HorizontalAlignment.Right);
         _jobList.Columns.Add("Submitted", 130);
         _jobList.Columns.Add("Size", 70, HorizontalAlignment.Right);

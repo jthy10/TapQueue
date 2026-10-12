@@ -12,14 +12,15 @@ namespace TapQueue.Client.Linux;
 
 /// <summary>
 /// The tray app, one per signed-in desktop user: keeps a session open with the server (which is
-/// how the server knows whose print jobs come from this PC) and shows held jobs. Printers and
+/// how the server knows whose print jobs come from this PC) and shows their printers and jobs. Printers and
 /// updates are handled for the whole PC by the TapQueue service (<see cref="LinuxService"/>).
 /// The tray icon needs a desktop that shows StatusNotifierItem/AppIndicator icons (Ubuntu's
 /// GNOME does out of the box, as do KDE and most others).
 /// </summary>
 public sealed class TrayApp : Application
 {
-    public sealed record Options(ClientConfig Config, string[] Args, string? UpdatedFrom);
+    /// <param name="Start">The command line, and what the tray app this one replaced had to say.</param>
+    public sealed record Options(ClientConfig Config, RestartArgs Start);
 
     /// <summary>Set by <see cref="Program"/> before Avalonia creates the app.</summary>
     public static Options Start { get; set; } = null!;
@@ -36,20 +37,32 @@ public sealed class TrayApp : Application
     private readonly DateTime _exeWrittenAt = File.GetLastWriteTimeUtc(Environment.ProcessPath!);
     private readonly string? _launcher = LinuxBuilds.LauncherFor(Environment.ProcessPath!);
 
+    private List<JobDto> _jobs = [];
     private List<JobDto> _heldJobs = [];
+    private List<PrinterDto>? _printers;
+    private List<QueueDto>? _queues;
     private HashSet<long>? _knownJobIds;
     private bool _connected;
     private bool _signedOut;
     private bool _needsSignIn;
     private bool _polling;
     private bool _checkingForUpdates;
-    private bool _refreshingPrinters;
+    private bool _refreshing;
     private string? _lastError;
-    private JobsWindow? _jobsWindow;
+    private PrintersAndQueueWindow? _window;
     private SignInWindow? _signInWindow;
 
     public TapQueueApi Api => _api;
-    public IReadOnlyList<PrinterDto> Printers => _api.Session?.Printers ?? [];
+    public bool Connected => _connected;
+
+    /// <summary>The printers this person can pick up at, as of the last look (<see cref="RefreshAsync"/>) or sign-in.</summary>
+    public IReadOnlyList<PrinterDto> Printers => !_connected ? [] : _printers ?? _api.Session?.Printers ?? [];
+
+    /// <summary>The queues this person can print to, likewise.</summary>
+    public IReadOnlyList<QueueDto> Queues => !_connected ? [] : _queues ?? _api.Session?.Queues ?? [];
+
+    /// <summary>The jobs "My print queue" lists (<see cref="PrintQueue.Visible"/>).</summary>
+    public IReadOnlyList<JobDto> Jobs => _jobs;
     public IReadOnlyList<JobDto> HeldJobs => _heldJobs;
     public WindowIcon AppIcon => _connectedIcon;
 
@@ -75,7 +88,7 @@ public sealed class TrayApp : Application
         _tray.Clicked += (_, _) =>
         {
             if (_needsSignIn) ShowSignInWindow();
-            else ShowJobsWindow();
+            else ShowWindow(queue: true);
         };
         TrayIcon.SetIcons(this, [_tray]);
 
@@ -84,8 +97,10 @@ public sealed class TrayApp : Application
         _retryTimer.Tick += async (_, _) => await ConnectAsync();
 
         BuildMenu();
-        if (Start.UpdatedFrom is not null)
-            Notify("TapQueue updated", $"Now running {TapQueueVersion.Current} (was {Start.UpdatedFrom}).");
+        if (Start.Start.UpdatedFrom is { } updatedFrom)
+            Notify("TapQueue updated", $"Now running {TapQueueVersion.Current} (was {updatedFrom}).");
+        if (Start.Start.Refreshed is { } refreshed)
+            Notify("TapQueue refreshed", refreshed, urgent: Start.Start.RefreshFailed);
         _ = ConnectAsync();
         base.OnFrameworkInitializationCompleted();
     }
@@ -118,6 +133,7 @@ public sealed class TrayApp : Application
     {
         _needsSignIn = false;
         _knownJobIds = null;
+        (_printers, _queues) = (null, null);
         SetConnected(true, null);
         _heartbeatTimer.Interval = TimeSpan.FromSeconds(Math.Max(10, session.HeartbeatSeconds));
         _heartbeatTimer.Start();
@@ -133,7 +149,7 @@ public sealed class TrayApp : Application
     {
         _pollTimer.Stop();
         _heartbeatTimer.Stop();
-        _heldJobs = [];
+        (_jobs, _heldJobs) = ([], []);
         if (!_needsSignIn)
             Notify("Sign in to TapQueue", "Click the TapQueue icon, or choose Sign in as… from its menu, to print with your domain account.");
         _needsSignIn = true;
@@ -168,9 +184,8 @@ public sealed class TrayApp : Application
         _retryTimer.Stop();
         await _api.SignOutAsync();
         _needsSignIn = true; // no notification: they just did this
-        _heldJobs = [];
+        (_jobs, _heldJobs) = ([], []);
         SetConnected(false, null);
-        _jobsWindow?.RefreshJobs();
         _retryTimer.Start();
     }
 
@@ -180,7 +195,8 @@ public sealed class TrayApp : Application
         _polling = true;
         try
         {
-            _heldJobs = await _api.GetHeldJobsAsync();
+            _jobs = PrintQueue.Visible(await _api.GetJobsAsync(), DateTimeOffset.UtcNow);
+            _heldJobs = _jobs.Where(PrintQueue.IsHeld).ToList();
             var ids = _heldJobs.Select(j => j.Id).ToHashSet();
             if (_knownJobIds is not null)
             {
@@ -197,7 +213,7 @@ public sealed class TrayApp : Application
                 UpdateTooltip();
                 BuildMenu();
             }
-            _jobsWindow?.RefreshJobs();
+            _window?.RefreshView();
         }
         catch (Exception ex) when (ex is HttpRequestException or TapQueueApiException or TaskCanceledException)
         {
@@ -223,7 +239,21 @@ public sealed class TrayApp : Application
         }
     }
 
-    public async Task RefreshAsync() => await PollAsync();
+    /// <summary>Asks the server again for this person's printers, queues and jobs.</summary>
+    public async Task RefreshAsync()
+    {
+        if (!_connected) return;
+        try
+        {
+            _printers = await _api.GetPrintersAsync();
+            _queues = await _api.GetQueuesAsync();
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TapQueueApiException or TaskCanceledException)
+        {
+            // The poll below finds out the same way, and deals with it.
+        }
+        await PollAsync();
+    }
 
     public async Task<ReleaseResponse?> ReleaseAsync(string printerId, IReadOnlyList<long>? jobIds)
     {
@@ -249,18 +279,15 @@ public sealed class TrayApp : Application
         }
     }
 
-    public async Task CancelAsync(IEnumerable<long> jobIds)
+    /// <summary>
+    /// Deletes jobs that are waiting and stops ones already sent to a printer. Returns what's worth
+    /// telling the person: what was stopped and given back, and anything that couldn't be done.
+    /// </summary>
+    public async Task<List<string>> DeleteAsync(IReadOnlyList<JobDto> jobs)
     {
-        try
-        {
-            foreach (var id in jobIds)
-                await _api.CancelJobAsync(id);
-        }
-        catch (Exception ex) when (ex is HttpRequestException or TapQueueApiException or TaskCanceledException)
-        {
-            Notify("Couldn't cancel", ex.Message, urgent: true);
-        }
+        var notes = await PrintQueue.DeleteAsync(_api, jobs);
         await PollAsync();
+        return notes;
     }
 
     /// <summary>
@@ -309,38 +336,35 @@ public sealed class TrayApp : Application
     }
 
     /// <summary>
-    /// Asks the TapQueue service to remove and add this PC's TapQueue printers in CUPS again
-    /// (<see cref="UpdateCheckSocket"/>), for when one has gone missing or stopped working.
+    /// "Refresh TapQueue": asks the TapQueue service to remove and add this PC's TapQueue printers in
+    /// CUPS again (<see cref="UpdateCheckSocket"/>), for when one has gone missing or stopped working,
+    /// then starts the tray app afresh, which signs in again and says how the printers went.
     /// </summary>
-    private async Task RefreshPrintersAsync()
+    private async Task RefreshTapQueueAsync()
     {
-        if (_refreshingPrinters) return;
-        _refreshingPrinters = true;
+        if (_refreshing) return;
+        _refreshing = true;
         BuildMenu();
+        (string Text, bool Failed) result;
         try
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(10)); // each printer can take a while
-            var reply = await UpdateCheckSocket.RefreshPrintersAsync(timeout.Token);
-            if (reply.Success)
-                Notify("Printers refreshed", reply.Printers == 0
-                    ? "Your TapQueue server has no printers for this PC."
-                    : $"Reinstalled {reply.Printers} TapQueue printer{(reply.Printers == 1 ? "" : "s")}.");
-            else
-                Notify("Couldn't refresh printers", reply.Error ?? "The TapQueue service couldn't reinstall the printers.", urgent: true);
+            result = RestartArgs.Describe(await UpdateCheckSocket.RefreshPrintersAsync(timeout.Token));
         }
         catch (TimeoutException)
         {
-            Notify("Can't refresh printers", "The TapQueue service isn't running on this PC. Ask your IT team to reinstall TapQueue.", urgent: true);
+            result = RestartArgs.DescribeFailure(RestartArgs.ServiceNotRunning);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or System.Text.Json.JsonException or OperationCanceledException)
         {
-            Notify("Can't refresh printers", ex.Message, urgent: true);
+            result = RestartArgs.DescribeFailure(ex.Message);
         }
-        finally
-        {
-            _refreshingPrinters = false;
-            BuildMenu();
-        }
+        if (StartNext(_launcher ?? Environment.ProcessPath!, RestartArgs.AfterRefresh(Start.Start.AppArgs, Environment.ProcessId, result.Text, result.Failed)))
+            return;
+        // Couldn't start again: sign in again instead.
+        _refreshing = false;
+        Notify("TapQueue refreshed", result.Text, urgent: result.Failed);
+        await ConnectAsync();
     }
 
     /// <summary>
@@ -363,20 +387,22 @@ public sealed class TrayApp : Application
             if (!File.Exists(exe) || File.GetLastWriteTimeUtc(exe) == _exeWrittenAt)
                 return false;
         }
+        return StartNext(exe, RestartArgs.AfterUpdate(Start.Start.AppArgs, Environment.ProcessId, TapQueueVersion.Current));
+    }
+
+    /// <summary>Starts <paramref name="exe"/> with <paramref name="args"/> and exits. False if it couldn't be started.</summary>
+    private bool StartNext(string exe, IEnumerable<string> args)
+    {
         try
         {
             var start = new ProcessStartInfo(exe) { UseShellExecute = false };
-            foreach (var arg in Start.Args)
+            foreach (var arg in args)
                 start.ArgumentList.Add(arg);
-            start.ArgumentList.Add(Program.WaitForArg);
-            start.ArgumentList.Add(Environment.ProcessId.ToString());
-            start.ArgumentList.Add(Program.UpdatedFromArg);
-            start.ArgumentList.Add(TapQueueVersion.Current);
             Process.Start(start);
         }
         catch (System.ComponentModel.Win32Exception)
         {
-            return false; // mid-swap; try again next heartbeat
+            return false; // mid-swap; an update tries again next heartbeat
         }
         Exit();
         return true;
@@ -412,6 +438,7 @@ public sealed class TrayApp : Application
         _tray.Icon = connected ? _connectedIcon : _disconnectedIcon;
         UpdateTooltip();
         BuildMenu();
+        _window?.RefreshView();
     }
 
     private void UpdateTooltip() =>
@@ -441,7 +468,7 @@ public sealed class TrayApp : Application
             releaseAll.Menu.Add(item);
         }
         menu.Add(releaseAll);
-        menu.Add(Item("Held jobs…", ShowJobsWindow));
+        menu.Add(Item("View printers and queue…", () => ShowWindow(queue: false)));
         if (!_connected && !_needsSignIn)
             menu.Add(Item(_signedOut ? "Sign in again" : "Retry connection", () => _ = ConnectAsync()));
         menu.Add(new NativeMenuItemSeparator());
@@ -452,8 +479,9 @@ public sealed class TrayApp : Application
             menu.Add(Item("Sign out", () => _ = SignOutAsync()));
         menu.Add(new NativeMenuItemSeparator());
         menu.Add(new NativeMenuItem($"TapQueue {TapQueueVersion.Current}") { IsEnabled = false });
-        menu.Add(new NativeMenuItem(_refreshingPrinters ? "Refreshing printers…" : "Refresh printers") { IsEnabled = !_refreshingPrinters }
-            .WithClick(() => _ = RefreshPrintersAsync()));
+        // Reinstalls this PC's TapQueue printers and reloads the tray app.
+        menu.Add(new NativeMenuItem(_refreshing ? "Refreshing TapQueue…" : "Refresh TapQueue") { IsEnabled = !_refreshing }
+            .WithClick(() => _ = RefreshTapQueueAsync()));
         menu.Add(new NativeMenuItem(_checkingForUpdates ? "Checking for updates…" : "Check for updates") { IsEnabled = !_checkingForUpdates }
             .WithClick(() => _ = CheckForUpdatesAsync()));
         menu.Add(Item("Exit", Exit));
@@ -475,16 +503,18 @@ public sealed class TrayApp : Application
         _signInWindow.Activate();
     }
 
-    private void ShowJobsWindow()
+    /// <param name="queue">Open on "My print queue" rather than "Printers".</param>
+    private void ShowWindow(bool queue)
     {
-        if (_jobsWindow is not null)
+        if (_window is not null)
         {
-            _jobsWindow.Activate();
+            if (queue) _window.ShowQueue();
+            _window.Activate();
             return;
         }
-        _jobsWindow = new JobsWindow(this);
-        _jobsWindow.Closed += (_, _) => _jobsWindow = null;
-        _jobsWindow.Show();
+        _window = new PrintersAndQueueWindow(this, queue);
+        _window.Closed += (_, _) => _window = null;
+        _window.Show();
     }
 
     public void Notify(string title, string text, bool urgent = false) => _ = Notifications.ShowAsync(title, text, urgent);
