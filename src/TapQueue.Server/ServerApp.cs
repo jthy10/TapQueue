@@ -105,7 +105,10 @@ public static class ServerApp
         builder.Services.AddSingleton<DirectorySyncService>();
         builder.Services.AddHostedService(services => services.GetRequiredService<DirectorySyncService>());
         builder.Services.AddSingleton(UpdaterSetup.Installed);
-        builder.Services.AddSingleton<IReleaseFeed, GitHubReleaseFeed>();
+        builder.Services.AddSingleton<GitHubReleaseFeed>();
+        builder.Services.AddSingleton<IReleaseFeed>(services => services.GetRequiredService<GitHubReleaseFeed>());
+        builder.Services.AddSingleton<IBuildFeed>(services => services.GetRequiredService<GitHubReleaseFeed>());
+        builder.Services.AddSingleton<BuildUpdater>();
         builder.Services.AddSingleton<ServerUpdater>();
         builder.Services.AddHostedService<UpdateScheduler>();
         configureServices?.Invoke(builder.Services);

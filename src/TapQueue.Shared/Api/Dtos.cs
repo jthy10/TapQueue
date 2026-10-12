@@ -148,6 +148,23 @@ public sealed record ServerUpdateDto(
 /// <param name="Url">The release page, with its notes.</param>
 public sealed record ServerReleaseDto(string Version, string Url, DateTimeOffset? PublishedAt);
 
+/// <summary>
+/// Client or station builds against the newest release on GitHub: what "Check for updates" on the
+/// console's Updates page shows.
+/// </summary>
+/// <param name="Latest">The newest release the last check found; null before the first check.</param>
+/// <param name="Published">The version this server hands out now: one per client platform, or the station's. Empty if none.</param>
+/// <param name="UpdateAvailable">True when <see cref="Latest"/> is newer than what's handed out (or nothing is).</param>
+public sealed record BuildReleaseDto(
+    ServerReleaseDto? Latest,
+    DateTimeOffset? CheckedAt,
+    string? CheckError,
+    bool UpdateAvailable,
+    IReadOnlyList<string> Published);
+
+/// <summary>Publish the builds of release <see cref="Version"/>, which must be the one the last check found.</summary>
+public sealed record PublishReleaseRequest(string Version);
+
 public sealed record ScheduledUpdateDto(string Version, DateTimeOffset At, string? By);
 
 /// <param name="State">running, done or failed.</param>

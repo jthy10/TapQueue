@@ -28,6 +28,7 @@ public static class AdminApi
         admin.MapServerApi();
         admin.MapBackupsApi();
         admin.MapReportsApi();
+        admin.MapBuildReleasesApi();
         admin.MapGet("/users", (UserStore users, GroupStore groups) =>
         {
             var memberships = groups.Memberships();
