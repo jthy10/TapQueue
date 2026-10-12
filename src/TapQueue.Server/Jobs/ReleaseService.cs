@@ -115,6 +115,7 @@ public sealed class ReleaseService(JobStore jobs, Spool spool, PrinterRegistry p
             using var client = new IppClient(printer.TlsSkipVerify, settings.PrinterSendTimeout);
             var busyUntil = DateTimeOffset.UtcNow + settings.PrinterBusyTimeout;
             int? printerJobId = null;
+            var done = false;
             while (true)
             {
                 IppMessage response;
@@ -123,6 +124,7 @@ public sealed class ReleaseService(JobStore jobs, Spool spool, PrinterRegistry p
                 if (IppStatus.IsSuccess(response.Code))
                 {
                     printerJobId = response.Find(IppTag.JobAttributes, "job-id")?.First?.AsInt();
+                    done = response.Find(IppTag.JobAttributes, "job-state")?.First?.AsInt() == IppJobState.Completed;
                     break;
                 }
 
@@ -136,8 +138,13 @@ public sealed class ReleaseService(JobStore jobs, Spool spool, PrinterRegistry p
                 throw new InvalidOperationException($"Printer rejected the job (IPP status 0x{response.Code:X4}{(message is null ? "" : $": {message}")}).");
             }
 
+            // The printer has only queued it. With a number for the job, PrintTracker keeps the document
+            // and follows the job until the printer says how it ended; without one this is all we learn.
             jobs.MarkReleased(job.Id, printer.Id, printerJobId);
-            spool.Delete(job.Id);
+            if (printerJobId is null)
+                spool.Delete(job.Id);
+            else if (done && jobs.FinishPrinting(job.Id, PrintState.Printed, null))
+                spool.Delete(job.Id);
             logger.LogInformation("Released job {JobId} \"{Name}\" for {User} to {Printer}", job.Id, job.Name, user.Username, printer.Id);
             return new ReleaseResult(job.Id, job.Name, true, null);
         }

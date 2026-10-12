@@ -13,7 +13,7 @@ namespace TapQueue.Server.Jobs;
 /// started and doesn't say gives nothing back, since a job stopped on its last page would
 /// otherwise print for free.
 /// </summary>
-public sealed class JobCanceler(JobStore jobs, Spool spool, PrinterRegistry printers, QuotaPolicy quotas, EventLog events, ILogger<JobCanceler> logger)
+public sealed class JobCanceler(JobStore jobs, Spool spool, PrinterRegistry printers, QuotaPolicy quotas, EventLog events, PrintTracker tracker, ILogger<JobCanceler> logger)
 {
     private static readonly TimeSpan PrinterTimeout = TimeSpan.FromSeconds(15);
     /// <summary>How long a printer gets to say the job it was told to stop has stopped.</summary>
@@ -41,6 +41,7 @@ public sealed class JobCanceler(JobStore jobs, Spool spool, PrinterRegistry prin
         if (job.PrinterJobId is not { } printerJobId || job.ReleasedPrinterId is null || printers.Find(job.ReleasedPrinterId) is not { } printer)
             return new Result(false, 0, $"\"{job.Name}\" has already been sent to the printer and can't be stopped from here.");
 
+        await tracker.Turn.WaitAsync(ct);
         try
         {
             return await StopAtPrinterAsync(user, job, printer, printerJobId, ct);
@@ -50,6 +51,10 @@ public sealed class JobCanceler(JobStore jobs, Spool spool, PrinterRegistry prin
             logger.LogWarning("Couldn't ask {Printer} to stop job {JobId} for {User}: {Error}", printer.Id, job.Id, user.Username, ex.Message);
             return new Result(false, 0, $"Couldn't reach {printer.Name} to stop \"{job.Name}\".");
         }
+        finally
+        {
+            tracker.Turn.Release();
+        }
     }
 
     private async Task<Result> StopAtPrinterAsync(UserRecord user, JobRecord job, PrinterRecord printer, int printerJobId, CancellationToken ct)
@@ -57,11 +62,11 @@ public sealed class JobCanceler(JobStore jobs, Spool spool, PrinterRegistry prin
         using var client = new IppClient(printer.TlsSkipVerify, PrinterTimeout);
         var alreadyPrinted = new Result(false, 0, $"\"{job.Name}\" has already printed at {printer.Name}.");
 
-        var before = await JobStateAsync(client, printer, user, printerJobId, ct);
+        var before = await JobStateAsync(client, printer, user.Username, printerJobId, ct);
         if (before is null || before.Value.State >= IppJobState.Canceled)
             return alreadyPrinted; // finished, or the printer has forgotten it (which it does after finishing)
 
-        var cancel = await client.SendAsync(printer.Uri, JobRequest(IppOperation.CancelJob, printer, user, printerJobId), null, ct);
+        var cancel = await client.SendAsync(printer.Uri, JobRequest(IppOperation.CancelJob, printer, user.Username, printerJobId), null, ct);
         if (!IppStatus.IsSuccess(cancel.Code))
             return cancel.Code is IppStatus.ClientErrorNotPossible or IppStatus.ClientErrorNotFound
                 ? alreadyPrinted
@@ -72,7 +77,7 @@ public sealed class JobCanceler(JobStore jobs, Spool spool, PrinterRegistry prin
         var until = DateTimeOffset.UtcNow + SettleTimeout;
         while (true)
         {
-            after = await JobStateAsync(client, printer, user, printerJobId, ct) ?? after;
+            after = await JobStateAsync(client, printer, user.Username, printerJobId, ct) ?? after;
             if (after.Value.State >= IppJobState.Canceled || DateTimeOffset.UtcNow >= until)
                 break;
             await Task.Delay(SettleDelay, ct);
@@ -93,6 +98,12 @@ public sealed class JobCanceler(JobStore jobs, Spool spool, PrinterRegistry prin
         {
             refund = 0;
         }
+        // It's over at the printer, so there's nothing left to follow or to keep the document for.
+        if (after.Value.State >= IppJobState.Canceled)
+        {
+            jobs.FinishPrinting(job.Id, PrintState.Stopped, printed);
+            spool.Delete(job.Id);
+        }
 
         var limited = quotas.UsageFor(user.Id, DateTimeOffset.UtcNow).Count > 0;
         var message = $"Stopped \"{job.Name}\" at {printer.Name}" + (printed, refund) switch
@@ -111,25 +122,33 @@ public sealed class JobCanceler(JobStore jobs, Spool spool, PrinterRegistry prin
         return new Result(true, refund, message);
     }
 
-    /// <summary>The job's state at the printer and how many sides it says it has printed; null if the printer doesn't know the job.</summary>
-    private static async Task<(int State, int? Printed)?> JobStateAsync(IppClient client, PrinterRecord printer, UserRecord user, int printerJobId, CancellationToken ct)
+    /// <summary>
+    /// The job's state at the printer, how many sides it says it has printed and what it says about
+    /// the job; null if the printer doesn't know the job (any more) or won't say.
+    /// </summary>
+    internal static async Task<(int State, int? Printed, string? Reason)?> JobStateAsync(IppClient client, PrinterRecord printer, string username, int printerJobId, CancellationToken ct)
     {
-        var request = JobRequest(IppOperation.GetJobAttributes, printer, user, printerJobId);
-        request.Group(IppTag.OperationAttributes)
-            .Add("requested-attributes", IppValue.Keyword("job-state"), IppValue.Keyword("job-impressions-completed"));
+        var request = JobRequest(IppOperation.GetJobAttributes, printer, username, printerJobId);
+        request.Group(IppTag.OperationAttributes).Add("requested-attributes", IppValue.Keyword("job-state"),
+            IppValue.Keyword("job-impressions-completed"), IppValue.Keyword("job-state-reasons"), IppValue.Keyword("job-state-message"));
         var response = await client.SendAsync(printer.Uri, request, null, ct);
         if (!IppStatus.IsSuccess(response.Code) || response.Find(IppTag.JobAttributes, "job-state")?.First?.AsInt() is not { } state)
             return null;
-        return (state, response.Find(IppTag.JobAttributes, "job-impressions-completed")?.First?.AsInt());
+        var reason = response.Find(IppTag.JobAttributes, "job-state-message")?.First?.AsString();
+        if (string.IsNullOrWhiteSpace(reason))
+            reason = string.Join(", ", response.Find(IppTag.JobAttributes, "job-state-reasons")?.Values
+                .Select(v => v.AsString()).Where(r => r is not (null or "none" or "job-canceled-at-device" or "aborted-by-system"))
+                .Select(r => r!.Replace('-', ' ')) ?? []);
+        return (state, response.Find(IppTag.JobAttributes, "job-impressions-completed")?.First?.AsInt(), reason.Length == 0 ? null : reason);
     }
 
     /// <summary>Sent as the person the job was printed as, since printers only let a job's owner stop it.</summary>
-    private static IppMessage JobRequest(short operation, PrinterRecord printer, UserRecord user, int printerJobId)
+    private static IppMessage JobRequest(short operation, PrinterRecord printer, string username, int printerJobId)
     {
         var request = IppMessage.CreateRequest(operation, IppClient.NextRequestId(), printer.Uri);
         request.Group(IppTag.OperationAttributes)
             .Add("job-id", IppValue.Integer(printerJobId))
-            .Add("requesting-user-name", IppValue.Name(user.Username));
+            .Add("requesting-user-name", IppValue.Name(username));
         return request;
     }
 
