@@ -163,14 +163,35 @@ public sealed class TapQueueApi(ClientConfig config) : IDisposable
     public async Task<List<JobDto>> GetHeldJobsAsync(CancellationToken ct = default) =>
         await SendAsync<List<JobDto>>(HttpMethod.Get, "api/v1/me/jobs", null, ct) ?? [];
 
+    /// <summary>The person's newest jobs in any state: waiting, printed, deleted, expired.</summary>
+    public async Task<List<JobDto>> GetJobsAsync(CancellationToken ct = default) =>
+        await SendAsync<List<JobDto>>(HttpMethod.Get, "api/v1/me/jobs?all=true", null, ct) ?? [];
+
     public async Task<List<PrinterDto>> GetPrintersAsync(CancellationToken ct = default) =>
         await SendAsync<List<PrinterDto>>(HttpMethod.Get, "api/v1/printers", null, ct) ?? [];
+
+    /// <summary>The queues this person may print to, as they are now; null from servers older than 0.14, which only say at sign-in.</summary>
+    public async Task<List<QueueDto>?> GetQueuesAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            return await SendAsync<List<QueueDto>>(HttpMethod.Get, "api/v1/queues", null, ct);
+        }
+        catch (TapQueueApiException ex) when (ex.Status is HttpStatusCode.NotFound or HttpStatusCode.MethodNotAllowed)
+        {
+            return null;
+        }
+    }
 
     public async Task<ReleaseResponse> ReleaseAsync(string printerId, IReadOnlyList<long>? jobIds, CancellationToken ct = default) =>
         (await SendAsync<ReleaseResponse>(HttpMethod.Post, "api/v1/me/release", new ReleaseRequest(printerId, jobIds), ct))!;
 
-    public Task CancelJobAsync(long jobId, CancellationToken ct = default) =>
-        SendAsync<object>(HttpMethod.Delete, $"api/v1/me/jobs/{jobId}", null, ct);
+    /// <summary>
+    /// Deletes a held job, or (servers from 0.14) stops one that's at the printer. Says what the
+    /// server did; null from an older server, which only deletes held jobs and doesn't say.
+    /// </summary>
+    public Task<CancelJobResponse?> CancelJobAsync(long jobId, CancellationToken ct = default) =>
+        SendAsync<CancelJobResponse>(HttpMethod.Delete, $"api/v1/me/jobs/{jobId}", null, ct);
 
     private async Task<T?> SendAsync<T>(HttpMethod method, string path, object? body, CancellationToken ct)
     {
