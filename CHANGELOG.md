@@ -11,6 +11,8 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-10-12
+
 ### Added
 - **A tap no longer holds up the next person.** A release station used to wait for the whole
   release (up to 2 minutes of retrying a busy printer, 5 minutes to send each job) before it read
@@ -448,7 +450,8 @@ First working version.
   readers. A tap releases the user's held jobs to the station's printer.
 - Badge enrollment by an admin (`badges add --last-tap`).
 
-[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.15.0...HEAD
+[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.16.0...HEAD
+[0.16.0]: https://github.com/jthy10/TapQueue/compare/server-v0.15.0...server-v0.16.0
 [0.15.0]: https://github.com/jthy10/TapQueue/compare/server-v0.14.0...server-v0.15.0
 [0.14.0]: https://github.com/jthy10/TapQueue/compare/server-v0.13.0...server-v0.14.0
 [0.13.0]: https://github.com/jthy10/TapQueue/compare/server-v0.12.1...server-v0.13.0
