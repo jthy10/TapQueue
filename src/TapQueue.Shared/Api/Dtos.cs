@@ -461,6 +461,11 @@ public sealed record UpdateQueueRequest(
 /// <param name="RefundedPages">Of a released job's pages times copies: how many were given back because it was stopped at the printer.</param>
 /// <param name="Color">True if it was sent to print in colour, false in black and white; null if the job didn't say (jobs from before 0.16 too).</param>
 /// <param name="Duplex">True if it was sent to print on both sides of the paper; null for jobs from before 0.16.</param>
+/// <param name="PrintState">
+/// For a released job whose printer can be asked about it (servers from 0.17): "printing" until the
+/// printer finishes it, then "printed", "stopped" (part way) or "unconfirmed" (the printer never said).
+/// </param>
+/// <param name="PrintedPages">What the printer said it printed, for printers that say.</param>
 public sealed record JobDto(
     long Id,
     string Name,
@@ -480,7 +485,9 @@ public sealed record JobDto(
     int? Pages = null,
     int RefundedPages = 0,
     bool? Color = null,
-    bool? Duplex = null);
+    bool? Duplex = null,
+    string? PrintState = null,
+    int? PrintedPages = null);
 
 /// <summary>What deleting one of your own jobs did (servers from 0.14; older ones answer with nothing).</summary>
 /// <param name="RefundedPages">Pages that had counted against a page limit and no longer do.</param>

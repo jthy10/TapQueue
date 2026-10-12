@@ -36,5 +36,7 @@ public sealed class Spool
     public FileStream OpenRead(long jobId) =>
         new(PathFor(jobId), FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.Asynchronous);
 
+    public bool Exists(long jobId) => File.Exists(PathFor(jobId));
+
     public void Delete(long jobId) => File.Delete(PathFor(jobId));
 }

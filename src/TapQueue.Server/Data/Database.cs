@@ -449,6 +449,15 @@ public sealed class Database
             ALTER TABLE jobs ADD COLUMN color INTEGER;
             ALTER TABLE jobs ADD COLUMN duplex INTEGER;
         """,
+
+        // 19: following a released job at the printer. print_state is 'printing' while the server is
+        // still asking the printer about it, then how that ended (see PrintState); NULL on jobs the
+        // printer gave no number for and on older ones. printed_pages is what the printer said it printed.
+        """
+            ALTER TABLE jobs ADD COLUMN print_state TEXT;
+            ALTER TABLE jobs ADD COLUMN printed_pages INTEGER;
+            CREATE INDEX ix_jobs_printing ON jobs(print_state) WHERE print_state = 'printing';
+        """,
     ];
 
     public void Migrate()

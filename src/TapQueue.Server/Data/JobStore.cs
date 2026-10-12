@@ -15,6 +15,19 @@ public static class JobStatus
     public const string Expired = "expired";
 }
 
+/// <summary>What became of a released job at the printer, for printers that give their jobs a number.</summary>
+public static class PrintState
+{
+    /// <summary>At the printer and not finished; the server keeps the document and keeps asking.</summary>
+    public const string Printing = "printing";
+    /// <summary>The printer said it finished the job.</summary>
+    public const string Printed = "printed";
+    /// <summary>It was stopped at the printer part way (or the printer doesn't say how far it got).</summary>
+    public const string Stopped = "stopped";
+    /// <summary>The printer stopped answering for the job, or forgot it, before saying how it ended.</summary>
+    public const string Unconfirmed = "unconfirmed";
+}
+
 public sealed record JobRecord(
     long Id,
     long? UserId,
@@ -38,14 +51,17 @@ public sealed record JobRecord(
     int? PrinterJobId = null,
     int RefundedPages = 0,
     bool? Color = null,
-    bool? Duplex = null)
+    bool? Duplex = null,
+    string? PrintState = null,
+    int? PrintedPages = null)
 {
     /// <summary>What the job counts against a quota: its pages times copies, and 1 page if it couldn't be counted.</summary>
     public int ChargedPages => (Pages ?? 1) * Copies;
 
     public JobDto ToDto() => new(
         Id, Name, QueueId, Status, SizeBytes, DocumentFormat, Copies, Username, OwnerHint,
-        SubmittedAt, ExpiresAt, ReleasedAt, ReleasedPrinterId, Error, FormerOwner, Pages, RefundedPages, Color, Duplex);
+        SubmittedAt, ExpiresAt, ReleasedAt, ReleasedPrinterId, Error, FormerOwner, Pages, RefundedPages, Color, Duplex,
+        Status == JobStatus.Released ? PrintState : null, PrintedPages);
 }
 
 /// <param name="JobAttributes">The encoded IPP job-attributes group from the client (copies, media, page-ranges…).</param>
@@ -68,7 +84,7 @@ public sealed class JobStore(Database database)
         SELECT j.id, j.user_id, u.username, j.owner_hint, j.queue_id, j.name, j.document_format, j.copies,
                j.size_bytes, j.status, j.source_ip, j.submitted_at, j.expires_at, j.released_at,
                j.released_printer_id, j.error, j.former_owner, j.pages, j.workstation, j.printer_job_id, j.refunded_pages,
-               j.color, j.duplex
+               j.color, j.duplex, j.print_state, j.printed_pages
         FROM jobs j LEFT JOIN users u ON u.id = j.user_id
         """;
 
@@ -105,12 +121,12 @@ public sealed class JobStore(Database database)
     public int CountHeld() =>
         Convert.ToInt32(database.Scalar("SELECT COUNT(*) FROM jobs WHERE status = $held", ("$held", JobStatus.Held)));
 
-    /// <summary>Moves a job between states only if it is currently in <paramref name="from"/>. Returns false if it wasn't.</summary>
     /// <summary>The size of the documents a user has waiting: held, or on their way to a printer.</summary>
     public long HeldBytes(long userId) =>
         Convert.ToInt64(database.Scalar("SELECT COALESCE(SUM(size_bytes), 0) FROM jobs WHERE user_id = $u AND status IN ($held, $releasing)",
             ("$u", userId), ("$held", JobStatus.Held), ("$releasing", JobStatus.Releasing)));
 
+    /// <summary>Moves a job between states only if it is currently in <paramref name="from"/>. Returns false if it wasn't.</summary>
     public bool TryTransition(long id, string from, string to, string? error = null) =>
         database.Execute("UPDATE jobs SET status = $to, error = $err WHERE id = $id AND status = $from",
             ("$to", to), ("$err", error), ("$id", id), ("$from", from)) == 1;
@@ -149,12 +165,39 @@ public sealed class JobStore(Database database)
     public void SetDocumentFormat(long id, string format) =>
         database.Execute("UPDATE jobs SET document_format = $f WHERE id = $id", ("$f", format), ("$id", id));
 
-    /// <param name="printerJobId">The printer's number for the job, if it gave one; what stopping it later needs.</param>
+    /// <param name="printerJobId">
+    /// The printer's number for the job, if it gave one. With one the job is followed at the printer
+    /// (<see cref="PrintState.Printing"/>) until the printer says how it ended.
+    /// </param>
     public void MarkReleased(long id, string printerId, int? printerJobId = null) =>
         database.Execute("""
-            UPDATE jobs SET status = $released, released_at = $now, released_printer_id = $p, printer_job_id = $pj, error = NULL
+            UPDATE jobs SET status = $released, released_at = $now, released_printer_id = $p, printer_job_id = $pj, print_state = $ps, error = NULL
             WHERE id = $id
-            """, ("$released", JobStatus.Released), ("$now", DateTimeOffset.UtcNow), ("$p", printerId), ("$pj", printerJobId), ("$id", id));
+            """, ("$released", JobStatus.Released), ("$now", DateTimeOffset.UtcNow), ("$p", printerId), ("$pj", printerJobId),
+            ("$ps", printerJobId is null ? null : PrintState.Printing), ("$id", id));
+
+    /// <summary>Released jobs the printer hasn't finished as far as the server knows, oldest first.</summary>
+    public List<JobRecord> ListPrinting() =>
+        database.Query(SelectColumns + " WHERE j.print_state = $printing AND j.status = $released ORDER BY j.id", Map,
+            ("$printing", PrintState.Printing), ("$released", JobStatus.Released));
+
+    /// <summary>Records how a job that was printing ended. False if it wasn't being followed any more.</summary>
+    /// <param name="printedPages">What the printer said it printed, if it said.</param>
+    public bool FinishPrinting(long id, string state, int? printedPages) =>
+        database.Execute("UPDATE jobs SET print_state = $s, printed_pages = $n WHERE id = $id AND print_state = $printing",
+            ("$s", state), ("$n", printedPages), ("$id", id), ("$printing", PrintState.Printing)) == 1;
+
+    /// <summary>
+    /// The printer gave up on a job it had accepted: it's held again as if it had never been released,
+    /// so it counts against no page limit and its owner can release it somewhere else.
+    /// </summary>
+    public bool ReturnToHold(long id, string error, DateTimeOffset expiresAt) =>
+        database.Execute("""
+            UPDATE jobs SET status = $held, error = $err, expires_at = $expires, released_at = NULL, released_printer_id = NULL,
+                            printer_job_id = NULL, print_state = NULL, printed_pages = NULL, refunded_pages = 0
+            WHERE id = $id AND status = $released AND print_state = $printing
+            """, ("$held", JobStatus.Held), ("$err", error), ("$expires", expiresAt), ("$id", id),
+            ("$released", JobStatus.Released), ("$printing", PrintState.Printing)) == 1;
 
     /// <summary>
     /// A released job was stopped at the printer part way: <paramref name="pages"/> of what it was
@@ -195,5 +238,7 @@ public sealed class JobStore(Database database)
         PrinterJobId: r.IsDBNull(19) ? null : r.GetInt32(19),
         RefundedPages: r.GetInt32(20),
         Color: r.IsDBNull(21) ? null : r.GetBoolean(21),
-        Duplex: r.IsDBNull(22) ? null : r.GetBoolean(22));
+        Duplex: r.IsDBNull(22) ? null : r.GetBoolean(22),
+        PrintState: r.GetStringOrNull(23),
+        PrintedPages: r.IsDBNull(24) ? null : r.GetInt32(24));
 }
