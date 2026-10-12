@@ -7,6 +7,8 @@ export async function render(root, ctx) {
   let s = await api.get("server");
   // Null for admins without a role in the Server area.
   let u = await api.maybe("server/update", null);
+  // Older releases to go back to; asked of GitHub only when someone presses the button.
+  let d = u && await api.maybe("server/downgrade", null);
   // Null for everyone but full admins: a backup holds everything.
   let b = await api.maybe("server/backups", null);
   if (!ctx.current) return;
@@ -15,6 +17,8 @@ export async function render(root, ctx) {
   const backups = h("div");
   const settings = h("div");
   const updates = h("div");
+  const downgrades = h("div");
+  const olderButton = button("Look for older releases", { small: true, iconName: "refresh", onclick: lookForOlder });
   const checkButton = button("Check for updates", { small: true, iconName: "refresh", onclick: () => checkForUpdates(true) });
   const restartButton = button("Restart", { iconName: "refresh", onclick: restart });
   root.append(pageHead("Server", "The TapQueue server this console is running on.",
@@ -23,6 +27,8 @@ export async function render(root, ctx) {
     panel({ title: "Status", body: status }),
     panel({ title: "Settings", actions: button("Edit", { small: true, onclick: edit }), body: settings })),
   u && panel({ title: "Updates", description: "New TapQueue server releases on GitHub.", actions: checkButton, body: updates }),
+  d && panel({ title: "Downgrade", description: "Take the server, and every PC and station, back to an older release when an update turned out badly.",
+    actions: olderButton, body: downgrades }),
   b && panel({
     title: "Backups",
     description: "The database, this server's certificate, the badge key and the Active Directory CA. Held documents and published builds aren't in them.",
@@ -90,7 +96,7 @@ export async function render(root, ctx) {
     const latest = u.latest;
     const run = u.lastRun;
     const runTone = { done: "ok", failed: "bad" }[run?.state] ?? "warn";
-    const runLabel = { requested: "Starting", running: "Upgrading", done: "Done", failed: "Failed" }[run?.state];
+    const runLabel = { requested: "Starting", running: "Working", done: "Done", failed: "Failed" }[run?.state];
     updates.replaceChildren(...[
       u.checkError ? h("div", { class: "callout bad" }, u.checkError) : null,
       u.updateAvailable && !u.canApply ? h("div", { class: "callout" }, u.cannotApplyReason) : null,
@@ -105,7 +111,7 @@ export async function render(root, ctx) {
         u.scheduled && ["Scheduled", [`${u.scheduled.version} at ${dateTime(u.scheduled.at)}`,
           u.scheduled.by && h("span", { class: "sub" }, `By ${u.scheduled.by}`), " ",
           button("Call off", { small: true, onclick: cancelScheduled })]],
-        run && ["Last upgrade", [pill(runLabel, runTone), ` ${run.version} `,
+        run && ["Last change", [pill(runLabel, runTone), ` ${run.version} `,
           run.at && h("span", { class: "sub" }, `${run.message} (${dateTime(run.at)})`)]],
       ]),
       u.updateAvailable && u.canApply && !u.scheduled && !["requested", "running"].includes(run?.state)
@@ -115,7 +121,7 @@ export async function render(root, ctx) {
   }
 
   function drawBackups() {
-    const why = { daily: "Daily", manual: "Made by an admin", upgrade: "Before an upgrade" };
+    const why = { daily: "Daily", manual: "Made by an admin", upgrade: "Before an upgrade", downgrade: "Before a downgrade" };
     backups.replaceChildren(...[
       b.lastError ? h("div", { class: "callout bad" }, `The last daily backup failed: ${b.lastError}`) : null,
       props([
@@ -242,14 +248,53 @@ export async function render(root, ctx) {
     });
   }
 
+  function drawDowngrades() {
+    downgrades.replaceChildren(...[
+      d.checkError ? h("div", { class: "callout bad" }, d.checkError) : null,
+      d.versions.length > 0 && !d.canApply ? h("div", { class: "callout" }, d.cannotApplyReason) : null,
+      !d.checkedAt ? h("p", { class: "muted", style: "margin:0" }, `Releases from ${d.oldest} on can be gone back to. Nothing is asked of GitHub until you look.`)
+        : d.versions.length === 0 && !d.checkError ? h("p", { class: "muted", style: "margin:0" }, `There's no release older than ${d.current} to go back to (the oldest that can be is ${d.oldest}).`)
+        : null,
+      ...d.versions.map((v) => h("div", { style: "display:flex; align-items:center; gap:10px; margin:6px 0" },
+        h("a", { class: "mono", href: v.url, target: "_blank", rel: "noopener" }, v.version),
+        v.publishedAt && h("span", { class: "sub" }, `Released ${dateTime(v.publishedAt)}`),
+        d.canApply && button(`Go back to ${v.version}…`, { small: true, kind: "danger", onclick: () => offerDowngrade(v) }))),
+    ].filter(Boolean));
+  }
+
+  async function lookForOlder() {
+    olderButton.disabled = true;
+    const checked = await attempt(() => api.get("server/downgrade?refresh=true"));
+    olderButton.disabled = false;
+    if (!checked || !ctx.current) return;
+    d = checked;
+    drawDowngrades();
+  }
+
+  async function offerDowngrade(release) {
+    const version = release.version;
+    if (!await confirm({
+      title: `Go back to TapQueue ${version}?`,
+      message: `This server runs ${d.current}. It will hand out the ${version} clients and station build, which every PC and station installs within about a minute, ` +
+        `then install server ${version} and restart; printing, releasing and this console stop for up to a minute. ` +
+        `Anything only ${d.current} keeps track of is dropped from the database on the way back; a backup is made first. Held jobs, users and settings are kept.`,
+      confirmLabel: `Go back to ${version}`,
+    })) return;
+    toast(`Getting ${version} from GitHub…`);
+    const started = await attempt(() => api.post("server/downgrade", { version }));
+    if (!started || !ctx.current) return;
+    d = started;
+    followUpgrade(version, "Going back");
+  }
+
   async function cancelScheduled() {
     const updated = await attempt(() => api.del("server/update"), "Scheduled upgrade called off");
     if (updated && ctx.current) { u = updated; drawUpdates(); }
   }
 
   /** Waits for the server to come back on the new version, or for the updater to say it failed. */
-  async function followUpgrade(version) {
-    toast(`Upgrading to ${version}…`);
+  async function followUpgrade(version, doing = "Upgrading") {
+    toast(`${doing} to ${version}…`);
     restartButton.disabled = true;
     for (let i = 0; i < 300 && ctx.current; i++) {
       await new Promise((r) => setTimeout(r, 2000));
@@ -260,11 +305,12 @@ export async function render(root, ctx) {
         if (now.current === version) {
           s = await api.get("server");
           draw();
-          return toast(`Updated to TapQueue server ${version}`);
+          if (d) { d = await api.maybe("server/downgrade", d); drawDowngrades(); }
+          return toast(`Now running TapQueue server ${version}`);
         }
         if (now.lastRun?.state === "failed") {
           draw();
-          return toast(`The upgrade didn't work: ${now.lastRun.message}`, "bad");
+          return toast(`That didn't work: ${now.lastRun.message}`, "bad");
         }
       } catch { /* restarting */ }
     }
@@ -395,6 +441,7 @@ export async function render(root, ctx) {
 
   draw();
   if (u) drawUpdates();
+  if (d) drawDowngrades();
   if (b) drawBackups();
   ctx.every(30000, async () => {
     s = await api.get("server");

@@ -127,6 +127,9 @@ const string Usage = """
                                                      Wrong passwords for a name from one address before
                                                      sign-in is refused there (5), and for how many minutes (15)
       tapqueue-admin server log [--follow]           The server's recent log lines, and new ones with --follow
+      tapqueue-admin server downgrade [<version>]    The older releases this site can go back to (from 0.17.0 on);
+                                                     with a version, take the server and every PC and station
+                                                     back to it. A backup is made first
       tapqueue-admin server restart                  Restart tapqueue-server (only when systemd runs it)
       tapqueue-admin server enrollment-code new|off  Make new PCs give a code to register (shown once; goes in
                                                      their client.toml as enrollment_code), or stop asking
@@ -273,6 +276,7 @@ try
         ("server", "set") when positional.Count == 4 => await SetServerSetting(positional[2], positional[3]),
         ("server", "log") when positional.Count == 2 => await ServerLog(options.ContainsKey("--follow")),
         ("server", "restart") when positional.Count == 2 => await RestartServer(),
+        ("server", "downgrade") when positional.Count is 2 or 3 => await DowngradeServer(positional.ElementAtOrDefault(2)),
         ("server", "enrollment-code") when positional.Count == 3 && positional[2] is "new" or "off" => await SetEnrollmentCode(positional[2] == "new"),
         ("report", null) => await Report(options.GetValueOrDefault("--by"), options.GetValueOrDefault("--from"), options.GetValueOrDefault("--to"), options.ContainsKey("--csv")),
         ("clients", "update") when positional.Count == 2 => await PublishRelease("client", "clients", options.ContainsKey("--check")),
@@ -1039,6 +1043,33 @@ async Task<int> Report(string? by, string? from, string? to, bool csv)
     Console.WriteLine($"Total: {report.Pages} pages in {report.Jobs} jobs, {report.ColorPages} colour, {report.MonoPages} black and white, {report.DuplexPages} two-sided" +
         (report.UncountedJobs > 0 ? $" ({report.UncountedJobs} jobs couldn't be counted and count as 1 page a copy)" : "") +
         (report.By == ReportGrouping.Group ? ". Someone in two groups counts in both." : "."));
+    return 0;
+}
+
+async Task<int> DowngradeServer(string? version)
+{
+    var found = await Get<ServerDowngradeDto>("server/downgrade?refresh=true");
+    if (found is null) return 1;
+    if (found.CheckError is not null)
+    {
+        Console.Error.WriteLine(found.CheckError);
+        return 1;
+    }
+    if (version is null)
+    {
+        Console.WriteLine($"This server runs {found.Current}.");
+        if (found.Versions.Count == 0)
+            Console.WriteLine($"There's no older release to go back to (the oldest that can be is {found.Oldest}).");
+        else
+            Console.WriteLine($"It can go back to: {string.Join(", ", found.Versions.Select(v => v.Version))}\nDo it with: tapqueue-admin server downgrade <version>");
+        if (!found.CanApply && found.Versions.Count > 0)
+            Console.WriteLine(found.CannotApplyReason);
+        return 0;
+    }
+    if (await Send<ServerDowngradeDto>(HttpMethod.Post, "server/downgrade", new DowngradeRequest(version)) is null)
+        return 1;
+    Console.WriteLine($"Going back to {version}: its clients and station build are handed out now (PCs and stations install them within about a minute),");
+    Console.WriteLine("and the server is being downgraded and will restart. Watch with: journalctl -u tapqueue-update -f");
     return 0;
 }
 
