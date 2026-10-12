@@ -4,9 +4,9 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <!-- Server, station and admin CLI; released together with tags server-vX.Y.Z. -->
-    <Version>0.18.0</Version>
+    <Version>0.19.0</Version>
     <!-- Windows and Linux clients; released with tags client-vX.Y.Z. Kept the same as <Version> from 0.17. -->
-    <TapQueueClientVersion>0.18.0</TapQueueClientVersion>
+    <TapQueueClientVersion>0.19.0</TapQueueClientVersion>
     <Authors>TapQueue contributors</Authors>
     <Product>TapQueue</Product>
     <Copyright>Copyright (c) TapQueue contributors</Copyright>
