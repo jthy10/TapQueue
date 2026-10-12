@@ -63,6 +63,7 @@ export async function render(root, ctx) {
           ["Format", h("code", null, job.documentFormat)],
           ["Pages", [pages(job), job.copies > 1 ? `, ${job.copies} copies` : null,
             job.pages == null && h("span", { class: "sub" }, "Couldn't be counted, so it counts as 1 page (per copy) against page limits.")]],
+          (job.color != null || job.duplex != null) && ["Sent to print", printMode(job)],
           job.refundedPages > 0 && ["Given back", [`${job.refundedPages} page${job.refundedPages === 1 ? "" : "s"}`,
             h("span", { class: "sub" }, "Its owner stopped it at the printer before these printed, so they don't count against page limits.")]],
           ["Size", bytes(job.sizeBytes)],
@@ -119,6 +120,10 @@ function owner(job) {
   if (job.owner) return h("a", { href: `users/${enc(job.owner)}`, onclick: (e) => e.stopPropagation() }, job.owner);
   return h("span", { class: "muted" }, "Unmatched", job.claimedUser && ` (sent as ${job.claimedUser})`);
 }
+
+/** "Colour, both sides": what the job asked for in the print dialog. */
+const printMode = (j) => [j.color == null ? "Colour left to the printer" : j.color ? "Colour" : "Black and white",
+  j.duplex == null ? null : j.duplex ? "both sides" : "one side"].filter(Boolean).join(", ");
 
 /** A job's page count, or a flag when it couldn't be counted. */
 export const pages = (j) => j.pages == null ? h("span", { class: "pill warn plain", title: "Couldn't count the pages; counts as 1 against page limits" }, "?") : String(j.pages);

@@ -25,7 +25,7 @@ export async function render(root, ctx) {
   u && panel({ title: "Updates", description: "New TapQueue server releases on GitHub.", actions: checkButton, body: updates }),
   b && panel({
     title: "Backups",
-    description: "The database, this server's certificate and the Active Directory CA. Held documents and published builds aren't in them.",
+    description: "The database, this server's certificate, the badge key and the Active Directory CA. Held documents and published builds aren't in them.",
     actions: [button("Schedule", { small: true, onclick: editBackupSchedule }), button("Back up now", { small: true, onclick: backUpNow })],
     body: backups,
   }),
@@ -54,6 +54,21 @@ export async function render(root, ctx) {
         h("span", { class: "sub" }, s.heldMegabytesPerUser
           ? "A job that would take someone's held documents past this is refused, so nobody can fill the disk."
           : "Anyone who may print can fill the server's disk with held jobs.")]],
+      ["Job history", [s.jobHistoryDays ? `Kept ${plural(s.jobHistoryDays, "day")}` : "Kept for ever",
+        h("span", { class: "sub" }, s.jobHistoryDays
+          ? "Finished jobs (document names, owners, where they came from) are deleted after this. Reports reach back no further."
+          : "Finished jobs' document names, owners and source PCs are never deleted.")]],
+      ["Activity log", [s.activityDays ? `Kept ${plural(s.activityDays, "day")}` : "Kept for ever"]],
+      ["Time zone", [h("span", { class: "mono" }, s.timeZone),
+        h("span", { class: "sub" }, "Where days start: page limits, reports, and the times of the daily backup and directory sync."),
+        h("span", { class: "sub" }, s.changedSettings?.includes("timeZone") ? "Set here." : "This machine's.")]],
+      ["Taps", [s.tapWaitSeconds ? `Wait up to ${plural(s.tapWaitSeconds, "second")} for the printer` : "Don't wait for the printer",
+        h("span", { class: "sub" }, `Then the station reads the next card while the job is still being sent. A busy printer is retried for ${plural(s.printerBusySeconds, "second")}; one job may take ${plural(s.printerSendSeconds, "second")} to send.`)]],
+      ["Wrong passwords", [`${s.signInAttempts} tries, then ${plural(s.signInLockoutMinutes, "minute")} locked`,
+        h("span", { class: "sub" }, "Counted for each name from each address, so guessing from one machine doesn't lock the person out everywhere.")]],
+      ["Reverse proxies", s.trustedProxies?.length
+        ? [h("code", null, s.trustedProxies.join(", ")), h("span", { class: "sub" }, "Callers' addresses are taken from X-Forwarded-For when a request comes from these. server.trusted_proxies in server.toml.")]
+        : ["None", h("span", { class: "sub" }, "If the server is behind one, set server.trusted_proxies in server.toml, or everyone shares the proxy's address.")]],
       ["Jobs without a PC key", [s.addressMatching === "off" ? "Refused" : "Matched by address",
         h("span", { class: "sub" }, s.addressMatching === "off"
           ? "Only jobs from PCs whose TapQueue client has a key (0.8 on) go to someone."
@@ -105,18 +120,29 @@ export async function render(root, ctx) {
       b.lastError ? h("div", { class: "callout bad" }, `The last daily backup failed: ${b.lastError}`) : null,
       props([
         ["Daily backup", b.time
-          ? [`At ${b.time} on the server's clock`, h("span", { class: "sub" }, `The newest ${b.keep} are kept. Next: ${dateTime(b.nextRunAt)}`)]
+          ? [`At ${b.time} (${b.timeZone})`, h("span", { class: "sub" }, `The newest ${b.keep} are kept. Next: ${dateTime(b.nextRunAt)}`)]
           : [pill("Off", "warn"), h("span", { class: "sub" }, "Only backups you make here, and one before each upgrade.")]],
         ["Kept in", [h("code", null, b.directory), h("span", { class: "sub" },
-          "On this server's own disk: download copies, or fetch them from another machine with tapqueue-admin backups download latest. ",
+          b.copyTo ? "On this server's own disk. " : "On this server's own disk: download copies, or fetch them from another machine with tapqueue-admin backups download latest. ",
           "To restore one, stop the server and run tapqueue-server --restore.")]],
+        ["Copied to", b.copyTo
+          ? [h("code", null, b.copyTo), b.copyError ? pill("Not reachable", "bad") : pill("Up to date", "ok"),
+            h("span", { class: "sub" }, b.copyError ? `The last copy failed: ${b.copyError}. Backups made meanwhile follow when it works again.`
+              : "Every backup is copied here as it's made, and deleted here when it's deleted above.")]
+          : [pill("Nowhere else", "warn"), h("span", { class: "sub" },
+            "If this disk dies, so do the backups. Set backup.copy_to in server.toml to another disk or a mounted share.")]],
+        ["Encryption", b.encrypted
+          ? [pill("Encrypted", "ok"), h("span", { class: "sub" }, "With backup.passphrase from server.toml. Restoring needs it: keep a copy that isn't on this server.")]
+          : [pill("Not encrypted", "warn"), h("span", { class: "sub" },
+            "A backup holds password hashes, the badge key and this server's private key. Set backup.passphrase in server.toml to encrypt them.")]],
       ]),
       table({
         rows: b.backups,
         empty: empty("No backups yet", b.time ? `The first daily one is made at ${b.time}.` : "Make one with Back up now."),
         columns: [
           { label: "Made", value: (x) => h("span", { class: "cell-strong", title: x.name }, dateTime(x.createdAt)) },
-          { label: "Why", value: (x) => why[x.kind] ?? x.kind },
+          { label: "Why", value: (x) => [why[x.kind] ?? x.kind,
+            h("span", { class: "sub" }, [x.encrypted ? "Encrypted" : "Not encrypted", x.copied === false ? "not copied yet" : x.copied ? "copied" : null].filter(Boolean).join(", "))] },
           { label: "Size", class: "num", value: (x) => bytes(x.sizeBytes) },
           { label: "", class: "num", value: (x) => h("span", { style: "display:inline-flex;gap:8px" },
             h("a", { class: "btn small", href: `/api/v1/admin/server/backups/${enc(x.name)}`, download: x.name }, "Download"),
@@ -148,7 +174,7 @@ export async function render(root, ctx) {
   function editBackupSchedule() {
     const on = select("on", [["on", "Every day"], ["off", "Off"]], b.time ? "on" : "off");
     const at = input("time", { type: "time", required: true, value: b.time ?? "02:00" });
-    const atField = field("At", at, "On the server's clock. If the server is off then, it's made when it next starts.");
+    const atField = field("At", at, `In the server's time zone (${b.timeZone}). If the server is off then, it's made when it next starts.`);
     atField.hidden = !b.time;
     on.onchange = () => { atField.hidden = on.value === "off"; };
     formDialog({
@@ -272,6 +298,24 @@ export async function render(root, ctx) {
           ["off", "Don't match them to anyone"],
         ], s.addressMatching),
           "Clients from 0.8 on give each PC a key, so its jobs are matched by PC and PC user, not address."),
+        field("Keep job history for (days)", input("jobHistoryDays", { type: "number", min: 0, max: 3650, required: true, value: s.jobHistoryDays }),
+          "0 keeps it for ever; otherwise 32 or more, so monthly page limits can still be counted. Reports reach back only this far."),
+        field("Keep the activity log for (days)", input("activityDays", { type: "number", min: 0, max: 3650, required: true, value: s.activityDays }),
+          "0 keeps it for ever."),
+        field("Time zone", h("div", { class: "field-row" },
+          input("timeZone", { required: true, value: s.timeZone, placeholder: "Europe/Oslo", list: "time-zones" }),
+          select("timeZoneSource", [["here", "Set here"], ["machine", "Use this machine's"]], changed("timeZone") ? "here" : "machine")),
+          "An IANA name like Europe/Oslo or America/Chicago. Days start at midnight there."),
+        h("datalist", { id: "time-zones" }, ...(Intl.supportedValuesOf?.("timeZone") ?? []).map((z) => h("option", { value: z }))),
+        field("A tap waits for the printer for (seconds)", input("tapWaitSeconds", { type: "number", min: 0, max: 120, required: true, value: s.tapWaitSeconds }),
+          "0 to 120. After this the station reads the next card; the job carries on, and goes back on hold if the printer refuses it."),
+        field("Retry a busy printer for (seconds)", input("printerBusySeconds", { type: "number", min: 0, max: 3600, required: true, value: s.printerBusySeconds })),
+        field("Sending one job may take (seconds)", input("printerSendSeconds", { type: "number", min: 10, max: 3600, required: true, value: s.printerSendSeconds }),
+          "10 to 3600. Raise it for very large jobs on slow printers."),
+        field("Wrong passwords before sign-in is refused", h("div", { class: "field-row" },
+          input("signInAttempts", { type: "number", min: 3, max: 100, required: true, value: s.signInAttempts }),
+          input("signInLockoutMinutes", { type: "number", min: 1, max: 1440, required: true, value: s.signInLockoutMinutes, "aria-label": "Minutes locked" })),
+          "Tries (3 to 100), then minutes locked (1 to 1440), for one name from one address."),
       ],
       onSubmit: async (v) => {
         const body = { reset: [] };
@@ -280,6 +324,10 @@ export async function render(root, ctx) {
         if (v.quotaOverrun !== s.quotaOverrun) body.quotaOverrun = v.quotaOverrun;
         if (v.addressMatching !== s.addressMatching) body.addressMatching = v.addressMatching;
         if (Number(v.heldMegabytesPerUser) !== s.heldMegabytesPerUser) body.heldMegabytesPerUser = Number(v.heldMegabytesPerUser);
+        for (const key of ["jobHistoryDays", "activityDays", "tapWaitSeconds", "printerBusySeconds", "printerSendSeconds", "signInAttempts", "signInLockoutMinutes"])
+          if (Number(v[key]) !== s[key]) body[key] = Number(v[key]);
+        if (v.timeZoneSource === "machine") body.reset.push("timeZone");
+        else if (v.timeZone.trim() !== s.timeZone || !changed("timeZone")) body.timeZone = v.timeZone.trim();
         s = await api.patch("server/settings", body);
         draw();
         toast("Settings saved");

@@ -67,7 +67,7 @@ export async function render(root, ctx) {
     const byTime = by === "day" || by === "month";
     const people = new Set(report.rows.filter((r) => r.key).map((r) => r.key)).size;
     summary.replaceChildren(
-      stat("Pages", number(report.pages), `${report.from} to ${report.to}`),
+      stat("Pages", number(report.pages), `${number(report.colorPages)} colour, ${number(report.monoPages)} black and white, ${number(report.duplexPages)} two-sided`),
       stat("Jobs", number(report.jobs), report.jobs ? `${number(Math.round(report.pages / report.jobs))} pages a job on average` : "Nothing released in this period"),
       stat(byTime ? (by === "day" ? "Busiest day" : "Busiest month") : `${groupings.find(([v]) => v === by)[1]} that printed`,
         byTime ? (report.pages ? report.rows.reduce((a, r) => (r.pages > a.pages ? r : a)).key : "None") : number(people),
@@ -75,6 +75,8 @@ export async function render(root, ctx) {
     body.replaceChildren(
       report.uncountedJobs ? h("div", { class: "callout info", style: "margin:12px 16px 0" },
         `${plural(report.uncountedJobs, "job")} couldn't be counted and ${report.uncountedJobs === 1 ? "counts" : "count"} as 1 page a copy.`) : "",
+      report.pages > report.colorPages + report.monoPages ? h("div", { class: "callout info", style: "margin:12px 16px 0" },
+        `${number(report.pages - report.colorPages - report.monoPages)} pages are neither colour nor black and white here: their jobs left the choice to the printer, or were printed before TapQueue 0.16.`) : "",
       by === "group" ? h("div", { class: "callout info", style: "margin:12px 16px 0" },
         "Groups are the ones people are in today. Someone in two groups counts in both, so the rows can add up to more than the total.") : "",
       table({
@@ -87,6 +89,9 @@ export async function render(root, ctx) {
               r.key && r.key !== r.name ? h("span", { class: "sub" }, r.key) : ""] },
           { label: "Jobs", class: "num", value: (r) => number(r.jobs) },
           { label: "Pages", class: "num", value: (r) => number(r.pages) },
+          { label: "Colour", class: "num", value: (r) => number(r.colorPages) },
+          { label: "Black and white", class: "num", value: (r) => number(r.monoPages) },
+          { label: "Two-sided", class: "num", value: (r) => number(r.duplexPages) },
           { label: "", value: (r) => h("div", { class: "report-bar", title: report.pages ? `${Math.round(100 * r.pages / report.pages)}% of all pages` : "" },
             h("span", { style: `width:${(100 * r.pages / most).toFixed(1)}%` })) },
         ],
