@@ -89,7 +89,8 @@ A backup from an older TapQueue restores fine: the server upgrades the database 
    The certificate comes with the backup, so their `server_cert_fingerprint` still matches. A
    self-signed certificate lists the names it was made for; if the new machine has a different
    name, see [tls.md](tls.md).
-4. Publish the current client and station builds again (`tapqueue-admin clients publish`).
+4. Publish the current client and station builds again (**Updates → Check for updates**, or
+   `tapqueue-admin clients update` and `tapqueue-admin stations update`).
 
 ### Undoing an upgrade
 

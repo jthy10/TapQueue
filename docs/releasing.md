@@ -35,9 +35,10 @@ changed and, if it breaks something, what to do about it.
    notes are that version's section of the changelog.
 5. Set the version to the next expected one so development builds don't claim to be the release.
 
-For a client release, push it to your PCs afterwards, on the server:
-`sudo tapqueue-admin clients publish TapQueue_client_X.Y.Z_win-x64.zip` and
-`sudo tapqueue-admin clients publish TapQueue_client_X.Y.Z_linux-x64.tar.gz`.
+For a client release, push it to your PCs afterwards: **Updates → Check for updates → Publish** in
+the console, or `sudo tapqueue-admin clients update` on the server. After a server release and
+upgrade, the same under Release stations (`tapqueue-admin stations update`). Both look for the
+asset names below, so keep them as they are.
 
 ## What a release contains
 

@@ -11,6 +11,15 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+### Added
+- **Check for updates** for clients and stations, on the console's Updates page. It asks GitHub
+  for the newest client release, or the station build that goes with this server (never a newer
+  one), and **Publish** has the server download it, check it against the release's `SHA256SUMS`
+  and hand it out, so PCs and stations update without anyone downloading and uploading programs.
+  `tapqueue-admin clients update` and `tapqueue-admin stations update` do the same; `--check` only
+  looks. Needs the server to reach `api.github.com` and `github.com`, and the same role as
+  publishing a build by upload (admin of Updates). Uploading a build still works.
+
 ## [0.12.1] - 2026-10-11
 
 ### Added

@@ -23,6 +23,8 @@ tapqueue-admin printers edit <id> [--uri] [--name] [--location] [--tls-skip-veri
 tapqueue-admin printers remove <id>
 
 tapqueue-admin jobs [--status held]            List recent jobs
+tapqueue-admin clients update [--check]        Publish the newest client release from GitHub; --check only looks
+tapqueue-admin stations update [--check]       The same for the station build that goes with this server
 tapqueue-admin report [--by user|group|printer|queue|day|month] [--from 2026-10-01] [--to 2026-10-31] [--csv]
                                                Pages printed; this month by person unless told otherwise
                                                (see reports.md)

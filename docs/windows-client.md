@@ -73,13 +73,17 @@ The tray app has to be running for jobs to be matched to the user. See
 
 ## Updates
 
-PCs update themselves. To push a new build to every PC, download
-`TapQueue_client_X.Y.Z_win-x64.zip` from the release and publish it on the server:
+PCs update themselves. To push the newest release to every PC, open **Updates** in the admin
+console, press **Check for updates** under Clients and then **Publish**: the server downloads the
+release from GitHub, checks it against its `SHA256SUMS` and hands it out (servers from 0.13). Or:
 
 ```
-sudo tapqueue-admin clients publish TapQueue_client_X.Y.Z_win-x64.zip
-sudo tapqueue-admin clients        # each PC's version; "(updating)" until it has installed it
+sudo tapqueue-admin clients update     # the newest release on GitHub, Windows and Linux
+sudo tapqueue-admin clients            # each PC's version; "(updating)" until it has installed it
 ```
+
+For a build that isn't a GitHub release, or a server that can't reach GitHub, upload it instead:
+`sudo tapqueue-admin clients publish TapQueue_client_X.Y.Z_win-x64.zip`.
 
 The TapQueue service on each PC checks with the server once a minute. If its
 `TapQueueClient.exe` differs from the newest published build, it downloads the build (the server

@@ -89,8 +89,10 @@ message is logged at the station instead. **Restart** asks it to restart on its 
 
 ### Updates
 
-Publish a station build from the console's Updates page (the `tapqueue-station` program from the
-station archive). Every station downloads it, checks it runs (`--version`), installs it into
+On the console's Updates page, **Check for updates** under Release stations finds the station
+build that goes with the server's version and **Publish** hands it out (`tapqueue-admin stations
+update` does the same); do it after upgrading the server. You can also upload the
+`tapqueue-station` program from a station archive there. Every station downloads it, checks it runs (`--version`), installs it into
 `/var/lib/tapqueue-station` and restarts, within about 15 seconds. The service starts from there
 when a build has been installed that way. Running `install-station.sh` again removes it, so a
 build installed by hand always takes over.

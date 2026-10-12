@@ -79,12 +79,15 @@ The tray app has to be running for jobs to be matched to the user. See
 
 ## Updates
 
-PCs update themselves, as on Windows. Publish the Linux tarball from the release on the server:
+PCs update themselves, as on Windows. **Updates → Check for updates → Publish** in the admin
+console, or on the server:
 
 ```
-sudo tapqueue-admin clients publish TapQueue_client_X.Y.Z_linux-x64.tar.gz
-sudo tapqueue-admin workstations   # each PC's OS and version; "(behind)" until it has installed it
+sudo tapqueue-admin clients update     # the newest release on GitHub, Windows and Linux
+sudo tapqueue-admin workstations       # each PC's OS and version; "(behind)" until it has installed it
 ```
+
+To upload a build yourself instead: `sudo tapqueue-admin clients publish TapQueue_client_X.Y.Z_linux-x64.tar.gz`.
 
 Windows and Linux builds are published separately; each PC installs the newest build for its own
 platform. The service checks with the server once a minute, downloads a build that differs from
