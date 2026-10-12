@@ -11,6 +11,14 @@ public interface IReleaseFeed
 {
     /// <summary>The newest published server release, or null if there's none.</summary>
     Task<ServerReleaseDto?> LatestServerReleaseAsync(CancellationToken ct);
+
+    /// <summary>
+    /// The releases a server running <paramref name="current"/> can go back to, newest first: older
+    /// than it, no older than <see cref="ServerDowngrade.OldestVersion"/>, and complete, with the
+    /// server, station and both client archives published under that one version.
+    /// </summary>
+    Task<IReadOnlyList<ServerReleaseDto>> OlderReleasesAsync(string current, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<ServerReleaseDto>>([]);
 }
 
 /// <summary>Where the server gets client and station builds to hand out. Tests swap in a fake.</summary>
@@ -62,6 +70,12 @@ public sealed class GitHubReleaseFeed : IReleaseFeed, IBuildFeed, IDisposable
     {
         using var json = await ReleasesAsync(ct);
         return PickLatest(json.RootElement);
+    }
+
+    public async Task<IReadOnlyList<ServerReleaseDto>> OlderReleasesAsync(string current, CancellationToken ct)
+    {
+        using var json = await ReleasesAsync(ct);
+        return PickOlder(json.RootElement, current);
     }
 
     public async Task<ServerReleaseDto?> LatestClientReleaseAsync(CancellationToken ct)
@@ -130,14 +144,34 @@ public sealed class GitHubReleaseFeed : IReleaseFeed, IBuildFeed, IDisposable
         PickLatest(releases, "server-v", v => [$"TapQueue_server_{v}_linux-x64.tar.gz", "SHA256SUMS"]);
 
     /// <summary>
+    /// What <see cref="IReleaseFeed.OlderReleasesAsync"/> returns, out of GitHub's list: a version
+    /// counts when its server release has the server and station archives and its client release has
+    /// both clients, so the server and every PC and station can go back to it together.
+    /// </summary>
+    public static IReadOnlyList<ServerReleaseDto> PickOlder(JsonElement releases, string current)
+    {
+        if (!ReleaseVersion.TryParse(ReleaseVersion.Of(current), out var running) || !ReleaseVersion.TryParse(ServerDowngrade.OldestVersion, out var oldest))
+            return [];
+        bool InRange(Version v) => v >= oldest && v < running;
+        var clients = PickAll(releases, "client-v", v => [ClientArchive(v, ClientPlatform.Windows), ClientArchive(v, ClientPlatform.Linux), "SHA256SUMS"], InRange)
+            .Select(r => r.Version).ToHashSet();
+        return PickAll(releases, "server-v", v => [$"TapQueue_server_{v}_linux-x64.tar.gz", StationArchive(v), "SHA256SUMS"], InRange)
+            .Where(r => clients.Contains(r.Version)).OrderByDescending(r => r.Version).Select(r => r.Dto).ToList();
+    }
+
+    /// <summary>
     /// The newest published release whose tag is <paramref name="tagPrefix"/> and a version, that has
     /// every file <paramref name="needs"/> names for that version and that <paramref name="allow"/> lets through.
     /// </summary>
-    public static ServerReleaseDto? PickLatest(JsonElement releases, string tagPrefix, Func<string, string[]> needs, Func<Version, bool>? allow = null)
+    public static ServerReleaseDto? PickLatest(JsonElement releases, string tagPrefix, Func<string, string[]> needs, Func<Version, bool>? allow = null) =>
+        PickAll(releases, tagPrefix, needs, allow).OrderByDescending(r => r.Version).Select(r => r.Dto).FirstOrDefault();
+
+    /// <summary>Every published release <see cref="PickLatest(JsonElement, string, Func{string, string[]}, Func{Version, bool}?)"/> would consider.</summary>
+    private static List<(Version Version, ServerReleaseDto Dto)> PickAll(JsonElement releases, string tagPrefix, Func<string, string[]> needs, Func<Version, bool>? allow = null)
     {
+        var found = new List<(Version Version, ServerReleaseDto Dto)>();
         if (releases.ValueKind != JsonValueKind.Array)
-            return null;
-        (Version Version, ServerReleaseDto Dto)? best = null;
+            return found;
         foreach (var release in releases.EnumerateArray())
         {
             if (Bool(release, "draft") || Bool(release, "prerelease"))
@@ -152,14 +186,11 @@ public sealed class GitHubReleaseFeed : IReleaseFeed, IBuildFeed, IDisposable
                 : [];
             if (!needs(version).All(assets.Contains))
                 continue;
-            if (best is null || parsed > best.Value.Version)
-            {
-                var published = Text(release, "published_at") is { } p && DateTimeOffset.TryParse(p, out var at) ? at : (DateTimeOffset?)null;
-                var url = Text(release, "html_url") ?? $"https://github.com/{Repository}/releases/tag/{tag}";
-                best = (parsed, new ServerReleaseDto(version, url, published));
-            }
+            var published = Text(release, "published_at") is { } p && DateTimeOffset.TryParse(p, out var at) ? at : (DateTimeOffset?)null;
+            var url = Text(release, "html_url") ?? $"https://github.com/{Repository}/releases/tag/{tag}";
+            found.Add((parsed, new ServerReleaseDto(version, url, published)));
         }
-        return best?.Dto;
+        return found;
     }
 
     private static bool Bool(JsonElement e, string name) =>

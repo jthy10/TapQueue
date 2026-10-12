@@ -186,7 +186,7 @@ public sealed class ServerUpdater(UpdaterSetup setup, IReleaseFeed feed, Databas
         events.Record(EventCategory.Admin, EventLog.System, null, $"Started the scheduled upgrade of the server to {scheduled.Version}.");
     }
 
-    private int ReleasingJobs() =>
+    internal int ReleasingJobs() =>
         Convert.ToInt32(database.Scalar("SELECT COUNT(*) FROM jobs WHERE status = $s", ("$s", JobStatus.Releasing)));
 
     /// <summary>Writes the request in one go (a temp file renamed over it) so the updater never reads half of it.</summary>
@@ -197,6 +197,22 @@ public sealed class ServerUpdater(UpdaterSetup setup, IReleaseFeed feed, Databas
         File.Move(temp, setup.RequestFile, overwrite: true);
         logger.LogWarning("Upgrading to TapQueue server {Version}: tapqueue-update downloads, checks and installs it, then restarts the server", version);
     }
+
+    /// <summary>
+    /// Asks the updater to install an older release (<see cref="ServerDowngrade"/>). The request says
+    /// it's a downgrade, because the updater otherwise only ever goes to a newer version.
+    /// </summary>
+    internal void RequestDowngrade(string version)
+    {
+        ClearSchedule();
+        var temp = setup.RequestFile + ".tmp";
+        File.WriteAllText(temp, DowngradePrefix + version + "\n");
+        File.Move(temp, setup.RequestFile, overwrite: true);
+        logger.LogWarning("Going back to TapQueue server {Version}: tapqueue-update downloads and checks it, steps the database back, installs it and restarts the server", version);
+    }
+
+    /// <summary>How a request for an older version starts; update-server.sh looks for it.</summary>
+    public const string DowngradePrefix = "downgrade:";
 
     public ScheduledUpdateDto? Scheduled()
     {
@@ -231,6 +247,8 @@ public sealed class ServerUpdater(UpdaterSetup setup, IReleaseFeed feed, Databas
         {
             var requested = File.GetLastWriteTimeUtc(setup.RequestFile);
             var version = SafeRead(setup.RequestFile)?.Trim() ?? "";
+            if (version.StartsWith(DowngradePrefix, StringComparison.Ordinal))
+                version = version[DowngradePrefix.Length..];
             var asked = new DateTimeOffset(requested, TimeSpan.Zero);
             return DateTimeOffset.UtcNow - asked < RequestTimeout
                 ? new UpdateRunDto("requested", version, asked, "Waiting for tapqueue-update to start.")

@@ -58,9 +58,44 @@ public sealed class BuildUpdater(IBuildFeed feed, ClientBuildStore clientBuilds,
     /// <exception cref="InvalidOperationException">It can't be done; the message says why.</exception>
     public Task<BuildReleaseDto> PublishClientsAsync(string version, CancellationToken ct) => PublishAsync(_clients, version, async dir =>
     {
+        await PublishClientsOfAsync(version, dir, ct);
+        return ClientStatus();
+    }, ct);
+
+    /// <summary>Publishes the station build of release <paramref name="version"/>.</summary>
+    /// <exception cref="InvalidOperationException">It can't be done; the message says why.</exception>
+    public Task<BuildReleaseDto> PublishStationAsync(string version, CancellationToken ct) => PublishAsync(_stations, version, async dir =>
+    {
+        await PublishStationOfAsync(version, dir, ct);
+        return StationStatus();
+    }, ct);
+
+    /// <summary>
+    /// Publishes the clients and the station build of an older release, for a downgrade
+    /// (<see cref="ServerDowngrade"/>, which has checked the version is one to go back to). All of
+    /// them are fetched and checked before any is handed out.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">It can't be done; the message says why.</exception>
+    public Task PublishOlderAsync(string version, CancellationToken ct) => WithDownloadsAsync(version, async dir =>
+    {
+        var clients = await FetchClientsAsync(version, dir, ct);
+        var station = await FetchStationAsync(version, dir, ct);
+        await HandOutAsync(clients, "PCs install it when they next check in", ct);
+        await HandOutStationAsync(station, ct);
+        return true;
+    }, ct);
+
+    private async Task PublishClientsOfAsync(string version, string dir, CancellationToken ct) =>
+        await HandOutAsync(await FetchClientsAsync(version, dir, ct), "PCs install it when they next check in", ct);
+
+    private async Task PublishStationOfAsync(string version, string dir, CancellationToken ct) =>
+        await HandOutStationAsync(await FetchStationAsync(version, dir, ct), ct);
+
+    /// <summary>Downloads and checks both clients of a release. Nothing is published yet, so PCs don't end up on different versions.</summary>
+    private async Task<List<(string Platform, string Path, string Label)>> FetchClientsAsync(string version, string dir, CancellationToken ct)
+    {
         var tag = $"client-v{version}";
-        var sums = await ChecksumsAsync(tag, dir, ct);
-        // Both are fetched and checked before either is published, so PCs don't end up on different versions.
+        var sums = await ChecksumsAsync(tag, Directory.CreateDirectory(Path.Combine(dir, "client")).FullName, ct);
         var programs = new List<(string Platform, string Path, string Label)>();
         foreach (var platform in ClientPlatform.All)
         {
@@ -70,36 +105,41 @@ public sealed class BuildUpdater(IBuildFeed feed, ClientBuildStore clientBuilds,
                         ?? await LabelAsync(tag, version, ct);
             programs.Add((platform, program, label));
         }
+        return programs;
+    }
+
+    private async Task HandOutAsync(List<(string Platform, string Path, string Label)> programs, string then, CancellationToken ct)
+    {
         foreach (var (platform, path, label) in programs)
         {
+            // A platform that already hands out that exact program is left alone.
             if (clientBuilds.Latest(platform) is { } current && current.Sha256 == Sha256(path))
                 continue;
             await using var program = File.OpenRead(path);
             var build = await clientBuilds.PublishAsync(platform, label, program, ct);
             logger.LogInformation("Published {Platform} client {Version} from GitHub (sha256 {Sha256})", ClientPlatform.DisplayName(platform), build.Version, build.Sha256);
-            events.Admin(null, $"Published {ClientPlatform.DisplayName(platform)} client {build.Version} from the GitHub release; PCs install it when they next check in.");
+            events.Admin(null, $"Published {ClientPlatform.DisplayName(platform)} client {build.Version} from the GitHub release; {then}.");
         }
-        return ClientStatus();
-    }, ct);
+    }
 
-    /// <summary>Publishes the station build of release <paramref name="version"/>.</summary>
-    /// <exception cref="InvalidOperationException">It can't be done; the message says why.</exception>
-    public Task<BuildReleaseDto> PublishStationAsync(string version, CancellationToken ct) => PublishAsync(_stations, version, async dir =>
+    private async Task<(string Path, string Label)> FetchStationAsync(string version, string dir, CancellationToken ct)
     {
         var tag = $"server-v{version}";
-        var sums = await ChecksumsAsync(tag, dir, ct);
+        var sums = await ChecksumsAsync(tag, Directory.CreateDirectory(Path.Combine(dir, "server")).FullName, ct);
         var archive = await FetchAsync(tag, GitHubReleaseFeed.StationArchive(version), sums, dir, ct);
         var path = Path.Combine(dir, "station");
-        var label = Extract(archive, "tapqueue-station", path) ?? await LabelAsync(tag, version, ct);
-        if (stationBuilds.Latest() is not { } current || current.Sha256 != Sha256(path))
-        {
-            await using var program = File.OpenRead(path);
-            var build = await stationBuilds.PublishAsync(label, program, ct);
-            logger.LogInformation("Published station build {Version} from GitHub (sha256 {Sha256})", build.Version, build.Sha256);
-            events.Admin(null, $"Published station build {build.Version} from the GitHub release; stations install it within seconds.");
-        }
-        return StationStatus();
-    }, ct);
+        return (path, Extract(archive, "tapqueue-station", path) ?? await LabelAsync(tag, version, ct));
+    }
+
+    private async Task HandOutStationAsync((string Path, string Label) station, CancellationToken ct)
+    {
+        if (stationBuilds.Latest() is { } current && current.Sha256 == Sha256(station.Path))
+            return;
+        await using var program = File.OpenRead(station.Path);
+        var build = await stationBuilds.PublishAsync(station.Label, program, ct);
+        logger.LogInformation("Published station build {Version} from GitHub (sha256 {Sha256})", build.Version, build.Sha256);
+        events.Admin(null, $"Published station build {build.Version} from the GitHub release; stations install it within seconds.");
+    }
 
     private async Task<BuildReleaseDto> CheckAsync(Checked state, Func<CancellationToken, Task<ServerReleaseDto?>> latest, string none,
         Func<BuildReleaseDto> status, CancellationToken ct)
@@ -143,14 +183,19 @@ public sealed class BuildUpdater(IBuildFeed feed, ClientBuildStore clientBuilds,
                 published);
     }
 
-    private async Task<BuildReleaseDto> PublishAsync(Checked state, string version, Func<string, Task<BuildReleaseDto>> publish, CancellationToken ct)
+    private Task<BuildReleaseDto> PublishAsync(Checked state, string version, Func<string, Task<BuildReleaseDto>> publish, CancellationToken ct)
     {
         // Only what an admin just looked at: the version is part of a download address, and a release
         // can't be swapped for another between the check and the click.
         lock (_lock)
             if (!ReleaseVersion.TryParse(version, out _) || state.Latest?.Version != version)
                 throw new InvalidOperationException($"{version} isn't the release the last check found. Check for updates again.");
+        return WithDownloadsAsync(version, publish, ct);
+    }
 
+    /// <summary>Runs <paramref name="publish"/> with a folder to download into, one publish at a time.</summary>
+    private async Task<T> WithDownloadsAsync<T>(string version, Func<string, Task<T>> publish, CancellationToken ct)
+    {
         await _working.WaitAsync(ct);
         var dir = Path.Combine(config.Server.DataDir, $"release-{Guid.NewGuid():N}.tmp");
         try

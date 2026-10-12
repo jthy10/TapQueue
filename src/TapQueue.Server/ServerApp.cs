@@ -121,6 +121,7 @@ public static class ServerApp
         builder.Services.AddSingleton<IBuildFeed>(services => services.GetRequiredService<GitHubReleaseFeed>());
         builder.Services.AddSingleton<BuildUpdater>();
         builder.Services.AddSingleton<ServerUpdater>();
+        builder.Services.AddSingleton<ServerDowngrade>();
         builder.Services.AddHostedService<UpdateScheduler>();
         configureServices?.Invoke(builder.Services);
 

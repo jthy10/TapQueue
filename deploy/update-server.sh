@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Upgrades tapqueue-server to a release an admin picked in the console (Server > Check for updates).
+# Upgrades tapqueue-server to a release an admin picked in the console (Server > Check for updates),
+# or takes it back to an older one (Server > Downgrade).
 #
 # tapqueue-server runs as the unprivileged tapqueue user and can't replace its own programs, so it
 # asks for an upgrade by writing the version it wants to /var/lib/tapqueue/update-request.
@@ -10,11 +11,20 @@
 # and the archive's own install-server.sh does the install, as `install.sh server` would.
 # Progress and the outcome go to /var/lib/tapqueue-update/status, which the console shows.
 #
-# Run it by hand to see what it would do: sudo /opt/tapqueue/update-server.sh 0.8.0
+#
+# Going back: an older tapqueue-server can't read a database a newer one has changed. So the request
+# says "downgrade:<version>", and before installing, the server that's installed now steps the
+# database back to what the older one needs (it asks the older program which schema that is, and
+# makes a backup first). Only releases from 0.17.0 on, the first that can answer.
+#
+# Run it by hand: sudo /opt/tapqueue/update-server.sh 0.18.0
+#                 sudo /opt/tapqueue/update-server.sh downgrade:0.17.0
 set -euo pipefail
 
 repo=jthy10/TapQueue
 prefix=/opt/tapqueue
+config=/etc/tapqueue/server.toml
+oldest_downgrade=0.17.0
 request=/var/lib/tapqueue/update-request
 statedir=/var/lib/tapqueue-update
 status=$statedir/status
@@ -32,13 +42,23 @@ main() {
     if [ -z "$version" ]; then
         version=$(take_request) || exit 0
     fi
+    local downgrade=""
+    if [[ $version == downgrade:* ]]; then
+        downgrade=yes
+        version=${version#downgrade:}
+    fi
     if ! [[ $version =~ ^[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}$ ]]; then
         fail "" "The update request didn't name a version like 1.2.3."
     fi
 
     local installed
     installed=$(server_version "$prefix/tapqueue-server")
-    if [ -n "$installed" ] && ! newer "$version" "$installed"; then
+    if [ -n "$downgrade" ]; then
+        [ -n "$installed" ] || fail "$version" "Can't tell which version is installed, so can't go back from it."
+        newer "$installed" "$version" || fail "$version" "$installed is installed; $version isn't older than that."
+        [ "$version" = "$oldest_downgrade" ] || newer "$version" "$oldest_downgrade" ||
+            fail "$version" "$oldest_downgrade is the oldest release TapQueue can go back to."
+    elif [ -n "$installed" ] && ! newer "$version" "$installed"; then
         fail "$version" "$installed is installed already; updates only go to a newer version."
     fi
 
@@ -69,10 +89,35 @@ main() {
     [ "$unpacked" = "$version" ] ||
         fail "$version" "The archive's tapqueue-server says it's ${unpacked:-unknown}, not $version. Nothing was installed."
 
+    if [ -n "$downgrade" ]; then
+        step_database_back "$version" "$tmp/$name/tapqueue-server"
+    fi
+
     if ! "$tmp/$name/install-server.sh"; then
         fail "$version" "install-server.sh failed. See: journalctl -u tapqueue-update -n 100"
     fi
-    report done "$version" "Updated to TapQueue server $version"
+    if [ -n "$downgrade" ]; then
+        report done "$version" "Went back to TapQueue server $version"
+    else
+        report done "$version" "Updated to TapQueue server $version"
+    fi
+}
+
+# step_database_back VERSION OLDER-PROGRAM: stops the server and has the installed one take the
+# database back to the schema the older program needs. If that fails the server is started again
+# as it was, and nothing is installed.
+step_database_back() {
+    local version=$1 older=$2 schema
+    schema=$({ timeout 5 "$older" --schema-version 2>/dev/null || true; } | grep -xE '[0-9]{1,6}' | head -n 1 || true)
+    [ -n "$schema" ] || fail "$version" "TapQueue server $version can't say which database it needs, so it can't be gone back to."
+    command -v runuser >/dev/null || fail "$version" "Needs runuser (apt install util-linux)."
+
+    report running "$version" "Taking the database back for TapQueue server $version"
+    systemctl stop tapqueue-server
+    if ! runuser -u tapqueue -- "$prefix/tapqueue-server" --config "$config" --downgrade-schema "$schema"; then
+        systemctl start tapqueue-server || true
+        fail "$version" "Couldn't take the database back to schema $schema; the server is running as before. See: journalctl -u tapqueue-update -n 100"
+    fi
 }
 
 # Reads and removes the request the server wrote. Removing it first means a failed update isn't

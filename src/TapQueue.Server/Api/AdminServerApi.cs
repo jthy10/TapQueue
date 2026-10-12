@@ -36,6 +36,13 @@ public static class AdminServerApi
             updater.Apply(request.Version, request.At, http.Caller().Actor) is { } error
                 ? Results.Conflict(new ErrorResponse(error))
                 : Results.Ok(updater.Status()));
+        // Going back to an older release: the server, and the clients and stations it hands out.
+        admin.MapGet("/server/downgrade", async (ServerDowngrade downgrade, bool? refresh, CancellationToken ct) =>
+            refresh == true ? await downgrade.CheckAsync(ct) : downgrade.Status());
+        admin.MapPost("/server/downgrade", async (DowngradeRequest request, ServerDowngrade downgrade, CancellationToken ct) =>
+            await downgrade.ApplyAsync(request.Version ?? "", ct) is { } error
+                ? Results.Conflict(new ErrorResponse(error))
+                : Results.Ok(downgrade.Status()));
         // New PCs then need this code in client.toml to register. Shown once; making another replaces it.
         admin.MapPost("/server/enrollment-code", (ServerSettings settings, EventLog events) =>
         {
