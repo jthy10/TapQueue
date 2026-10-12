@@ -75,6 +75,43 @@ public sealed class ReleaseService(JobStore jobs, Spool spool, PrinterRegistry p
         return new ReleaseResponse(results);
     }
 
+    /// <summary>The paper size a job asks for, from its media keyword or media-col; null if it leaves it to the printer.</summary>
+    internal static MediaSize? PaperSize(IppGroup asked)
+    {
+        if (asked.Find("media")?.First?.AsString() is { } name && MediaSize.Parse(name) is { } named)
+            return named;
+        if (asked.Find("media-col")?.First?.Value is IppCollection col
+            && col.Find(a => a.Name == "media-size")?.First?.Value is IppCollection size
+            && size.Find(a => a.Name == "x-dimension")?.First?.AsInt() is { } x
+            && size.Find(a => a.Name == "y-dimension")?.First?.AsInt() is { } y)
+        {
+            return QueueCapabilities.DefaultMedia.FirstOrDefault(m => Math.Abs(m.X - x) <= 200 && Math.Abs(m.Y - y) <= 200) ?? new MediaSize("", x, y);
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// A job sent in colour or two-sided to a printer that can't still prints, in black and white or on
+    /// one side. It's recorded as it came out, and whoever released it is told. Null if it prints as sent.
+    /// </summary>
+    private string? PrintedDifferently(JobRecord job, PrinterRecord printer, PrinterCapabilities? capabilities)
+    {
+        var noColor = job.Color == true && capabilities?.Color == false;
+        var oneSided = job.Duplex == true && capabilities?.Duplex == false;
+        if (!noColor && !oneSided)
+            return null;
+        jobs.SetPrintedAs(job.Id, noColor ? false : job.Color, oneSided ? false : job.Duplex);
+        var note = (noColor, oneSided) switch
+        {
+            (true, true) => $"{printer.Name} can't print in colour or on both sides, so this prints in black and white on one side.",
+            (true, false) => $"{printer.Name} can't print in colour, so this prints in black and white.",
+            _ => $"{printer.Name} can't print on both sides, so this prints on one side.",
+        };
+        events.Record(EventCategory.Job, EventLog.System, job.Username is null ? EventLog.Job(job.Id) : EventLog.User(job.Username),
+            $"\"{job.Name}\" (job #{job.Id}): {note}");
+        return note;
+    }
+
     /// <summary>
     /// Jobs sent to a stopped or unreachable printer would be lost to it, so they stay held instead.
     /// A printer last seen down is checked again first, in case someone just fixed it.
@@ -109,8 +146,16 @@ public sealed class ReleaseService(JobStore jobs, Spool spool, PrinterRegistry p
                 .Add("document-format", IppValue.MimeType(job.DocumentFormat));
             // Replay what the user picked in the print dialog (copies, page ranges, orientation…).
             // Without ipp-attribute-fidelity the printer ignores anything it can't do rather than failing.
+            var capabilities = printers.StatusOf(printer.Id)?.Capabilities;
             if (jobs.GetJobAttributes(job.Id) is { } template)
-                request.Groups.Add(await JobTemplate.DecodeAsync(template, ct));
+            {
+                var asked = await JobTemplate.DecodeAsync(template, ct);
+                // The wrong paper is the one thing a printer doesn't quietly make do with: it scales the
+                // page, or stops and asks for paper nobody has. Better to print it somewhere that has it.
+                if (capabilities is not null && PaperSize(asked) is { } paper && !capabilities.Takes(paper.X, paper.Y))
+                    throw new InvalidOperationException($"{printer.Name} doesn't take {paper.Label} paper. Release this job at a printer that does.");
+                request.Groups.Add(asked);
+            }
 
             using var client = new IppClient(printer.TlsSkipVerify, settings.PrinterSendTimeout);
             var busyUntil = DateTimeOffset.UtcNow + settings.PrinterBusyTimeout;
@@ -146,7 +191,7 @@ public sealed class ReleaseService(JobStore jobs, Spool spool, PrinterRegistry p
             else if (done && jobs.FinishPrinting(job.Id, PrintState.Printed, null))
                 spool.Delete(job.Id);
             logger.LogInformation("Released job {JobId} \"{Name}\" for {User} to {Printer}", job.Id, job.Name, user.Username, printer.Id);
-            return new ReleaseResult(job.Id, job.Name, true, null);
+            return new ReleaseResult(job.Id, job.Name, true, null, PrintedDifferently(job, printer, capabilities));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

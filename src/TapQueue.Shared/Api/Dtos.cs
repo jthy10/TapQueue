@@ -628,7 +628,11 @@ public sealed record ReleaseRequest(string PrinterId, IReadOnlyList<long>? JobId
 
 public sealed record AdminReleaseRequest(string Username, string PrinterId, IReadOnlyList<long>? JobIds = null);
 
-public sealed record ReleaseResult(long JobId, string JobName, bool Success, string? Error);
+/// <param name="Note">
+/// For a job that was released but won't come out as it was sent: "Office printer can't print in
+/// colour, so this prints in black and white." (servers from 0.17).
+/// </param>
+public sealed record ReleaseResult(long JobId, string JobName, bool Success, string? Error, string? Note = null);
 
 public sealed record ReleaseResponse(IReadOnlyList<ReleaseResult> Results);
 

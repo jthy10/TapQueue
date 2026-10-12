@@ -266,7 +266,8 @@ public sealed class TrayApp : Application
             if (response.Results.Count == 0)
                 Notify("Nothing to release", "You have no held print jobs.");
             else if (failed.Count == 0)
-                Notify("Released", $"{ok} job{(ok == 1 ? "" : "s")} sent to {printer}.");
+                Notify("Released", $"{ok} job{(ok == 1 ? "" : "s")} sent to {printer}."
+                    + string.Concat(response.Results.Select(r => r.Note).OfType<string>().Distinct().Select(note => "\n" + note)));
             else
                 Notify("Some jobs didn't print", string.Join("\n", failed.Select(f => $"{f.JobName}: {f.Error}")), urgent: true);
             await PollAsync();

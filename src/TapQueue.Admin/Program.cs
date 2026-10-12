@@ -664,7 +664,7 @@ async Task<int> Release(string username, string printerId, List<string> jobIds)
         return 0;
     }
     foreach (var r in result.Results)
-        Console.WriteLine(r.Success ? $"released  #{r.JobId} {r.JobName}" : $"FAILED    #{r.JobId} {r.JobName}: {r.Error}");
+        Console.WriteLine(r.Success ? $"released  #{r.JobId} {r.JobName}{(r.Note is null ? "" : $" ({r.Note})")}" : $"FAILED    #{r.JobId} {r.JobName}: {r.Error}");
     return result.Results.All(r => r.Success) ? 0 : 1;
 }
 

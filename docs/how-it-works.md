@@ -52,6 +52,31 @@ receiving ──▶ held ──▶ releasing ──▶ released
   since otherwise a job stopped on its last page would print for free. Reports and page limits
   count what's left. A job that has finished printing can't be deleted.
 
+## What a queue offers
+
+A queue is what Windows (or CUPS) takes for a printer, and what it reports about itself decides
+what the print dialog offers. It's put together from what the real printers say they can do, which
+the server asks along with their health:
+
+- **Document formats** are the ones every printer takes (of PDF, JPEG, PWG and Apple raster). The
+  PC picks a format before anyone knows where the job will print, and the server passes documents
+  on as they are; it doesn't convert them. A printer that takes none of what the queue offered
+  still refuses the job at release, and the job stays held.
+- **Paper sizes, trays, paper types, finishing and resolutions** are whatever any printer offers.
+  A job that asks for a paper size is only released at a printer that has that size: anywhere
+  else the release is refused with the reason and the job stays held.
+- **Colour and two-sided** are offered when the queue's own settings allow them and some printer
+  can do them. A colour or two-sided job released at a printer that can't still prints, in black
+  and white or on one side; the tray says so, and the job is recorded as it came out, so reports
+  don't count colour pages that weren't.
+
+Until a printer has answered, a queue offers what TapQueue always did: Letter, Legal, Executive
+and A4 at 600 dpi. Windows reads a printer's abilities when it adds it, so after adding or
+changing printers choose **Refresh TapQueue** in the tray to see the difference on a PC.
+
+TapQueue talks to printers over IPP only. A printer without IPP (raw port 9100 or LPD only) can't
+be a TapQueue printer.
+
 ## Printer health
 
 The server asks every printer for its status over IPP (Get-Printer-Attributes) when it starts

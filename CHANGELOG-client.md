@@ -13,6 +13,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ### Added
 - **My print queue** says whether a job you released is still **printing** or has **printed**,
   with a 0.17 server and a printer that can be asked.
+- Releasing from the tray says when a job won't come out as it was sent: in black and white, or
+  on one side, because the printer you chose can't do otherwise.
 
 ### Changed
 - **Updates have to be signed.** The TapQueue service used to install whatever build its server

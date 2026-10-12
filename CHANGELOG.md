@@ -20,6 +20,15 @@ breaking changes; they're listed under **Changed** with what to do.
   when the printer says how many did. The console, `tapqueue-admin jobs` and the API's `printState`
   say **printing**, **printed** or **stopped**, and `printedPages` is the printer's own count
   where it gives one. Printers that can't be asked about a job behave as before. Database schema 19.
+- **Queues offer what the printers can do.** A queue used to tell every PC the same thing: four
+  paper sizes, 600 dpi, one tray, no finishing, whatever the printers behind it were. It now
+  offers the paper sizes, trays, paper types, finishing and resolutions the printers report, the
+  document formats every printer takes, and colour and two-sided only if some printer can do them
+  (and the queue's settings allow). A job that asks for a paper size is released only at a printer
+  that has it; elsewhere the release is refused with the reason and the job stays held. A colour or
+  two-sided job released at a printer that can't prints in black and white or on one side, the
+  release result says so (`note`), and the job is recorded as it came out. See
+  [docs/how-it-works.md](docs/how-it-works.md#what-a-queue-offers).
 - **Signed updates.** Client and station builds are signed with a release key when they're
   packaged, and the server keeps the signature and hands it out with the build. Stations from this
   version, and clients from 0.11, install nothing from their server that isn't signed with a key

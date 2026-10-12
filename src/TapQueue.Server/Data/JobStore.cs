@@ -176,6 +176,13 @@ public sealed class JobStore(Database database)
             """, ("$released", JobStatus.Released), ("$now", DateTimeOffset.UtcNow), ("$p", printerId), ("$pj", printerJobId),
             ("$ps", printerJobId is null ? null : PrintState.Printing), ("$id", id));
 
+    /// <summary>
+    /// A job went to a printer that can't print in colour, or on both sides: it's recorded as what
+    /// came out, so reports count the pages as they printed.
+    /// </summary>
+    public void SetPrintedAs(long id, bool? color, bool? duplex) =>
+        database.Execute("UPDATE jobs SET color = $color, duplex = $duplex WHERE id = $id", ("$color", color), ("$duplex", duplex), ("$id", id));
+
     /// <summary>Released jobs the printer hasn't finished as far as the server knows, oldest first.</summary>
     public List<JobRecord> ListPrinting() =>
         database.Query(SelectColumns + " WHERE j.print_state = $printing AND j.status = $released ORDER BY j.id", Map,
