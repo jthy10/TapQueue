@@ -11,6 +11,8 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-11
+
 ### Changed
 - Each queue needs its own name (whatever the case), at most 127 characters and without tabs or
   line breaks. PCs know their printers by name, so two queues with one name could never both be
@@ -325,7 +327,8 @@ First working version.
   readers. A tap releases the user's held jobs to the station's printer.
 - Badge enrollment by an admin (`badges add --last-tap`).
 
-[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.9.5...HEAD
+[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.10.0...HEAD
+[0.10.0]: https://github.com/jthy10/TapQueue/compare/server-v0.9.5...server-v0.10.0
 [0.9.5]: https://github.com/jthy10/TapQueue/compare/server-v0.9.0...server-v0.9.5
 [0.9.0]: https://github.com/jthy10/TapQueue/compare/server-v0.8.0...server-v0.9.0
 [0.8.0]: https://github.com/jthy10/TapQueue/compare/server-v0.7.0...server-v0.8.0
