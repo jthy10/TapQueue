@@ -11,6 +11,8 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-10-12
+
 ### Added
 - **Email notifications.** The server emails the people you list when a printer is unreachable or
   stops (paper jam, out of paper), when a release station stops checking in, and when a PC's
@@ -401,7 +403,8 @@ First working version.
   readers. A tap releases the user's held jobs to the station's printer.
 - Badge enrollment by an admin (`badges add --last-tap`).
 
-[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.14.0...HEAD
+[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.15.0...HEAD
+[0.15.0]: https://github.com/jthy10/TapQueue/compare/server-v0.14.0...server-v0.15.0
 [0.14.0]: https://github.com/jthy10/TapQueue/compare/server-v0.13.0...server-v0.14.0
 [0.13.0]: https://github.com/jthy10/TapQueue/compare/server-v0.12.1...server-v0.13.0
 [0.12.1]: https://github.com/jthy10/TapQueue/compare/server-v0.12.0...server-v0.12.1
