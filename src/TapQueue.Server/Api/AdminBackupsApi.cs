@@ -18,7 +18,9 @@ public static class AdminBackupsApi
         admin.MapPost("/server/backups", (BackupStore backups, EventLog events) =>
         {
             var backup = backups.Create(BackupKind.Manual);
-            events.Admin(null, $"Made backup {backup.Name}.");
+            events.Admin(null, backups.CopyError is { } copyError
+                ? $"Made backup {backup.Name}, but couldn't copy it to {backups.CopyTo}: {copyError}"
+                : $"Made backup {backup.Name}.");
             return backup;
         });
         admin.MapGet("/server/backups/{name}", (string name, BackupStore backups, EventLog events) =>
@@ -40,7 +42,7 @@ public static class AdminBackupsApi
 
     private static BackupsDto Status(BackupStore backups, BackupService service, ServerSettings settings) => new(
         settings.BackupTime?.ToString("HH:mm", CultureInfo.InvariantCulture), settings.BackupKeep, service.NextRunAt(),
-        backups.Directory, backups.List(), service.LastError);
+        backups.Directory, backups.List(), service.LastError, backups.Encrypts, backups.CopyTo, backups.CopyError, settings.TimeZone.Id);
 
     private static IResult UpdateSchedule(UpdateBackupScheduleRequest request, BackupStore backups, BackupService service, ServerSettings settings, EventLog events)
     {

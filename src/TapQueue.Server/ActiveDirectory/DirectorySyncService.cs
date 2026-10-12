@@ -1,13 +1,13 @@
 namespace TapQueue.Server.ActiveDirectory;
 
 /// <summary>
-/// Runs the daily Active Directory sync at the configured time in the server's time zone. If the
+/// Runs the daily Active Directory sync at the configured time in the server's time zone setting. If the
 /// server was down at that time, it catches up shortly after starting.
 ///
 /// The schedule only takes over after an admin has run a sync by hand, so the first one (which can
 /// add hundreds of users and link local ones) is always looked at in a preview first.
 /// </summary>
-public sealed class DirectorySyncService(DirectoryStore store, DirectorySync sync, ILogger<DirectorySyncService> logger) : BackgroundService
+public sealed class DirectorySyncService(DirectoryStore store, DirectorySync sync, Data.ServerSettings settings, ILogger<DirectorySyncService> logger) : BackgroundService
 {
     private static readonly TimeSpan CatchUpDelay = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan RunRetention = TimeSpan.FromDays(90);
@@ -21,7 +21,7 @@ public sealed class DirectorySyncService(DirectoryStore store, DirectorySync syn
     public DateTimeOffset? NextRunAt()
     {
         var config = store.Config();
-        return config.Enabled && DirectoryConfig.IsValidTime(config.SyncTime) ? NextRun(config.DailyAt, DateTimeOffset.Now, TimeZoneInfo.Local) : null;
+        return config.Enabled && DirectoryConfig.IsValidTime(config.SyncTime) ? NextRun(config.DailyAt, DateTimeOffset.UtcNow, settings.TimeZone) : null;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -30,11 +30,11 @@ public sealed class DirectorySyncService(DirectoryStore store, DirectorySync syn
         var catchUp = store.LastCompletedSync() is { } last && DateTimeOffset.UtcNow - last.StartedAt > TimeSpan.FromHours(25);
         while (!stoppingToken.IsCancellationRequested)
         {
-            var next = catchUp ? DateTimeOffset.Now + CatchUpDelay : NextRunAt();
+            var next = catchUp ? DateTimeOffset.UtcNow + CatchUpDelay : NextRunAt();
             using var wake = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, _wake.Token);
             try
             {
-                await Task.Delay(next is { } at ? Clamp(at - DateTimeOffset.Now) : Timeout.InfiniteTimeSpan, wake.Token);
+                await Task.Delay(next is { } at ? Clamp(at - DateTimeOffset.UtcNow) : Timeout.InfiniteTimeSpan, wake.Token);
             }
             catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested)
             {
@@ -46,7 +46,7 @@ public sealed class DirectorySyncService(DirectoryStore store, DirectorySync syn
                 return;
             }
 
-            if (next is { } due && DateTimeOffset.Now >= due - TimeSpan.FromSeconds(1))
+            if (next is { } due && DateTimeOffset.UtcNow >= due - TimeSpan.FromSeconds(1))
             {
                 catchUp = false;
                 RunScheduled();

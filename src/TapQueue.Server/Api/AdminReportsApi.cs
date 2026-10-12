@@ -11,9 +11,9 @@ public static class AdminReportsApi
     public static void MapReportsApi(this RouteGroupBuilder admin)
     {
         // ?from=2026-10-01&to=2026-10-31&by=user. Without dates: this month so far. &format=csv downloads it.
-        admin.MapGet("/reports/usage", (UsageReport reports, string? from, string? to, string? by, string? format) =>
+        admin.MapGet("/reports/usage", (UsageReport reports, Data.ServerSettings settings, string? from, string? to, string? by, string? format) =>
         {
-            var zone = TimeZoneInfo.Local;
+            var zone = settings.TimeZone;
             var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, zone).DateTime);
             var last = today;
             var first = new DateOnly(today.Year, today.Month, 1);

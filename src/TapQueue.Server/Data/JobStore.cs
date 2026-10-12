@@ -36,14 +36,16 @@ public sealed record JobRecord(
     int? Pages,
     string? Workstation = null,
     int? PrinterJobId = null,
-    int RefundedPages = 0)
+    int RefundedPages = 0,
+    bool? Color = null,
+    bool? Duplex = null)
 {
     /// <summary>What the job counts against a quota: its pages times copies, and 1 page if it couldn't be counted.</summary>
     public int ChargedPages => (Pages ?? 1) * Copies;
 
     public JobDto ToDto() => new(
         Id, Name, QueueId, Status, SizeBytes, DocumentFormat, Copies, Username, OwnerHint,
-        SubmittedAt, ExpiresAt, ReleasedAt, ReleasedPrinterId, Error, FormerOwner, Pages, RefundedPages);
+        SubmittedAt, ExpiresAt, ReleasedAt, ReleasedPrinterId, Error, FormerOwner, Pages, RefundedPages, Color, Duplex);
 }
 
 /// <param name="JobAttributes">The encoded IPP job-attributes group from the client (copies, media, page-ranges…).</param>
@@ -65,7 +67,8 @@ public sealed class JobStore(Database database)
     private const string SelectColumns = """
         SELECT j.id, j.user_id, u.username, j.owner_hint, j.queue_id, j.name, j.document_format, j.copies,
                j.size_bytes, j.status, j.source_ip, j.submitted_at, j.expires_at, j.released_at,
-               j.released_printer_id, j.error, j.former_owner, j.pages, j.workstation, j.printer_job_id, j.refunded_pages
+               j.released_printer_id, j.error, j.former_owner, j.pages, j.workstation, j.printer_job_id, j.refunded_pages,
+               j.color, j.duplex
         FROM jobs j LEFT JOIN users u ON u.id = j.user_id
         """;
 
@@ -123,9 +126,22 @@ public sealed class JobStore(Database database)
             ("$releasing", JobStatus.Releasing));
 
     /// <param name="pages">Pages per copy, or null if they couldn't be counted.</param>
-    public void MarkReceived(long id, long sizeBytes, int? pages) =>
-        database.Execute("UPDATE jobs SET status = $held, size_bytes = $size, pages = $pages WHERE id = $id AND status = $receiving",
-            ("$held", JobStatus.Held), ("$size", sizeBytes), ("$pages", pages), ("$id", id), ("$receiving", JobStatus.Receiving));
+    /// <param name="color">Whether it's to print in colour; null if the job didn't say.</param>
+    /// <param name="duplex">Whether it's to print on both sides of the paper.</param>
+    public void MarkReceived(long id, long sizeBytes, int? pages, bool? color = null, bool? duplex = null) =>
+        database.Execute("UPDATE jobs SET status = $held, size_bytes = $size, pages = $pages, color = $color, duplex = $duplex WHERE id = $id AND status = $receiving",
+            ("$held", JobStatus.Held), ("$size", sizeBytes), ("$pages", pages), ("$color", color), ("$duplex", duplex),
+            ("$id", id), ("$receiving", JobStatus.Receiving));
+
+    /// <summary>
+    /// Deletes the history of jobs that finished (released, canceled or expired) before
+    /// <paramref name="cutoff"/>: their names, owners and where they came from. Their documents went
+    /// when they finished. Returns how many.
+    /// </summary>
+    public int DeleteFinishedBefore(DateTimeOffset cutoff) =>
+        database.Execute("""
+            DELETE FROM jobs WHERE status IN ($released, $canceled, $expired) AND COALESCE(released_at, expires_at) < $cutoff
+            """, ("$released", JobStatus.Released), ("$canceled", JobStatus.Canceled), ("$expired", JobStatus.Expired), ("$cutoff", cutoff));
 
     public byte[]? GetJobAttributes(long id) =>
         database.Scalar("SELECT job_attributes FROM jobs WHERE id = $id", ("$id", id)) as byte[];
@@ -177,5 +193,7 @@ public sealed class JobStore(Database database)
         Pages: r.IsDBNull(17) ? null : r.GetInt32(17),
         Workstation: r.GetStringOrNull(18),
         PrinterJobId: r.IsDBNull(19) ? null : r.GetInt32(19),
-        RefundedPages: r.GetInt32(20));
+        RefundedPages: r.GetInt32(20),
+        Color: r.IsDBNull(21) ? null : r.GetBoolean(21),
+        Duplex: r.IsDBNull(22) ? null : r.GetBoolean(22));
 }

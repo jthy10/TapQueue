@@ -5,7 +5,7 @@ using TapQueue.Shared.Api;
 namespace TapQueue.Server.Backups;
 
 /// <summary>
-/// Makes the daily backup at the configured time on the server's clock and deletes the oldest ones.
+/// Makes the daily backup at the configured time (in the server's time zone setting) and deletes the oldest ones.
 /// If the server was down at that time, it catches up shortly after starting.
 /// </summary>
 public sealed class BackupService(BackupStore backups, ServerSettings settings, EventLog events, ILogger<BackupService> logger) : BackgroundService
@@ -22,7 +22,7 @@ public sealed class BackupService(BackupStore backups, ServerSettings settings, 
 
     /// <summary>When the next daily backup runs, or null if it's off.</summary>
     public DateTimeOffset? NextRunAt() =>
-        settings.BackupTime is { } at ? DirectorySyncService.NextRun(at, DateTimeOffset.Now, TimeZoneInfo.Local) : null;
+        settings.BackupTime is { } at ? DirectorySyncService.NextRun(at, DateTimeOffset.UtcNow, settings.TimeZone) : null;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -30,11 +30,11 @@ public sealed class BackupService(BackupStore backups, ServerSettings settings, 
         var catchUp = settings.BackupTime is not null && (newest is null || DateTimeOffset.UtcNow - newest.CreatedAt > TimeSpan.FromHours(25));
         while (!stoppingToken.IsCancellationRequested)
         {
-            var next = catchUp ? DateTimeOffset.Now + CatchUpDelay : NextRunAt();
+            var next = catchUp ? DateTimeOffset.UtcNow + CatchUpDelay : NextRunAt();
             using var wake = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, _wake.Token);
             try
             {
-                await Task.Delay(next is { } at ? Clamp(at - DateTimeOffset.Now) : Timeout.InfiniteTimeSpan, wake.Token);
+                await Task.Delay(next is { } at ? Clamp(at - DateTimeOffset.UtcNow) : Timeout.InfiniteTimeSpan, wake.Token);
             }
             catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested)
             {
@@ -46,7 +46,7 @@ public sealed class BackupService(BackupStore backups, ServerSettings settings, 
                 return;
             }
 
-            if (next is { } due && DateTimeOffset.Now >= due - TimeSpan.FromSeconds(1))
+            if (next is { } due && DateTimeOffset.UtcNow >= due - TimeSpan.FromSeconds(1))
             {
                 catchUp = false;
                 RunScheduled();
@@ -65,6 +65,11 @@ public sealed class BackupService(BackupStore backups, ServerSettings settings, 
             var deleted = backups.Prune(settings.BackupKeep);
             LastError = null;
             logger.LogInformation("Daily backup {Name} made ({Bytes} bytes); {Deleted} old ones deleted", backup.Name, backup.SizeBytes, deleted);
+            if (backups.CopyError is { } copyError)
+            {
+                logger.LogError("The daily backup couldn't be copied to {CopyTo}: {Error}", backups.CopyTo, copyError);
+                events.Record(EventCategory.Admin, EventLog.System, null, $"The daily backup was made but couldn't be copied to {backups.CopyTo}: {copyError}");
+            }
         }
         catch (Exception ex)
         {

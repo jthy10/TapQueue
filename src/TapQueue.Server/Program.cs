@@ -32,7 +32,17 @@ if (Array.IndexOf(args, "--restore") is >= 0 and var restoreAt)
         Console.Error.WriteLine("tapqueue-server: --restore needs a backup file.");
         return 1;
     }
-    return Restore(config, args[restoreAt + 1], args.Contains("--as-root"));
+    string? passphrase = null;
+    if (Array.IndexOf(args, "--passphrase-file") is >= 0 and var passphraseAt)
+    {
+        if (passphraseAt + 1 >= args.Length || !File.Exists(args[passphraseAt + 1]))
+        {
+            Console.Error.WriteLine("tapqueue-server: --passphrase-file needs a file holding the backup's passphrase.");
+            return 1;
+        }
+        passphrase = File.ReadAllText(args[passphraseAt + 1]).Trim();
+    }
+    return Restore(config, args[restoreAt + 1], args.Contains("--as-root"), passphrase);
 }
 
 WebApplication app;
@@ -69,6 +79,14 @@ if (queues.Count == 0)
     app.Logger.LogWarning("No queues yet, so there's nothing to print to. Add one with: tapqueue-admin queues add <id> --name \"TapQueue Secure Print\"");
 if (app.Services.GetRequiredService<PrinterStore>().List().Count == 0)
     app.Logger.LogWarning("No printers yet, so held jobs can't be released. Add one with: tapqueue-admin printers add <id> ipp://<printer-ip>/ipp/print");
+if (app.Services.GetRequiredService<BadgeStore>().KeyMismatch)
+    app.Logger.LogError("No card will be recognised: {Path} isn't the key the cards in the database were stored with. " +
+        "Put back the {Folder} folder from a backup made with this database (tapqueue-server --restore brings both).",
+        Path.Combine(config.Server.DataDir, BadgeKey.Folder, "badge.key"), BadgeKey.Folder);
+if (config.Server.TrustedProxies.Count > 0)
+    app.Logger.LogInformation("Callers' addresses are taken from X-Forwarded-For when a request comes from {Proxies}", string.Join(", ", config.Server.TrustedProxies));
+if (app.Services.GetRequiredService<BackupStore>() is { CopyTo: { } copyTo } backupStore)
+    app.Logger.LogInformation("Backups are {Encrypted}copied to {CopyTo}", backupStore.Encrypts ? "encrypted and " : "", copyTo);
 if (config.Auth.Mode == "dev")
     app.Logger.LogWarning("auth.mode = \"dev\": anyone can sign in as any username. Use \"token\" outside of testing.");
 
@@ -76,7 +94,7 @@ app.Run();
 // Non-zero when an admin asked for a restart (see AdminServerApi), so systemd starts it again.
 return Environment.ExitCode;
 
-static int Restore(ServerConfig config, string file, bool asRoot)
+static int Restore(ServerConfig config, string file, bool asRoot, string? passphrase)
 {
     // Restored files belong to whoever runs this, and the service has to be able to open them.
     if (Environment.IsPrivilegedProcess && !asRoot)
@@ -89,7 +107,7 @@ static int Restore(ServerConfig config, string file, bool asRoot)
     }
     try
     {
-        var result = BackupRestore.Run(config, Path.GetFullPath(file));
+        var result = BackupRestore.Run(config, Path.GetFullPath(file), passphrase: passphrase);
         Console.WriteLine($"Restored the backup made {result.Manifest.CreatedAt.ToLocalTime():yyyy-MM-dd HH:mm} by TapQueue server {result.Manifest.ServerVersion} into {config.Server.DataDir}.");
         if (result.ReplacedDir is not null)
             Console.WriteLine($"What was there before is in {result.ReplacedDir}; delete it once you're happy.");

@@ -83,7 +83,7 @@ public static class ClientApi
             {
                 // Each try is a bind to AD, so unthrottled guessing would also lock people out of their domain account.
                 if (throttle.IsLocked(username, http.ClientIp()))
-                    return Results.Json(new ErrorResponse("Too many wrong passwords. Wait 15 minutes and try again."),
+                    return Results.Json(new ErrorResponse(throttle.LockedMessage),
                         statusCode: StatusCodes.Status429TooManyRequests);
                 DirectoryEntry? entry;
                 try

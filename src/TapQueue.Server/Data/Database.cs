@@ -442,6 +442,13 @@ public sealed class Database
             ALTER TABLE jobs ADD COLUMN printer_job_id INTEGER;
             ALTER TABLE jobs ADD COLUMN refunded_pages INTEGER NOT NULL DEFAULT 0;
         """,
+
+        // 18: how a job was sent to print, for reports: color is 1 for colour, 0 for black and white,
+        // NULL if the job didn't say; duplex is 1 for both sides of the paper. Both NULL on older jobs.
+        """
+            ALTER TABLE jobs ADD COLUMN color INTEGER;
+            ALTER TABLE jobs ADD COLUMN duplex INTEGER;
+        """,
     ];
 
     public void Migrate()

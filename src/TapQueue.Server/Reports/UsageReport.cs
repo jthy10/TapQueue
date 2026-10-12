@@ -8,14 +8,21 @@ namespace TapQueue.Server.Reports;
 /// <summary>
 /// Pages printed over a period, added up by person, group, printer, queue, day or month. Counts
 /// what quotas count: released jobs, as pages times copies, and 1 page for a job whose pages
-/// couldn't be counted. Days and months are the server's (its time zone), like quota periods.
+/// couldn't be counted. Days and months are the server's (its time zone setting), like quota periods.
+/// Pages are also split by how their job was sent to print: colour or black and white, and both sides.
 /// </summary>
 public sealed class UsageReport(Database database)
 {
     /// <summary>The longest period one report covers. By day that's a row a day.</summary>
     public const int MaxDays = 3660;
 
-    private sealed record Job(DateTimeOffset ReleasedAt, long? UserId, string? FormerOwner, string? PrinterId, string QueueId, long Pages, bool Uncounted);
+    private sealed record Job(DateTimeOffset ReleasedAt, long? UserId, string? FormerOwner, string? PrinterId, string QueueId, long Pages, bool Uncounted,
+        bool? Color, bool? Duplex)
+    {
+        public long ColorPages => Color == true ? Pages : 0;
+        public long MonoPages => Color == false ? Pages : 0;
+        public long DuplexPages => Duplex == true ? Pages : 0;
+    }
 
     /// <param name="from">First day, in <paramref name="zone"/>.</param>
     /// <param name="to">Last day, included.</param>
@@ -23,9 +30,11 @@ public sealed class UsageReport(Database database)
     public UsageReportDto Run(DateOnly from, DateOnly to, string by, TimeZoneInfo zone)
     {
         var jobs = database.Query("""
-            SELECT released_at, user_id, former_owner, released_printer_id, queue_id, COALESCE(pages, 1) * copies - refunded_pages, pages IS NULL
+            SELECT released_at, user_id, former_owner, released_printer_id, queue_id, COALESCE(pages, 1) * copies - refunded_pages, pages IS NULL,
+                   color, duplex
             FROM jobs WHERE status = $released AND released_at >= $from AND released_at < $to
-            """, r => new Job(r.GetTime(0), r.GetInt64OrNull(1), r.GetStringOrNull(2), r.GetStringOrNull(3), r.GetString(4), r.GetInt64(5), r.GetBoolean(6)),
+            """, r => new Job(r.GetTime(0), r.GetInt64OrNull(1), r.GetStringOrNull(2), r.GetStringOrNull(3), r.GetString(4), r.GetInt64(5), r.GetBoolean(6),
+                r.IsDBNull(7) ? null : r.GetBoolean(7), r.IsDBNull(8) ? null : r.GetBoolean(8)),
             ("$released", JobStatus.Released), ("$from", StartOf(from, zone)), ("$to", StartOf(to.AddDays(1), zone)));
 
         var rows = by switch
@@ -38,7 +47,8 @@ public sealed class UsageReport(Database database)
             ReportGrouping.Month => ByTime(jobs, zone, from, to, d => new DateOnly(d.Year, d.Month, 1), d => d.AddMonths(1), "yyyy-MM"),
             _ => throw new ArgumentException($"Unknown grouping \"{by}\".", nameof(by)),
         };
-        return new UsageReportDto(Format(from), Format(to), by, zone.Id, jobs.Count, jobs.Sum(j => j.Pages), jobs.Count(j => j.Uncounted), rows);
+        return new UsageReportDto(Format(from), Format(to), by, zone.Id, jobs.Count, jobs.Sum(j => j.Pages), jobs.Count(j => j.Uncounted), rows,
+            jobs.Sum(j => j.ColorPages), jobs.Sum(j => j.MonoPages), jobs.Sum(j => j.DuplexPages));
     }
 
     /// <summary>The report as a spreadsheet would want it, with a total line.</summary>
@@ -54,10 +64,11 @@ public sealed class UsageReport(Database database)
             _ => "Month",
         };
         static string N(long n) => n.ToString(CultureInfo.InvariantCulture);
-        var lines = new List<string[]> { new[] { heading, "Name", "Jobs", "Pages", "Jobs counted as 1 page" } };
-        lines.AddRange(report.Rows.Select(r => new[] { r.Key, r.Name, N(r.Jobs), N(r.Pages), N(r.UncountedJobs) }));
+        var lines = new List<string[]> { new[] { heading, "Name", "Jobs", "Pages", "Jobs counted as 1 page", "Colour pages", "Black and white pages", "Two-sided pages" } };
+        lines.AddRange(report.Rows.Select(r => new[] { r.Key, r.Name, N(r.Jobs), N(r.Pages), N(r.UncountedJobs), N(r.ColorPages), N(r.MonoPages), N(r.DuplexPages) }));
         // A group report adds people in two groups twice, so its rows don't add up to this.
-        lines.Add(["Total", $"{report.From} to {report.To}", N(report.Jobs), N(report.Pages), N(report.UncountedJobs)]);
+        lines.Add(["Total", $"{report.From} to {report.To}", N(report.Jobs), N(report.Pages), N(report.UncountedJobs),
+            N(report.ColorPages), N(report.MonoPages), N(report.DuplexPages)]);
         return Csv.Write(lines, guardFormulas: true);
     }
 
@@ -103,16 +114,20 @@ public sealed class UsageReport(Database database)
         {
             var key = at.ToString(format, CultureInfo.InvariantCulture);
             var inIt = printed.GetValueOrDefault(at, []);
-            rows.Add(new UsageRowDto(key, key, inIt.Count, inIt.Sum(j => j.Pages), inIt.Count(j => j.Uncounted)));
+            rows.Add(Row(key, key, inIt));
         }
         return rows;
     }
 
     /// <summary>Most pages first.</summary>
     private static List<UsageRowDto> Rows(IEnumerable<IGrouping<(string Key, string Name), Job>> groups) =>
-        groups.Select(g => new UsageRowDto(g.Key.Key, g.Key.Name, g.Count(), g.Sum(j => j.Pages), g.Count(j => j.Uncounted)))
+        groups.Select(g => Row(g.Key.Key, g.Key.Name, g.ToList()))
             .OrderByDescending(r => r.Pages).ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase).ThenBy(r => r.Key, StringComparer.OrdinalIgnoreCase)
             .ToList();
+
+    private static UsageRowDto Row(string key, string name, List<Job> jobs) =>
+        new(key, name, jobs.Count, jobs.Sum(j => j.Pages), jobs.Count(j => j.Uncounted),
+            jobs.Sum(j => j.ColorPages), jobs.Sum(j => j.MonoPages), jobs.Sum(j => j.DuplexPages));
 
     private static DateTimeOffset StartOf(DateOnly day, TimeZoneInfo zone)
     {

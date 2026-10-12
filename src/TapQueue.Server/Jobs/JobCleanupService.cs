@@ -4,14 +4,13 @@ namespace TapQueue.Server.Jobs;
 
 /// <summary>
 /// Deletes held jobs nobody released in time, half-received jobs, dead client sessions, remembered
-/// sign-ins nobody uses any more and old activity.
+/// sign-ins nobody uses any more, and activity and job history older than the server's settings keep.
 /// At startup it first puts back on hold jobs a restart interrupted mid-release.
 /// </summary>
 public sealed class JobCleanupService(JobStore jobs, SessionStore sessions, ClientLoginStore logins, Spool spool, EventLog events, ServerSettings settings, ILogger<JobCleanupService> logger)
     : BackgroundService
 {
     private static readonly TimeSpan ReceivingTimeout = TimeSpan.FromHours(1);
-    private static readonly TimeSpan EventRetention = TimeSpan.FromDays(90);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -56,6 +55,9 @@ public sealed class JobCleanupService(JobStore jobs, SessionStore sessions, Clie
         // After the sessions, so a login whose last session just lapsed can go too.
         if (logins.DeleteUnusedSince(now - ClientLoginStore.UnusedLifetime) is > 0 and var forgotten)
             logger.LogInformation("Forgot {Count} remembered domain sign-ins nobody used for {Days} days", forgotten, ClientLoginStore.UnusedLifetime.Days);
-        events.DeleteOlderThan(now - EventRetention);
+        if (settings.ActivityDays is > 0 and var activityDays)
+            events.DeleteOlderThan(now - TimeSpan.FromDays(activityDays));
+        if (settings.JobHistoryDays is > 0 and var historyDays && jobs.DeleteFinishedBefore(now - TimeSpan.FromDays(historyDays)) is > 0 and var deleted)
+            logger.LogInformation("Deleted the history of {Count} jobs that finished more than {Days} days ago", deleted, historyDays);
     }
 }

@@ -16,9 +16,13 @@ public sealed record BackupManifest(string ServerVersion, int SchemaVersion, Dat
 
 /// <summary>
 /// Backups of everything that can't be made again: the database, the server's TLS certificate and key
-/// (PCs and stations trust that one) and the Active Directory CA. Each is one .tar.gz in
-/// data_dir/backups, named for when and why it was made. Held documents and published client and
-/// station builds are left out: jobs are gone in a day anyway, and builds can be published again.
+/// (PCs and stations trust that one), the Active Directory CA and the key card numbers are hashed
+/// with. Each is one .tar.gz in data_dir/backups, named for when and why it was made. Held documents
+/// and published client and station builds are left out: jobs are gone in a day anyway, and builds
+/// can be published again.
+///
+/// With backup.passphrase in server.toml they're encrypted (<see cref="BackupCipher"/>, .tar.gz.enc);
+/// with backup.copy_to each one is also copied to that folder, which is how they get off this disk.
 /// </summary>
 public sealed partial class BackupStore
 {
@@ -26,29 +30,41 @@ public sealed partial class BackupStore
     public const string ManifestEntry = "backup.json";
 
     /// <summary>Folders in data_dir that go into a backup whole. Only plain files directly in them.</summary>
-    public static readonly string[] Folders = ["tls", "directory-ca"];
+    public static readonly string[] Folders = ["tls", "directory-ca", BadgeKey.Folder];
 
     /// <summary>Backups made before a schema upgrade, kept besides the scheduled ones.</summary>
     private const int UpgradeBackupsKept = 3;
 
     private readonly string _dataDir;
     private readonly string _databasePath;
+    private readonly string _passphrase;
     private readonly Lock _lock = new();
 
-    public BackupStore(ServerConfig config) : this(config.Server.DataDir)
+    public BackupStore(ServerConfig config) : this(config.Server.DataDir, config.Backup.Passphrase, config.Backup.CopyTo)
     {
     }
 
-    public BackupStore(string dataDir)
+    public BackupStore(string dataDir, string passphrase = "", string copyTo = "")
     {
         _dataDir = dataDir;
         _databasePath = Path.Combine(dataDir, "tapqueue.db");
+        _passphrase = passphrase;
         Directory = Path.Combine(dataDir, "backups");
+        CopyTo = copyTo.Length > 0 ? copyTo : null;
     }
 
     public string Directory { get; }
 
-    [GeneratedRegex(@"^tapqueue-(\d{8}T\d{6}Z)-(daily|manual|upgrade)\.tar\.gz$")]
+    /// <summary>True when new backups are encrypted (backup.passphrase is set).</summary>
+    public bool Encrypts => _passphrase.Length > 0;
+
+    /// <summary>backup.copy_to: the second folder each backup is copied to, or null.</summary>
+    public string? CopyTo { get; }
+
+    /// <summary>Why backups couldn't be copied to <see cref="CopyTo"/> the last time it was tried; null once it works.</summary>
+    public string? CopyError { get; private set; }
+
+    [GeneratedRegex(@"^tapqueue-(\d{8}T\d{6}Z)-(daily|manual|upgrade)\.tar\.gz(\.enc)?$")]
     private static partial Regex NamePattern();
 
     /// <summary>Newest first.</summary>
@@ -56,8 +72,11 @@ public sealed partial class BackupStore
     {
         if (!System.IO.Directory.Exists(Directory))
             return [];
-        return new DirectoryInfo(Directory).EnumerateFiles("tapqueue-*.tar.gz")
-            .Select(file => Parse(file.Name) is { } parsed ? new BackupDto(file.Name, parsed.Kind, parsed.CreatedAt, file.Length) : null)
+        return new DirectoryInfo(Directory).EnumerateFiles("tapqueue-*.tar.gz*")
+            .Select(file => Parse(file.Name) is { } parsed
+                ? new BackupDto(file.Name, parsed.Kind, parsed.CreatedAt, file.Length, file.Name.EndsWith(BackupCipher.Extension, StringComparison.Ordinal),
+                    CopyTo is null ? null : IsCopied(file))
+                : null)
             .OfType<BackupDto>()
             .OrderByDescending(b => b.CreatedAt)
             .ToList();
@@ -72,12 +91,77 @@ public sealed partial class BackupStore
         return File.Exists(path) ? path : null;
     }
 
+    /// <summary>Deletes a backup, and its copy in <see cref="CopyTo"/>: that folder mirrors this one.</summary>
     public bool Delete(string name)
     {
         if (FileFor(name) is not { } path)
             return false;
         File.Delete(path);
+        if (CopyTo is not null)
+        {
+            try
+            {
+                File.Delete(Path.Combine(CopyTo, name));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // The share is away; the copy stays there until someone clears it out.
+            }
+        }
         return true;
+    }
+
+    private bool IsCopied(FileInfo backup)
+    {
+        try
+        {
+            var copy = new FileInfo(Path.Combine(CopyTo!, backup.Name));
+            return copy.Exists && copy.Length == backup.Length;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Copies every backup that isn't in <see cref="CopyTo"/> yet, so ones made while a share was away
+    /// follow when it's back. A copy is written under another name and renamed, so a half-written
+    /// one is never taken for a backup. Returns false (and sets <see cref="CopyError"/>) if it couldn't.
+    /// </summary>
+    public bool CopyOut()
+    {
+        if (CopyTo is null)
+            return true;
+        lock (_lock)
+        {
+            try
+            {
+                System.IO.Directory.CreateDirectory(CopyTo);
+                foreach (var backup in new DirectoryInfo(Directory).EnumerateFiles("tapqueue-*.tar.gz*").Where(f => Parse(f.Name) is not null && !IsCopied(f)))
+                {
+                    var partial = Path.Combine(CopyTo, $"copy-{Guid.NewGuid():N}.tmp");
+                    try
+                    {
+                        using (var from = backup.OpenRead())
+                        using (var to = new FileStream(partial, PrivateFile(FileMode.CreateNew)))
+                            from.CopyTo(to);
+                        File.Move(partial, Path.Combine(CopyTo, backup.Name), overwrite: true);
+                    }
+                    finally
+                    {
+                        File.Delete(partial);
+                    }
+                }
+                CopyError = null;
+                return true;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                CopyError = ex.Message;
+                return false;
+            }
+        }
     }
 
     /// <summary>
@@ -86,18 +170,19 @@ public sealed partial class BackupStore
     /// </summary>
     public BackupDto Create(string kind, DateTimeOffset? now = null)
     {
+        string name;
         lock (_lock)
         {
             var createdAt = (now ?? DateTimeOffset.UtcNow).ToUniversalTime();
             createdAt = new DateTimeOffset(createdAt.Ticks - createdAt.Ticks % TimeSpan.TicksPerSecond, TimeSpan.Zero);
             // Names are to the second; two in one second would otherwise be one file.
-            string name;
             while (File.Exists(Path.Combine(Directory, name = NameFor(createdAt, kind))))
                 createdAt = createdAt.AddSeconds(1);
 
             CreatePrivateDirectory(Directory);
             var snapshot = Path.Combine(Directory, $"snapshot-{Guid.NewGuid():N}.tmp");
             var archive = Path.Combine(Directory, $"archive-{Guid.NewGuid():N}.tmp");
+            var encrypted = Path.Combine(Directory, $"encrypted-{Guid.NewGuid():N}.tmp");
             try
             {
                 var schemaVersion = Snapshot(snapshot);
@@ -121,15 +206,28 @@ public sealed partial class BackupStore
                         }
                     }
                 }
-                File.Move(archive, Path.Combine(Directory, name));
-                return new BackupDto(name, kind, createdAt, new FileInfo(Path.Combine(Directory, name)).Length);
+                if (Encrypts)
+                {
+                    using (var plain = File.OpenRead(archive))
+                    using (var output = new FileStream(encrypted, PrivateFile(FileMode.CreateNew)))
+                        BackupCipher.Encrypt(plain, output, _passphrase);
+                    File.Move(encrypted, Path.Combine(Directory, name));
+                }
+                else
+                {
+                    File.Move(archive, Path.Combine(Directory, name));
+                }
             }
             finally
             {
                 File.Delete(snapshot);
                 File.Delete(archive);
+                File.Delete(encrypted);
             }
         }
+        // Outside the lock CopyOut takes. A backup that's made but couldn't be copied is still a backup.
+        CopyOut();
+        return List().First(b => b.Name == name);
     }
 
     /// <summary>
@@ -187,8 +285,8 @@ public sealed partial class BackupStore
             Mode = UnixFileMode.UserRead | UnixFileMode.UserWrite,
         });
 
-    private static string NameFor(DateTimeOffset at, string kind) =>
-        $"tapqueue-{at.UtcDateTime.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture)}-{kind}.tar.gz";
+    private string NameFor(DateTimeOffset at, string kind) =>
+        $"tapqueue-{at.UtcDateTime.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture)}-{kind}.tar.gz{(Encrypts ? BackupCipher.Extension : "")}";
 
     private static (string Kind, DateTimeOffset CreatedAt)? Parse(string name) =>
         NamePattern().Match(name) is { Success: true } match

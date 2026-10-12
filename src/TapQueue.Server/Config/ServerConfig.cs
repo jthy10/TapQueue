@@ -9,6 +9,7 @@ public sealed class ServerConfig
     public AdminSection Admin { get; set; } = new();
     public JobsSection Jobs { get; set; } = new();
     public TlsSection Tls { get; set; } = new();
+    public BackupSection Backup { get; set; } = new();
 
     /// <summary>
     /// Queues and printers used to live in server.toml (before v0.2). The TOML loader ignores sections it
@@ -30,6 +31,11 @@ public sealed class ServerConfig
             throw new InvalidDataException($"server.listen \"{Server.Listen}\" must look like 0.0.0.0:8631.");
         if (Server.DiscoveryPort is < 0 or > 65535)
             throw new InvalidDataException($"server.discovery_port must be a port number, or 0 to turn discovery off.");
+        Server.ParseTrustedProxies(); // throws if one isn't an address or a network
+        if (Backup.Passphrase.Length is > 0 and < BackupSection.MinPassphraseLength)
+            throw new InvalidDataException($"backup.passphrase must be at least {BackupSection.MinPassphraseLength} characters, or \"\" for backups that aren't encrypted.");
+        if (Backup.CopyTo.Length > 0 && !Path.IsPathFullyQualified(Backup.CopyTo))
+            throw new InvalidDataException($"backup.copy_to \"{Backup.CopyTo}\" must be a full path, like /mnt/nas/tapqueue.");
         if (Tls.Enabled && (!System.Net.IPEndPoint.TryParse(Tls.Listen, out var tls) || tls.Port == 0 || tls.Port == listen.Port))
             throw new InvalidDataException($"tls.listen \"{Tls.Listen}\" must look like 0.0.0.0:8632, on a different port from server.listen, or \"\" for no HTTPS.");
         if (string.IsNullOrWhiteSpace(Tls.CertFile) != string.IsNullOrWhiteSpace(Tls.KeyFile))
@@ -53,6 +59,18 @@ public sealed class ServerSection
 
     /// <summary>UDP port to answer "is there a TapQueue server here?" broadcasts on (the Windows installer asks). 0 = don't answer.</summary>
     public int DiscoveryPort { get; set; } = TapQueue.Shared.ServerDiscovery.DefaultPort;
+
+    /// <summary>
+    /// Reverse proxies in front of this server, as addresses ("10.0.0.5") or networks ("10.0.0.0/24").
+    /// Only from these is X-Forwarded-For (and X-Forwarded-Proto) believed, so the server sees each
+    /// PC's own address instead of the proxy's. Empty: every caller's address is the connection's.
+    /// </summary>
+    public List<string> TrustedProxies { get; set; } = [];
+
+    public List<System.Net.IPNetwork> ParseTrustedProxies() => TrustedProxies.Select(text =>
+        System.Net.IPNetwork.TryParse(text, out var network) ? network
+        : System.Net.IPAddress.TryParse(text, out var address) ? new System.Net.IPNetwork(address, address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork ? 32 : 128)
+        : throw new InvalidDataException($"server.trusted_proxies: \"{text}\" isn't an address like 10.0.0.5 or a network like 10.0.0.0/24.")).ToList();
 }
 
 public sealed class AuthSection
@@ -76,6 +94,23 @@ public sealed class JobsSection
 {
     /// <summary>Held jobs that are not released within this many hours are deleted.</summary>
     public int HoldHours { get; set; } = 24;
+}
+
+public sealed class BackupSection
+{
+    public const int MinPassphraseLength = 12;
+
+    /// <summary>
+    /// A second folder every backup is copied to as it's made: another disk or a mounted network share,
+    /// so losing this machine's disk doesn't lose the backups with it. Empty = only data_dir/backups.
+    /// </summary>
+    public string CopyTo { get; set; } = "";
+
+    /// <summary>
+    /// Encrypts backups (AES-256-GCM) with a key made from this. Restoring needs the same passphrase,
+    /// so keep a copy somewhere that isn't this server. Empty = backups aren't encrypted.
+    /// </summary>
+    public string Passphrase { get; set; } = "";
 }
 
 public sealed class TlsSection

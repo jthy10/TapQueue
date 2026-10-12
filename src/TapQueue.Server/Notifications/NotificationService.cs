@@ -33,7 +33,7 @@ public static class AlertSeverity
 /// An email the mail server won't take is kept and tried again, less and less often, for a day.
 /// </summary>
 public sealed class NotificationService(NotificationStore store, PrinterRegistry printers, StationStore stations, CrashStore crashes,
-    IMailSender mail, EventLog events, ILogger<NotificationService> logger) : BackgroundService
+    IMailSender mail, EventLog events, ServerSettings settings, ILogger<NotificationService> logger) : BackgroundService
 {
     public static readonly TimeSpan Interval = TimeSpan.FromSeconds(30);
 
@@ -309,6 +309,7 @@ public sealed class NotificationService(NotificationStore store, PrinterRegistry
 
     private static string Lines(params string?[] lines) => string.Join('\n', lines.Where(l => !string.IsNullOrWhiteSpace(l)).Select(l => "  " + l));
 
-    /// <summary>On the server's clock, which is what whoever reads the email most likely shares.</summary>
-    private static string Local(DateTimeOffset time) => time.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
+    /// <summary>In the server's time zone setting, which is what whoever reads the email most likely shares.</summary>
+    private string Local(DateTimeOffset time) =>
+        TimeZoneInfo.ConvertTime(time, settings.TimeZone).ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
 }

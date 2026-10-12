@@ -3,6 +3,15 @@ namespace TapQueue.Shared.Api;
 /// <summary>The server itself, for `tapqueue-admin status` and the admin console.</summary>
 /// <param name="ChangedSettings">Settings changed from the console or CLI rather than taken from server.toml.</param>
 /// <param name="CanRestart">True when systemd runs the server, so it comes back after a restart.</param>
+/// <param name="TapWaitSeconds">How long a station's tap waits for the printer before it answers and reads the next card.</param>
+/// <param name="PrinterBusySeconds">How long a printer that says it's busy is retried before a job goes back on hold.</param>
+/// <param name="PrinterSendSeconds">How long sending one job to a printer may take.</param>
+/// <param name="JobHistoryDays">Finished jobs are deleted after this many days; 0 keeps them for ever.</param>
+/// <param name="ActivityDays">The activity log is kept this many days; 0 keeps it for ever.</param>
+/// <param name="TimeZone">The time zone days start in (page limits, reports, the daily backup and sync), as an IANA name.</param>
+/// <param name="SignInAttempts">Wrong passwords for one name from one address before sign-in is refused there.</param>
+/// <param name="SignInLockoutMinutes">How long sign-in stays refused after the last wrong password.</param>
+/// <param name="TrustedProxies">server.trusted_proxies: the reverse proxies whose X-Forwarded-For is believed.</param>
 public sealed record ServerInfoDto(
     string Version,
     DateTimeOffset StartedAt,
@@ -19,7 +28,16 @@ public sealed record ServerInfoDto(
     ServerTlsDto? Tls = null,
     string AddressMatching = Api.AddressMatching.On,
     bool EnrollmentCodeRequired = false,
-    int HeldMegabytesPerUser = 0);
+    int HeldMegabytesPerUser = 0,
+    int TapWaitSeconds = 0,
+    int PrinterBusySeconds = 0,
+    int PrinterSendSeconds = 0,
+    int JobHistoryDays = 0,
+    int ActivityDays = 0,
+    string TimeZone = "",
+    int SignInAttempts = 0,
+    int SignInLockoutMinutes = 0,
+    IReadOnlyList<string>? TrustedProxies = null);
 
 /// <summary>A new enrollment code for PCs, shown once: the server keeps only its hash.</summary>
 public sealed record EnrollmentCodeResponse(string Code);
@@ -43,6 +61,8 @@ public static class ReportGrouping
 /// <param name="TimeZone">The server's time zone, which decides where days and months start.</param>
 /// <param name="Jobs">Released jobs in the period. With <see cref="ReportGrouping.Group"/> the rows can add up to more.</param>
 /// <param name="UncountedJobs">Jobs whose pages couldn't be counted; each counts as 1 page a copy.</param>
+/// <param name="ColorPages">Of <paramref name="Pages"/>, those sent to print in colour; <paramref name="MonoPages"/> in black and white. The rest didn't say.</param>
+/// <param name="DuplexPages">Those sent to print on both sides of the paper.</param>
 public sealed record UsageReportDto(
     string From,
     string To,
@@ -51,10 +71,16 @@ public sealed record UsageReportDto(
     int Jobs,
     long Pages,
     int UncountedJobs,
-    IReadOnlyList<UsageRowDto> Rows);
+    IReadOnlyList<UsageRowDto> Rows,
+    long ColorPages = 0,
+    long MonoPages = 0,
+    long DuplexPages = 0);
 
 /// <param name="Key">The username, group, printer or queue id, or the day ("yyyy-MM-dd") or month ("yyyy-MM"). Empty for "nobody" rows.</param>
-public sealed record UsageRowDto(string Key, string Name, int Jobs, long Pages, int UncountedJobs);
+/// <param name="ColorPages">Of <paramref name="Pages"/>, those sent to print in colour.</param>
+/// <param name="MonoPages">Those sent to print in black and white. The rest didn't say (or are from before 0.16).</param>
+/// <param name="DuplexPages">Those sent to print on both sides of the paper.</param>
+public sealed record UsageRowDto(string Key, string Name, int Jobs, long Pages, int UncountedJobs, long ColorPages = 0, long MonoPages = 0, long DuplexPages = 0);
 
 /// <summary>Why a backup was made.</summary>
 public static class BackupKind
@@ -69,19 +95,29 @@ public static class BackupKind
 
 /// <summary>One backup file in data_dir/backups.</summary>
 /// <param name="Kind">One of <see cref="BackupKind"/>.</param>
-public sealed record BackupDto(string Name, string Kind, DateTimeOffset CreatedAt, long SizeBytes);
+/// <param name="Encrypted">True if it needs the passphrase it was made with to be restored.</param>
+/// <param name="Copied">Whether it's in backup.copy_to as well; null when there's no such folder.</param>
+public sealed record BackupDto(string Name, string Kind, DateTimeOffset CreatedAt, long SizeBytes, bool Encrypted = false, bool? Copied = null);
 
 /// <summary>The server's backups and when it makes them.</summary>
 /// <param name="Time">"HH:mm" on the server's clock for the daily backup; null when it's off.</param>
 /// <param name="Keep">How many daily backups are kept.</param>
 /// <param name="LastError">Why the last scheduled backup failed, if it did.</param>
+/// <param name="Encrypted">True when backup.passphrase is set in server.toml, so new backups are encrypted with it.</param>
+/// <param name="CopyTo">backup.copy_to in server.toml: a second folder (another disk, a network share) every backup is copied to, or null.</param>
+/// <param name="CopyError">Why the last copy there failed, if it did.</param>
+/// <param name="TimeZone">The time zone <paramref name="Time"/> is in.</param>
 public sealed record BackupsDto(
     string? Time,
     int Keep,
     DateTimeOffset? NextRunAt,
     string Directory,
     IReadOnlyList<BackupDto> Backups,
-    string? LastError = null);
+    string? LastError = null,
+    bool Encrypted = false,
+    string? CopyTo = null,
+    string? CopyError = null,
+    string TimeZone = "");
 
 /// <summary>Null leaves a setting as it is. <paramref name="Time"/> is "HH:mm", or "off" for no daily backup.</summary>
 public sealed record UpdateBackupScheduleRequest(string? Time = null, int? Keep = null);
@@ -106,18 +142,28 @@ public sealed record LogLineDto(long Id, DateTimeOffset At, string Level, string
 
 /// <summary>
 /// Settings that apply while the server runs. Null leaves one as it is; <see cref="Reset"/> names
-/// ones (holdHours, sessionTimeoutMinutes, quotaOverrun, addressMatching, heldMegabytesPerUser) to take from server.toml, or the default, again.
+/// ones (by the names they have here, in camelCase) to take from server.toml, or the default, again.
 /// </summary>
 /// <param name="QuotaOverrun">One of <see cref="Api.QuotaOverrun"/>.</param>
 /// <param name="AddressMatching">One of <see cref="Api.AddressMatching"/>.</param>
 /// <param name="HeldMegabytesPerUser">Megabytes of held documents one person may have waiting; 0 for no limit.</param>
+/// <param name="JobHistoryDays">0 keeps finished jobs for ever; otherwise at least 32, so monthly page limits can still be counted.</param>
+/// <param name="TimeZone">An IANA name like "Europe/Oslo".</param>
 public sealed record UpdateServerSettingsRequest(
     int? HoldHours = null,
     int? SessionTimeoutMinutes = null,
     IReadOnlyList<string>? Reset = null,
     string? QuotaOverrun = null,
     string? AddressMatching = null,
-    int? HeldMegabytesPerUser = null);
+    int? HeldMegabytesPerUser = null,
+    int? TapWaitSeconds = null,
+    int? PrinterBusySeconds = null,
+    int? PrinterSendSeconds = null,
+    int? JobHistoryDays = null,
+    int? ActivityDays = null,
+    string? TimeZone = null,
+    int? SignInAttempts = null,
+    int? SignInLockoutMinutes = null);
 
 /// <summary>
 /// Upgrading the server itself to a newer GitHub release: what's running, what's out, and any
@@ -413,6 +459,8 @@ public sealed record UpdateQueueRequest(
 /// <param name="FormerOwner">For jobs of a user who has since been deleted, their username.</param>
 /// <param name="Pages">Pages per copy (after any page range), or null if they couldn't be counted.</param>
 /// <param name="RefundedPages">Of a released job's pages times copies: how many were given back because it was stopped at the printer.</param>
+/// <param name="Color">True if it was sent to print in colour, false in black and white; null if the job didn't say (jobs from before 0.16 too).</param>
+/// <param name="Duplex">True if it was sent to print on both sides of the paper; null for jobs from before 0.16.</param>
 public sealed record JobDto(
     long Id,
     string Name,
@@ -430,7 +478,9 @@ public sealed record JobDto(
     string? Error,
     string? FormerOwner = null,
     int? Pages = null,
-    int RefundedPages = 0);
+    int RefundedPages = 0,
+    bool? Color = null,
+    bool? Duplex = null);
 
 /// <summary>What deleting one of your own jobs did (servers from 0.14; older ones answer with nothing).</summary>
 /// <param name="RefundedPages">Pages that had counted against a page limit and no longer do.</param>
@@ -693,6 +743,11 @@ public static class TapOutcome
 {
     /// <summary>Every held job was sent to the printer.</summary>
     public const string Released = "released";
+    /// <summary>
+    /// The jobs are on their way but the printer hasn't taken them all yet (a big one, or it's busy).
+    /// The server carries on by itself; any that fail go back on hold and into the activity log.
+    /// </summary>
+    public const string Releasing = "releasing";
     /// <summary>The badge belongs to someone, but they have nothing waiting.</summary>
     public const string NoJobs = "no-jobs";
     /// <summary>Nobody has this badge.</summary>

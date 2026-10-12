@@ -240,7 +240,7 @@ public sealed class DirectorySync(
         }
 
         var card = BadgeStore.Normalize(d.Badge);
-        var hash = BadgeStore.HashOf(card);
+        var hash = badges.HashOf(card);
         if (claimedCards.TryGetValue(hash, out var claimant))
         {
             warnings.Add($"Didn't give card {BadgeStore.Hint(card)} to {d.Username}: {claimant} has the same card number in Active Directory.");

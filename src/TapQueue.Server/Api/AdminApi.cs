@@ -116,7 +116,10 @@ public static class AdminApi
         TapQueueVersion.Current, ServerClock.StartedAt, config.Auth.Mode, config.Server.Listen, config.Server.DataDir,
         database.SchemaVersion(), settings.HoldHours, settings.SessionTimeoutMinutes, jobs.CountHeld(),
         ServerSettings.Keys.Where(settings.IsSaved).ToList(), AdminServerApi.CanRestart, settings.QuotaOverrun,
-        TlsInfo(config, services), settings.AddressMatching, settings.EnrollmentCodeHash is not null, settings.HeldMegabytesPerUser);
+        TlsInfo(config, services), settings.AddressMatching, settings.EnrollmentCodeHash is not null, settings.HeldMegabytesPerUser,
+        settings.Get(ServerSettings.TapWaitKey), settings.Get(ServerSettings.PrinterBusyKey), settings.Get(ServerSettings.PrinterSendKey),
+        settings.JobHistoryDays, settings.ActivityDays, settings.TimeZone.Id, settings.SignInAttempts, settings.Get(ServerSettings.SignInLockoutKey),
+        config.Server.TrustedProxies);
 
     private static ServerTlsDto? TlsInfo(ServerConfig config, IServiceProvider services)
     {
@@ -142,6 +145,19 @@ public static class AdminApi
             return Results.BadRequest(new ErrorResponse($"addressMatching must be {string.Join(" or ", AddressMatching.All)}."));
         if (request.HeldMegabytesPerUser is < 0 or > 1_000_000)
             return Results.BadRequest(new ErrorResponse("heldMegabytesPerUser must be 0 (no limit) to 1000000."));
+        var numbers = new (string Key, int? Value)[]
+        {
+            (ServerSettings.TapWaitKey, request.TapWaitSeconds), (ServerSettings.PrinterBusyKey, request.PrinterBusySeconds),
+            (ServerSettings.PrinterSendKey, request.PrinterSendSeconds), (ServerSettings.JobHistoryDaysKey, request.JobHistoryDays),
+            (ServerSettings.ActivityDaysKey, request.ActivityDays), (ServerSettings.SignInAttemptsKey, request.SignInAttempts),
+            (ServerSettings.SignInLockoutKey, request.SignInLockoutMinutes),
+        }.Select(n => (Number: ServerSettings.Numbers.First(x => x.Key == n.Key), n.Value)).ToList();
+        foreach (var (number, value) in numbers)
+            if (value is { } v && !ServerSettings.Allows(number, v))
+                return Results.BadRequest(new ErrorResponse($"{number.Key} must be {number.Allowed}."));
+        TimeZoneInfo? zone = null;
+        if (request.TimeZone is { } zoneId && (zoneId.Trim().Length == 0 || !TimeZoneInfo.TryFindSystemTimeZoneById(zoneId.Trim(), out zone)))
+            return Results.BadRequest(new ErrorResponse($"\"{zoneId}\" isn't a time zone this server knows. Use a name like Europe/Oslo or America/Chicago."));
         foreach (var key in request.Reset ?? [])
             if (!ServerSettings.Keys.Contains(key))
                 return Results.BadRequest(new ErrorResponse($"Can't reset \"{key}\"; only {string.Join(", ", ServerSettings.Keys)}."));
@@ -194,6 +210,41 @@ public static class AdminApi
         {
             settings.Set(ServerSettings.AddressMatchingKey, m);
             changes.Add($"jobs without a PC key: {DescribeMatching(m)}");
+        }
+
+        foreach (var (number, value) in numbers)
+        {
+            string Describe(int n) => n == 0 && number.Key is ServerSettings.JobHistoryDaysKey or ServerSettings.ActivityDaysKey
+                ? $"{number.Name} ever"
+                : $"{number.Name} {Plural(n, number.Unit)}";
+            if (request.Reset?.Contains(number.Key) == true)
+            {
+                settings.Reset(number.Key);
+                changes.Add($"{Describe(settings.Get(number.Key))} again (the default)");
+            }
+            else if (value is { } v && (v != settings.Get(number.Key) || !settings.IsSaved(number.Key)))
+            {
+                settings.Set(number.Key, v);
+                changes.Add(Describe(v));
+            }
+        }
+
+        var zoneBefore = settings.TimeZone.Id;
+        if (request.Reset?.Contains(ServerSettings.TimeZoneKey) == true)
+        {
+            settings.Reset(ServerSettings.TimeZoneKey);
+            changes.Add($"time zone back to this machine's ({settings.TimeZone.Id})");
+        }
+        else if (zone is not null && (zone.Id != zoneBefore || !settings.IsSaved(ServerSettings.TimeZoneKey)))
+        {
+            settings.Set(ServerSettings.TimeZoneKey, zone.Id);
+            changes.Add($"time zone {zone.Id}");
+        }
+        if (settings.TimeZone.Id != zoneBefore)
+        {
+            // The daily backup and directory sync are at a time of day; work out when that is now.
+            services.GetRequiredService<Backups.BackupService>().Reschedule();
+            services.GetRequiredService<ActiveDirectory.DirectorySyncService>().Reschedule();
         }
 
         if (changes.Count > 0)

@@ -17,8 +17,8 @@ namespace TapQueue.Server.Backups;
 public sealed record RestoreResult(BackupManifest Manifest, string? ReplacedDir, int LostJobs, int ForgottenBuilds);
 
 /// <summary>
-/// `tapqueue-server --restore file`: puts a backup's database, TLS certificate and Active Directory CA
-/// back in data_dir, with the server stopped. What was there is moved aside, not deleted.
+/// `tapqueue-server --restore file`: puts a backup's database, TLS certificate, Active Directory CA
+/// and badge key back in data_dir, with the server stopped. What was there is moved aside, not deleted.
 /// </summary>
 public static class BackupRestore
 {
@@ -26,7 +26,8 @@ public static class BackupRestore
     private const long MaxEntryBytes = 64L * 1024 * 1024 * 1024;
 
     /// <exception cref="InvalidDataException">The backup can't be restored here; the message says why. Nothing was changed.</exception>
-    public static RestoreResult Run(ServerConfig config, string archivePath, DateTimeOffset? now = null)
+    /// <param name="passphrase">For an encrypted backup made with another passphrase than backup.passphrase in server.toml.</param>
+    public static RestoreResult Run(ServerConfig config, string archivePath, DateTimeOffset? now = null, string? passphrase = null)
     {
         if (!File.Exists(archivePath))
             throw new InvalidDataException($"There's no file {archivePath}.");
@@ -38,7 +39,7 @@ public static class BackupRestore
         BackupStore.CreatePrivateDirectory(staging);
         try
         {
-            var manifest = Extract(archivePath, staging);
+            var manifest = Extract(Decrypted(archivePath, staging, passphrase ?? config.Backup.Passphrase), archivePath, staging);
             Check(Path.Combine(staging, BackupStore.DatabaseEntry), manifest);
 
             var replaced = MoveCurrentAside(dataDir, (now ?? DateTimeOffset.UtcNow).ToUniversalTime());
@@ -79,13 +80,37 @@ public static class BackupRestore
         }
     }
 
-    private static BackupManifest Extract(string archivePath, string staging)
+    /// <summary>The .tar.gz to unpack: the file itself, or for an encrypted backup a decrypted copy in <paramref name="staging"/>.</summary>
+    private static string Decrypted(string archivePath, string staging, string passphrase)
+    {
+        if (!BackupCipher.IsEncrypted(archivePath))
+            return archivePath;
+        if (passphrase.Length == 0)
+            throw new InvalidDataException(
+                $"{archivePath} is encrypted. Put the passphrase it was made with in server.toml ([backup] passphrase = \"…\"), " +
+                "or in a file and add --passphrase-file <file>.");
+        var plain = Path.Combine(staging, "backup.tar.gz");
+        try
+        {
+            using var input = File.OpenRead(archivePath);
+            using var output = new FileStream(plain, BackupStore.PrivateFile(FileMode.CreateNew));
+            BackupCipher.Decrypt(input, output, passphrase);
+        }
+        catch (InvalidDataException ex)
+        {
+            throw new InvalidDataException($"{archivePath} can't be decrypted: {ex.Message}");
+        }
+        return plain;
+    }
+
+    /// <param name="archivePath">The file the person named, for messages; <paramref name="tarPath"/> is what's read.</param>
+    private static BackupManifest Extract(string tarPath, string archivePath, string staging)
     {
         BackupManifest? manifest = null;
         var hasDatabase = false;
         try
         {
-            using var file = File.OpenRead(archivePath);
+            using var file = File.OpenRead(tarPath);
             using var gzip = new GZipStream(file, CompressionMode.Decompress);
             using var tar = new TarReader(gzip);
             while (tar.GetNextEntry() is { } entry)

@@ -33,7 +33,8 @@ public static class StationApi
     }
 
     private static async Task<IResult> Tap(StationTapRequest request, HttpContext http, BadgeStore badges, UserStore users,
-        PrinterRegistry printers, ReleaseService release, UnknownTaps unknownTaps, AccessPolicy access, EventLog events, ILoggerFactory loggers)
+        PrinterRegistry printers, ReleaseService release, UnknownTaps unknownTaps, AccessPolicy access, EventLog events, ServerSettings settings,
+        ILoggerFactory loggers)
     {
         var logger = loggers.CreateLogger("TapQueue.Server.Api.StationApi");
         var station = CurrentStation(http);
@@ -81,7 +82,18 @@ public static class StationApi
         }
 
         // Not tied to the request: the station giving up on a slow printer shouldn't leave a job half-sent.
-        var result = await release.ReleaseAsync(user, printer, jobIds: null, EventLog.Station(station.Id), $"at station {station.Id}", CancellationToken.None);
+        var releasing = release.ReleaseAsync(user, printer, jobIds: null, EventLog.Station(station.Id), $"at station {station.Id}", CancellationToken.None);
+        // A big job, or a printer that's busy, can take minutes. The station reads the next card
+        // meanwhile: past the wait, the tap is answered and the release carries on here. What comes
+        // of it is in the activity log, and anything that fails goes back on hold.
+        if (await Task.WhenAny(releasing, Task.Delay(settings.TapWait)) != releasing)
+        {
+            _ = releasing.ContinueWith(t => logger.LogError(t.Exception, "Releasing {User}'s jobs at station {Station} failed", user.Username, station.Id),
+                TaskContinuationOptions.OnlyOnFaulted);
+            logger.LogInformation("{User} tapped at station {Station}: still sending to {Printer}", user.Username, station.Id, printer.Id);
+            return Results.Ok(new StationTapResponse(TapOutcome.Releasing, $"Hi {user.DisplayName}, your jobs are on their way to {printer.Name}.", user.ToDto(), []));
+        }
+        var result = await releasing;
         var sent = result.Results.Count(r => r.Success);
         var failed = result.Results.Count - sent;
         logger.LogInformation("{User} tapped at station {Station}: {Sent} released, {Failed} failed", user.Username, station.Id, sent, failed);

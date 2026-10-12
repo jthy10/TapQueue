@@ -11,11 +11,42 @@ public sealed record BadgeRecord(long Id, long UserId, string Username, string C
 }
 
 /// <summary>
-/// Badges link a card number (whatever the reader types) to a user. Card numbers are stored hashed,
-/// with only the last few characters kept so an admin can tell badges apart.
+/// Badges link a card number (whatever the reader types) to a user. Card numbers are stored as a
+/// keyed hash (<see cref="BadgeKey"/>), with only the last few characters kept so an admin can tell
+/// badges apart.
 /// </summary>
-public sealed class BadgeStore(Database database)
+public sealed class BadgeStore
 {
+    private const string KeyCheckSetting = "badgeKeyCheck";
+
+    private readonly Database database;
+    private readonly BadgeKey key;
+
+    public BadgeStore(Database database, BadgeKey key)
+    {
+        this.database = database;
+        this.key = key;
+
+        // Something only this key makes, kept beside the hashes: a database that turns up with another
+        // key (one restored without its secrets folder) is noticed instead of silently matching no card.
+        var check = key.Hash("tapqueue-badge-key-check");
+        var saved = database.Scalar("SELECT value FROM settings WHERE key = $k", ("$k", KeyCheckSetting)) as string;
+        KeyMismatch = saved is not null && saved != check;
+        if (saved is null)
+            database.Execute("INSERT INTO settings (key, value) VALUES ($k, $v)", ("$k", KeyCheckSetting), ("$v", check));
+
+        // Cards stored by servers before 0.16 are plain SHA-256.
+        foreach (var (id, plain) in database.Query("SELECT id, card_hash FROM badges WHERE card_hash NOT LIKE $keyed",
+                     r => (r.GetInt64(0), r.GetString(1)), ("$keyed", BadgeKey.Prefix + "%")))
+            database.Execute("UPDATE badges SET card_hash = $h WHERE id = $id", ("$h", key.Upgrade(plain)), ("$id", id));
+    }
+
+    /// <summary>
+    /// True when the cards in the database were stored with a different key than the one in
+    /// data_dir/secrets: none of them will be recognised until that key file is put back.
+    /// </summary>
+    public bool KeyMismatch { get; }
+
     private const string SelectColumns = """
         SELECT b.id, b.user_id, u.username, b.card_hint, b.created_at, b.last_used_at, b.label, b.source, b.card_hash
         FROM badges b JOIN users u ON u.id = b.user_id
@@ -37,12 +68,12 @@ public sealed class BadgeStore(Database database)
         var normalized = Normalize(card);
         if (normalized.Length == 0) return null;
         var id = database.Scalar("UPDATE badges SET last_used_at = $now WHERE card_hash = $h RETURNING id",
-            ("$now", DateTimeOffset.UtcNow), ("$h", Tokens.Hash(normalized)));
+            ("$now", DateTimeOffset.UtcNow), ("$h", key.Hash(normalized)));
         return id is long badgeId ? Get(badgeId) : null;
     }
 
     public BadgeRecord? FindByCard(string card) =>
-        database.QueryOne(SelectColumns + " WHERE b.card_hash = $h", Map, ("$h", Tokens.Hash(Normalize(card))));
+        database.QueryOne(SelectColumns + " WHERE b.card_hash = $h", Map, ("$h", HashOf(card)));
 
     public BadgeRecord? Get(long id) =>
         database.QueryOne(SelectColumns + " WHERE b.id = $id", Map, ("$id", id));
@@ -58,13 +89,13 @@ public sealed class BadgeStore(Database database)
             INSERT INTO badges (card_hash, card_hint, user_id, created_at, label, source)
             VALUES ($h, $hint, $u, $now, $label, $source)
             RETURNING id
-            """, ("$h", Tokens.Hash(normalized)), ("$hint", Hint(normalized)), ("$u", userId), ("$now", DateTimeOffset.UtcNow), ("$label", label),
+            """, ("$h", key.Hash(normalized)), ("$hint", Hint(normalized)), ("$u", userId), ("$now", DateTimeOffset.UtcNow), ("$label", label),
             ("$source", source))!;
         return Get(id)!;
     }
 
     /// <summary>The hash a card is stored under, for comparing a card number with <see cref="BadgeRecord.CardHash"/>.</summary>
-    public static string HashOf(string card) => Tokens.Hash(Normalize(card));
+    public string HashOf(string card) => key.Hash(Normalize(card));
 
     /// <summary>Moves a badge to <paramref name="userId"/> and records who owns the link now.</summary>
     public void Assign(long id, long userId, string source) =>

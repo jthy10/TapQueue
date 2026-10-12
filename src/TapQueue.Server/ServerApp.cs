@@ -84,6 +84,7 @@ public static class ServerApp
         builder.Services.AddSingleton<AdminStore>();
         builder.Services.AddSingleton<AdminRoster>();
         builder.Services.AddSingleton<SignInThrottle>();
+        builder.Services.AddSingleton(new BadgeKey(config));
         builder.Services.AddSingleton<BadgeStore>();
         builder.Services.AddSingleton<StationStore>();
         builder.Services.AddSingleton<WorkstationStore>();
@@ -133,6 +134,9 @@ public static class ServerApp
                 Database.LatestSchemaVersion, Path.Combine(backups.Directory, beforeUpgrade.Name));
         if (certificate is not null)
             certificate.Logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger<ServerCertificate>();
+        // Before anything looks at who's calling or whether it's HTTPS.
+        if (config.Server.ParseTrustedProxies() is { Count: > 0 } proxies)
+            app.UseTrustedProxies(proxies);
         if (config.Tls.Require)
             app.UseTlsRequirement(() => BoundPort(app.Services.GetRequiredService<IServer>(), "https") ?? 0);
 

@@ -17,7 +17,84 @@ public sealed class ServerSettings(Database database, ServerConfig config)
     public const string AddressMatchingKey = "addressMatching";
     public const string HeldMegabytesKey = "heldMegabytesPerUser";
 
-    public static readonly string[] Keys = [HoldHoursKey, SessionTimeoutKey, QuotaOverrunKey, AddressMatchingKey, HeldMegabytesKey];
+    public const string TapWaitKey = "tapWaitSeconds";
+    public const string PrinterBusyKey = "printerBusySeconds";
+    public const string PrinterSendKey = "printerSendSeconds";
+    public const string JobHistoryDaysKey = "jobHistoryDays";
+    public const string ActivityDaysKey = "activityDays";
+    public const string TimeZoneKey = "timeZone";
+    public const string SignInAttemptsKey = "signInAttempts";
+    public const string SignInLockoutKey = "signInLockoutMinutes";
+
+    public static readonly string[] Keys =
+    [
+        HoldHoursKey, SessionTimeoutKey, QuotaOverrunKey, AddressMatchingKey, HeldMegabytesKey,
+        TapWaitKey, PrinterBusyKey, PrinterSendKey, JobHistoryDaysKey, ActivityDaysKey, TimeZoneKey, SignInAttemptsKey, SignInLockoutKey,
+    ];
+
+    /// <summary>A whole-number setting that isn't in server.toml: what it's called in sentences, its default and what it may be.</summary>
+    public sealed record Number(string Key, string Name, string Unit, int Default, int Min, int Max, string Allowed);
+
+    /// <summary>
+    /// The settings that are just a number with a default. <see cref="JobHistoryDaysKey"/> also takes 0
+    /// (keep for ever) below its minimum, which keeps a month of jobs for monthly page limits to count.
+    /// </summary>
+    public static readonly Number[] Numbers =
+    [
+        new(TapWaitKey, "a tap waits for the printer for", "second", 5, 0, 120, "0 to 120"),
+        new(PrinterBusyKey, "a busy printer is retried for", "second", 120, 0, 3600, "0 to 3600"),
+        new(PrinterSendKey, "sending one job to a printer may take", "second", 300, 10, 3600, "10 to 3600"),
+        new(JobHistoryDaysKey, "job history kept for", "day", 0, 32, 3650, "0 (for ever), or 32 to 3650"),
+        new(ActivityDaysKey, "activity log kept for", "day", 90, 1, 3650, "0 (for ever), or 1 to 3650"),
+        new(SignInAttemptsKey, "wrong passwords before sign-in is refused:", "attempt", 5, 3, 100, "3 to 100"),
+        new(SignInLockoutKey, "sign-in refused after wrong passwords for", "minute", 15, 1, 1440, "1 to 1440"),
+    ];
+
+    /// <summary>Whether <paramref name="value"/> is one <paramref name="number"/> may have.</summary>
+    public static bool Allows(Number number, int value) =>
+        value >= number.Min && value <= number.Max || value == 0 && number.Key is JobHistoryDaysKey or ActivityDaysKey;
+
+    /// <summary>The saved value of one of <see cref="Numbers"/>, or its default.</summary>
+    public int Get(string key)
+    {
+        var number = Numbers.First(n => n.Key == key);
+        return Int(key) is { } saved && Allows(number, saved) ? saved : number.Default;
+    }
+
+    /// <summary>
+    /// How long a station's tap waits for the jobs to reach the printer before it answers "printing"
+    /// and the station reads the next card. The release carries on either way.
+    /// </summary>
+    public TimeSpan TapWait => TimeSpan.FromSeconds(Get(TapWaitKey));
+
+    /// <summary>How long a printer that answers "busy" is tried again before the job goes back on hold.</summary>
+    public TimeSpan PrinterBusyTimeout => TimeSpan.FromSeconds(Get(PrinterBusyKey));
+
+    /// <summary>How long sending one job to a printer may take before it's given up and held again.</summary>
+    public TimeSpan PrinterSendTimeout => TimeSpan.FromSeconds(Get(PrinterSendKey));
+
+    /// <summary>Finished jobs (released, canceled, expired) are deleted after this many days; 0 keeps them for ever.</summary>
+    public int JobHistoryDays => Get(JobHistoryDaysKey);
+
+    /// <summary>The activity log is kept this many days; 0 keeps it for ever.</summary>
+    public int ActivityDays => Get(ActivityDaysKey);
+
+    /// <summary>Wrong passwords for one name from one address before sign-in is refused there (<see cref="Api.SignInThrottle"/>).</summary>
+    public int SignInAttempts => Get(SignInAttemptsKey);
+
+    /// <summary>How long wrong passwords count, and so how long sign-in stays refused after the last one.</summary>
+    public TimeSpan SignInLockout => TimeSpan.FromMinutes(Get(SignInLockoutKey));
+
+    /// <summary>
+    /// The time zone days start in: page limit periods, reports, and the times of the daily backup and
+    /// directory sync. An IANA name like "Europe/Oslo"; the server machine's own zone unless set, or
+    /// if the saved one isn't known on this machine any more.
+    /// </summary>
+    public TimeZoneInfo TimeZone =>
+        Saved().GetValueOrDefault(TimeZoneKey) is { Length: > 0 } id && TimeZoneInfo.TryFindSystemTimeZoneById(id, out var zone) ? zone : TimeZoneInfo.Local;
+
+    /// <summary>The current time on the clock in <see cref="TimeZone"/>.</summary>
+    public DateTimeOffset Now => TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, TimeZone);
 
     private readonly Lock _lock = new();
     private Dictionary<string, string>? _saved;
@@ -75,7 +152,7 @@ public sealed class ServerSettings(Database database, ServerConfig config)
     private const string BackupKeepKey = "backupKeep";
     private const string BackupOff = "off";
 
-    /// <summary>When the daily backup runs, on the server's clock; null when it's turned off. 02:00 unless changed.</summary>
+    /// <summary>When the daily backup runs, in <see cref="TimeZone"/>; null when it's turned off. 02:00 unless changed.</summary>
     public TimeOnly? BackupTime =>
         Saved().GetValueOrDefault(BackupTimeKey) is not { } saved ? new TimeOnly(2, 0)
         : TimeOnly.TryParseExact(saved, "HH:mm", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var time) ? time

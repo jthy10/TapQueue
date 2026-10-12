@@ -331,7 +331,7 @@ public sealed class IppPrinterEndpoint(
                 RefuseForHeldLimit(c, job.Username ?? "?");
                 return IppMessage.CreateResponse(c.Request, IppStatus.ClientErrorNotPossible, TooMuchWaiting);
             }
-            await HoldAsync(jobId, size, c.Http.RequestAborted);
+            await HoldAsync(jobId, size, c.Queue.Color, c.Http.RequestAborted);
             return null;
         }
         finally
@@ -349,17 +349,19 @@ public sealed class IppPrinterEndpoint(
                 $"Refused a job from {username}: it would take them past the {settings.HeldMegabytesPerUser} MB one person may have waiting.");
     }
 
-    /// <summary>The whole document is here: count its pages and hold it for its owner.</summary>
-    private async Task HoldAsync(long jobId, long size, CancellationToken ct)
+    /// <summary>The whole document is here: count its pages, note how it's to print, and hold it for its owner.</summary>
+    private async Task HoldAsync(long jobId, long size, bool queueColor, CancellationToken ct)
     {
         var pages = PageCounter.Count(spool.PathFor(jobId));
-        if (pages is not null && jobs.GetJobAttributes(jobId) is { } attributes)
+        var template = jobs.GetJobAttributes(jobId) is { } attributes ? await JobTemplate.DecodeAsync(attributes, ct) : null;
+        if (pages is not null && template is not null)
         {
-            var ranges = (await JobTemplate.DecodeAsync(attributes, ct)).Attributes
+            var ranges = template.Attributes
                 .FirstOrDefault(a => a.Name == "page-ranges")?.Values.Select(v => v.Value).OfType<IppRange>().ToList();
             pages = PageCounter.ApplyPageRanges(pages.Value, ranges);
         }
-        jobs.MarkReceived(jobId, size, pages);
+        var (color, duplex) = PrintMode.Of(template, spool.PathFor(jobId), queueColor);
+        jobs.MarkReceived(jobId, size, pages, color, duplex);
         LogHeld(jobId);
     }
 

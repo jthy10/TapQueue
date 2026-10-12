@@ -33,7 +33,7 @@ public static class AdminAuthApi
             return Results.BadRequest(new ErrorResponse("Enter your username and password."));
         var ip = http.ClientIp();
         if (throttle.IsLocked(name, ip))
-            return Results.Json(new ErrorResponse("Too many wrong passwords. Wait 15 minutes and try again."), statusCode: StatusCodes.Status429TooManyRequests);
+            return Results.Json(new ErrorResponse(throttle.LockedMessage), statusCode: StatusCodes.Status429TooManyRequests);
 
         UserRecord? user;
         try
@@ -139,7 +139,7 @@ public static class AdminAuthApi
             return Results.BadRequest(new ErrorResponse("You sign in with your domain password; change it in Windows."));
         var ip = http.ClientIp();
         if (throttle.IsLocked(user.Username, ip))
-            return Results.Json(new ErrorResponse("Too many wrong passwords. Wait 15 minutes and try again."), statusCode: StatusCodes.Status429TooManyRequests);
+            return Results.Json(new ErrorResponse(throttle.LockedMessage), statusCode: StatusCodes.Status429TooManyRequests);
         if (!PasswordHasher.Verify(request.CurrentPassword ?? "", users.PasswordHash(user.Id)))
         {
             throttle.Failed(user.Username, ip);
@@ -157,33 +157,61 @@ public static class AdminAuthApi
 }
 
 /// <summary>
-/// Slows down password guessing: after 5 wrong passwords for a name, or 20 from one address, within
-/// 15 minutes, sign-in is refused until 15 minutes after the last one. Kept in memory; a restart forgets it.
-/// Names nobody tries again are swept out now and then, so guessing at many names doesn't use up memory.
+/// Slows down password guessing. After a few wrong passwords for a name from one address (5 unless
+/// changed), sign-in as that name is refused from that address until the lockout time (15 minutes)
+/// after the last one; an address that gets four times as many wrong, whatever the names, is
+/// refused altogether. Counted per address, not per name alone: otherwise anyone on the network
+/// could keep an admin out of the console by typing wrong passwords for their name.
+/// Kept in memory; a restart forgets it. Entries nobody adds to are swept out now and then, so
+/// guessing at many names doesn't use up memory.
 /// </summary>
 public sealed class SignInThrottle
 {
-    private const int PerName = 5;
-    private const int PerAddress = 20;
-    private static readonly TimeSpan Window = TimeSpan.FromMinutes(15);
+    /// <summary>An address may get this many times <see cref="ServerSettings.SignInAttempts"/> wrong over all names.</summary>
+    internal const int AddressFactor = 4;
     private static readonly TimeSpan SweepEvery = TimeSpan.FromMinutes(1);
 
+    private readonly Func<int> _attempts;
+    private readonly Func<TimeSpan> _window;
     private readonly ConcurrentDictionary<string, List<DateTimeOffset>> _failures = new();
     private long _lastSweepTicks;
+
+    public SignInThrottle(ServerSettings settings) : this(() => settings.SignInAttempts, () => settings.SignInLockout)
+    {
+    }
+
+    internal SignInThrottle(Func<int>? attempts = null, Func<TimeSpan>? window = null)
+    {
+        _attempts = attempts ?? (() => 5);
+        _window = window ?? (() => TimeSpan.FromMinutes(15));
+    }
 
     /// <summary>How many names and addresses have recent failures (for tests).</summary>
     internal int Tracked => _failures.Count;
 
+    /// <summary>What to tell someone who's locked out.</summary>
+    public string LockedMessage
+    {
+        get
+        {
+            var minutes = (int)Math.Ceiling(_window().TotalMinutes);
+            return $"Too many wrong passwords. Wait {(minutes == 1 ? "a minute" : $"{minutes} minutes")} and try again.";
+        }
+    }
+
     public bool IsLocked(string name, string ip) =>
-        Recent("name:" + name.ToLowerInvariant()) >= PerName || Recent("ip:" + ip) >= PerAddress;
+        Recent(Pair(name, ip)) >= _attempts() || Recent("ip:" + ip) >= _attempts() * AddressFactor;
 
     public void Failed(string name, string ip)
     {
-        Add("name:" + name.ToLowerInvariant());
+        Add(Pair(name, ip));
         Add("ip:" + ip);
     }
 
-    public void Succeeded(string name, string ip) => _failures.TryRemove("name:" + name.ToLowerInvariant(), out _);
+    public void Succeeded(string name, string ip) => _failures.TryRemove(Pair(name, ip), out _);
+
+    // A name can't hold a newline, so no name and address can be read as another pair.
+    private static string Pair(string name, string ip) => $"name:{name.ToLowerInvariant()}\n{ip}";
 
     private void Add(string key)
     {
@@ -208,11 +236,12 @@ public sealed class SignInThrottle
         var last = Interlocked.Read(ref _lastSweepTicks);
         if (!force && (now.UtcTicks - last < SweepEvery.Ticks || Interlocked.CompareExchange(ref _lastSweepTicks, now.UtcTicks, last) != last))
             return;
+        var window = _window();
         foreach (var (key, list) in _failures)
         {
             lock (list)
             {
-                list.RemoveAll(t => t < now - Window);
+                list.RemoveAll(t => t < now - window);
                 if (list.Count == 0)
                     _failures.TryRemove(new KeyValuePair<string, List<DateTimeOffset>>(key, list));
             }
@@ -223,9 +252,10 @@ public sealed class SignInThrottle
     {
         if (!_failures.TryGetValue(key, out var list))
             return 0;
+        var window = _window();
         lock (list)
         {
-            list.RemoveAll(t => t < DateTimeOffset.UtcNow - Window);
+            list.RemoveAll(t => t < DateTimeOffset.UtcNow - window);
             return list.Count;
         }
     }

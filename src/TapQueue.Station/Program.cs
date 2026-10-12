@@ -95,7 +95,8 @@ try
             continue;
         (lastCard, lastCardAt) = (card, now);
 
-        await TapAsync(http, card, cts.Token);
+        // Not awaited: the next person's card is read while the server works on this one.
+        _ = TapAsync(http, card, cts.Token);
     }
     return 0;
 }
@@ -183,6 +184,10 @@ static async Task TapAsync(HttpClient http, string card, CancellationToken ct)
     {
         // Something between here and the server answered instead of it; the station keeps reading cards.
         Log($"Tap failed: the answer wasn't the TapQueue server's ({ex.Message}).");
+    }
+    catch (OperationCanceledException)
+    {
+        // The station is stopping.
     }
 }
 

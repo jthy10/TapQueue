@@ -6,9 +6,9 @@ using TapQueue.Shared.Api;
 namespace TapQueue.Server.Jobs;
 
 /// <summary>Sends a user's held jobs to a physical printer.</summary>
-public sealed class ReleaseService(JobStore jobs, Spool spool, PrinterRegistry printers, AccessPolicy access, QuotaPolicy quotas, EventLog events, ILogger<ReleaseService> logger)
+public sealed class ReleaseService(JobStore jobs, Spool spool, PrinterRegistry printers, AccessPolicy access, QuotaPolicy quotas, EventLog events,
+    ServerSettings settings, ILogger<ReleaseService> logger)
 {
-    private static readonly TimeSpan BusyTimeout = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan BusyRetryDelay = TimeSpan.FromSeconds(3);
 
     /// <param name="actor">Who asked, for the activity log: the user, "admin" or "station:&lt;id&gt;".</param>
@@ -112,8 +112,8 @@ public sealed class ReleaseService(JobStore jobs, Spool spool, PrinterRegistry p
             if (jobs.GetJobAttributes(job.Id) is { } template)
                 request.Groups.Add(await JobTemplate.DecodeAsync(template, ct));
 
-            using var client = new IppClient(printer.TlsSkipVerify, TimeSpan.FromMinutes(5));
-            var busyUntil = DateTimeOffset.UtcNow + BusyTimeout;
+            using var client = new IppClient(printer.TlsSkipVerify, settings.PrinterSendTimeout);
+            var busyUntil = DateTimeOffset.UtcNow + settings.PrinterBusyTimeout;
             int? printerJobId = null;
             while (true)
             {

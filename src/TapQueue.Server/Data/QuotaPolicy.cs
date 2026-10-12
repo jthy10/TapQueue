@@ -24,7 +24,7 @@ public sealed class QuotaPolicy(Database database, ServerSettings settings)
     public IReadOnlyList<QuotaUsage> UsageFor(long userId, DateTimeOffset now) =>
         LimitsFor(userId).Select(limit =>
         {
-            var (start, end) = Period(limit.Period, now, TimeZoneInfo.Local);
+            var (start, end) = Period(limit.Period, now, settings.TimeZone);
             return new QuotaUsage(limit, PagesReleased(userId, start), start, end);
         }).ToList();
 
@@ -39,7 +39,7 @@ public sealed class QuotaPolicy(Database database, ServerSettings settings)
             return null;
 
         var best = usage.MaxBy(u => u.Remaining)!;
-        var resets = $"it starts over {TimeZoneInfo.ConvertTime(best.ResetsAt, TimeZoneInfo.Local):ddd MMM d}";
+        var resets = $"it starts over {TimeZoneInfo.ConvertTime(best.ResetsAt, settings.TimeZone):ddd MMM d}";
         return best.Remaining == 0
             ? $"You've used all {best.Limit.Pages} pages you get {Describe(best.Limit.Period)}; {resets}."
             : $"This job's {Pages(pages)} would go over your page limit: you have {best.Remaining} of {best.Limit.Pages} left {Current(best.Limit.Period)}; {resets}.";
