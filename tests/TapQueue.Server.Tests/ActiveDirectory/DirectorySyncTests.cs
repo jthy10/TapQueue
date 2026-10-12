@@ -23,7 +23,7 @@ public sealed class DirectorySyncTests : IDisposable
         _store = new DirectoryStore(db);
         _users = new UserStore(db);
         _groups = new GroupStore(db);
-        _badges = new BadgeStore(db);
+        _badges = new BadgeStore(db, new BadgeKey(Path.Combine(_dir, "badge.key")));
         _sync = new DirectorySync(_store, _ad, _users, _groups, _badges, new EventLog(db), NullLogger<DirectorySync>.Instance);
         _staffOu = _ad.Ou("Staff");
         _store.SaveConfig(new DirectoryConfig(Enabled: true, Host: "dc01", BindDn: "svc", Password: "x"));

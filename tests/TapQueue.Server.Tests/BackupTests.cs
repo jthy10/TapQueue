@@ -59,6 +59,84 @@ public sealed class BackupTests : IDisposable
     }
 
     [Fact]
+    public void WithAPassphraseBackupsAreEncryptedAndRestoringNeedsIt()
+    {
+        const string passphrase = "correct horse battery staple";
+        var old = DataDir("old");
+        var db = NewDatabase(old);
+        var alice = new UserStore(db).Create("alice", "Alice", null);
+        new BadgeStore(db, new BadgeKey(Path.Combine(old, BadgeKey.Folder, "badge.key"))).Add(alice.Id, "04A1B2C3");
+        var backups = new BackupStore(old, passphrase);
+
+        var backup = backups.Create(BackupKind.Manual);
+        var archive = backups.FileFor(backup.Name)!;
+
+        Assert.True(backup.Encrypted);
+        Assert.EndsWith(".tar.gz.enc", backup.Name);
+        Assert.True(BackupCipher.IsEncrypted(archive));
+        // Not a gzip any more, and nothing in it reads as the database it holds.
+        Assert.DoesNotContain("SQLite format 3", System.Text.Encoding.Latin1.GetString(File.ReadAllBytes(archive)));
+
+        var fresh = DataDir("fresh");
+        Assert.Contains("is encrypted", Assert.Throws<InvalidDataException>(() => BackupRestore.Run(Config(fresh), archive)).Message);
+        Assert.Contains("passphrase is wrong",
+            Assert.Throws<InvalidDataException>(() => BackupRestore.Run(Config(fresh), archive, passphrase: "something else entirely")).Message);
+        Assert.False(File.Exists(Path.Combine(fresh, "tapqueue.db")));
+
+        var config = Config(fresh);
+        config.Backup.Passphrase = passphrase;
+        BackupRestore.Run(config, archive);
+
+        // The key the cards were hashed with came back with them.
+        var restored = new BadgeStore(new Database(Path.Combine(fresh, "tapqueue.db")), new BadgeKey(config));
+        Assert.False(restored.KeyMismatch);
+        Assert.Equal(alice.Id, restored.Use("04a1b2c3")?.UserId);
+    }
+
+    [Fact]
+    public void BackupsAreCopiedToASecondFolderWhichFollowsWhatIsKept()
+    {
+        var data = DataDir("data");
+        var elsewhere = Path.Combine(_dir, "nas", "tapqueue");
+        NewDatabase(data);
+        var backups = new BackupStore(data, copyTo: elsewhere);
+
+        var first = backups.Create(BackupKind.Daily, DateTimeOffset.UtcNow.AddDays(-2));
+        var second = backups.Create(BackupKind.Daily, DateTimeOffset.UtcNow.AddDays(-1));
+
+        Assert.True(first.Copied);
+        Assert.Null(backups.CopyError);
+        Assert.Equal(File.ReadAllBytes(backups.FileFor(second.Name)!), File.ReadAllBytes(Path.Combine(elsewhere, second.Name)));
+        Assert.DoesNotContain(Directory.GetFiles(elsewhere), f => f.EndsWith(".tmp"));
+
+        backups.Prune(keepDaily: 1);
+
+        Assert.Equal([second.Name], Directory.GetFiles(elsewhere).Select(Path.GetFileName));
+    }
+
+    [Fact]
+    public void ABackupIsStillMadeWhenTheSecondFolderIsAwayAndFollowsLater()
+    {
+        var data = DataDir("data");
+        NewDatabase(data);
+        // A file where the folder should be: nothing can be written "in" it.
+        var elsewhere = Path.Combine(_dir, "share");
+        File.WriteAllText(elsewhere, "not a folder");
+        var backups = new BackupStore(data, copyTo: elsewhere);
+
+        var backup = backups.Create(BackupKind.Manual);
+
+        Assert.NotNull(backups.FileFor(backup.Name));
+        Assert.False(backup.Copied);
+        Assert.NotNull(backups.CopyError);
+
+        File.Delete(elsewhere);
+        Assert.True(backups.CopyOut());
+        Assert.True(Assert.Single(backups.List()).Copied);
+        Assert.Null(backups.CopyError);
+    }
+
+    [Fact]
     public void RestoringBringsBackWhatWasThereAndKeepsWhatItReplaced()
     {
         var old = DataDir("old");

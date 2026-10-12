@@ -7,13 +7,15 @@ public sealed class BadgeStoreTests : IDisposable
     private readonly string _dir = Directory.CreateTempSubdirectory("tapqueue-test").FullName;
     private readonly UserStore _users;
     private readonly BadgeStore _badges;
+    private readonly Database _db;
 
     public BadgeStoreTests()
     {
         var db = new Database(Path.Combine(_dir, "test.db"));
         db.Migrate();
         _users = new UserStore(db);
-        _badges = new BadgeStore(db);
+        _db = db;
+        _badges = new BadgeStore(db, new BadgeKey(Path.Combine(_dir, "secrets", "badge.key")));
     }
 
     [Theory]
@@ -35,6 +37,49 @@ public sealed class BadgeStoreTests : IDisposable
         Assert.NotNull(used?.LastUsedAt);
         Assert.Null(_badges.Use("99999999"));
         Assert.Null(_badges.Use("  "));
+    }
+
+    [Fact]
+    public void CardNumbersAreHashedWithTheServersKeyNotJustSha256()
+    {
+        var alice = _users.Create("alice", "Alice", null);
+        _badges.Add(alice.Id, "1234");
+
+        var stored = (string)_db.Scalar("SELECT card_hash FROM badges")!;
+
+        Assert.StartsWith(BadgeKey.Prefix, stored);
+        Assert.DoesNotContain(Tokens.Hash("1234"), stored);
+        // Another server's key gives another hash, so one database's hashes say nothing about another's.
+        Assert.NotEqual(stored, new BadgeKey(Path.Combine(_dir, "other", "badge.key")).Hash("1234"));
+        if (!OperatingSystem.IsWindows())
+            Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(Path.Combine(_dir, "secrets", "badge.key")));
+    }
+
+    [Fact]
+    public void CardsStoredBeforeTheKeyAreConvertedAndStillWork()
+    {
+        var alice = _users.Create("alice", "Alice", null);
+        // As servers before 0.16 stored them.
+        _db.Execute("INSERT INTO badges (card_hash, card_hint, user_id, created_at) VALUES ($h, '…B2C3', $u, $now)",
+            ("$h", Tokens.Hash("04A1B2C3")), ("$u", alice.Id), ("$now", DateTimeOffset.UtcNow));
+
+        var badges = new BadgeStore(_db, new BadgeKey(Path.Combine(_dir, "secrets", "badge.key")));
+
+        Assert.StartsWith(BadgeKey.Prefix, (string)_db.Scalar("SELECT card_hash FROM badges")!);
+        Assert.Equal(alice.Id, badges.Use("04a1b2c3")?.UserId);
+        Assert.False(badges.KeyMismatch);
+    }
+
+    [Fact]
+    public void ADatabaseWithoutItsKeyIsNoticed()
+    {
+        var alice = _users.Create("alice", "Alice", null);
+        _badges.Add(alice.Id, "1234");
+
+        var badges = new BadgeStore(_db, new BadgeKey(Path.Combine(_dir, "another-server", "badge.key")));
+
+        Assert.True(badges.KeyMismatch);
+        Assert.Null(badges.Use("1234"));
     }
 
     [Fact]

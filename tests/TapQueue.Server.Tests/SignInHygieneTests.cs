@@ -46,6 +46,44 @@ public sealed class SignInHygieneTests : IDisposable
         // Still counts after a sweep.
         for (var i = 0; i < 5; i++)
             throttle.Failed("alice", "192.0.2.9");
-        Assert.True(throttle.IsLocked("alice", "198.51.100.1"));
+        Assert.True(throttle.IsLocked("alice", "192.0.2.9"));
+    }
+
+    [Fact]
+    public void WrongPasswordsFromOneAddressDontLockTheNameForEveryoneElse()
+    {
+        var throttle = new SignInThrottle();
+        for (var i = 0; i < 5; i++)
+            throttle.Failed("Ada", "192.0.2.66");
+
+        Assert.True(throttle.IsLocked("ada", "192.0.2.66"));
+        // Ada herself, at her own desk, still gets in.
+        Assert.False(throttle.IsLocked("ada", "192.0.2.10"));
+        Assert.False(throttle.IsLocked("bob", "192.0.2.66"));
+    }
+
+    [Fact]
+    public void AnAddressThatGuessesAtManyNamesIsRefusedAltogether()
+    {
+        var throttle = new SignInThrottle();
+        for (var i = 0; i < 5 * SignInThrottle.AddressFactor; i++)
+            throttle.Failed($"guess{i}", "192.0.2.66");
+
+        Assert.True(throttle.IsLocked("someone-new", "192.0.2.66"));
+        Assert.False(throttle.IsLocked("someone-new", "192.0.2.10"));
+    }
+
+    [Fact]
+    public void TheNumberOfTriesAndTheWaitComeFromSettings()
+    {
+        var attempts = 3;
+        var throttle = new SignInThrottle(() => attempts, () => TimeSpan.FromMinutes(1));
+        for (var i = 0; i < 3; i++)
+            throttle.Failed("ada", "192.0.2.66");
+
+        Assert.True(throttle.IsLocked("ada", "192.0.2.66"));
+        Assert.Contains("Wait a minute", throttle.LockedMessage);
+        attempts = 10;
+        Assert.False(throttle.IsLocked("ada", "192.0.2.66"));
     }
 }

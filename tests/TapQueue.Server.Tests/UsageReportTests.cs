@@ -32,10 +32,11 @@ public sealed class UsageReportTests : IDisposable
     }
 
     /// <param name="at">When it was released, UTC.</param>
-    private void Released(long? userId, string at, int? pages, int copies = 1, string printer = "office", string queue = "secure")
+    private void Released(long? userId, string at, int? pages, int copies = 1, string printer = "office", string queue = "secure",
+        bool? color = null, bool? duplex = null)
     {
         var job = _jobs.Create(new NewJob(userId, null, queue, "doc", "application/pdf", copies, "192.0.2.1", DateTimeOffset.UtcNow.AddHours(1), null));
-        _jobs.MarkReceived(job.Id, 10, pages);
+        _jobs.MarkReceived(job.Id, 10, pages, color, duplex);
         _jobs.MarkReleased(job.Id, printer);
         _db.Execute("UPDATE jobs SET released_at = $at WHERE id = $id", ("$at", DateTimeOffset.Parse(at + "Z")), ("$id", job.Id));
     }
@@ -151,8 +152,25 @@ public sealed class UsageReportTests : IDisposable
         var csv = UsageReport.ToCsv(Run(ReportGrouping.User));
 
         Assert.Equal(
-            "User,Name,Jobs,Pages,Jobs counted as 1 page\r\n" +
-            "eve,\"'=HYPERLINK(\"\"http://example.com\"\")\",1,3,0\r\n" +
-            "Total,2026-10-01 to 2026-10-31,1,3,0\r\n", csv);
+            "User,Name,Jobs,Pages,Jobs counted as 1 page,Colour pages,Black and white pages,Two-sided pages\r\n" +
+            "eve,\"'=HYPERLINK(\"\"http://example.com\"\")\",1,3,0,0,0,0\r\n" +
+            "Total,2026-10-01 to 2026-10-31,1,3,0,0,0,0\r\n", csv);
+    }
+
+    [Fact]
+    public void PagesAreSplitByColourAndSides()
+    {
+        var alice = _users.Create("alice", "Alice", null).Id;
+        Released(alice, "2026-10-05T10:00:00", pages: 3, copies: 2, color: true, duplex: true);
+        Released(alice, "2026-10-06T10:00:00", pages: 5, color: false, duplex: false);
+        // Didn't say whether it's colour: neither.
+        Released(alice, "2026-10-07T10:00:00", pages: 1, color: null, duplex: false);
+
+        var report = Run(ReportGrouping.User);
+
+        var row = Assert.Single(report.Rows);
+        Assert.Equal((12, 6, 5, 6), (row.Pages, row.ColorPages, row.MonoPages, row.DuplexPages));
+        Assert.Equal((6, 5, 6), (report.ColorPages, report.MonoPages, report.DuplexPages));
+        Assert.EndsWith("Total,2026-10-01 to 2026-10-31,3,12,0,6,5,6\r\n", UsageReport.ToCsv(report));
     }
 }

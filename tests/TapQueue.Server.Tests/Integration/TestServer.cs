@@ -45,7 +45,7 @@ public sealed class TestServer : IAsyncDisposable
 
     /// <param name="tls">Also listen for HTTPS, with a self-signed certificate (or <paramref name="configureTls"/>'s).</param>
     public static async Task<TestServer> StartAsync(string authMode = "token", int discoveryPort = 0, Action<IServiceCollection>? configureServices = null,
-        bool tls = false, Action<TlsSection>? configureTls = null)
+        bool tls = false, Action<TlsSection>? configureTls = null, Action<ServerConfig>? configure = null)
     {
         var printer = await FakePrinter.StartAsync();
         var dataDir = Directory.CreateTempSubdirectory("tapqueue-it").FullName;
@@ -57,6 +57,7 @@ public sealed class TestServer : IAsyncDisposable
             Tls = { Listen = tls ? "127.0.0.1:0" : "" },
         };
         configureTls?.Invoke(config.Tls);
+        configure?.Invoke(config);
         var app = ServerApp.Build(config, configureServices: configureServices);
         await app.StartAsync();
         var server = new TestServer(app, dataDir, printer);
@@ -89,7 +90,9 @@ public sealed class TestServer : IAsyncDisposable
 
     /// <summary>Prints a document to the hold queue the way Windows does, with a single Print-Job.</summary>
     /// <param name="ippPath">Another path to print to, like a keyed queue's from a service check-in.</param>
-    public async Task<IppMessage> PrintAsync(string jobName, byte[] document, string? requestingUser = null, int copies = 1, string? ippPath = null)
+    /// <param name="jobAttributes">More of the print dialog's choices, like sides or print-color-mode.</param>
+    public async Task<IppMessage> PrintAsync(string jobName, byte[] document, string? requestingUser = null, int copies = 1, string? ippPath = null,
+        Action<IppGroup>? jobAttributes = null)
     {
         var queueUri = ippPath is null ? QueueUri : $"ipp://{BaseUri.Authority}{ippPath}";
         var request = IppMessage.CreateRequest(IppOperation.PrintJob, IppClient.NextRequestId(), queueUri);
@@ -98,6 +101,7 @@ public sealed class TestServer : IAsyncDisposable
             .Add("job-name", IppValue.Name(jobName))
             .Add("document-format", IppValue.MimeType("application/pdf"));
         request.Group(IppTag.JobAttributes).Add("copies", IppValue.Integer(copies));
+        jobAttributes?.Invoke(request.Group(IppTag.JobAttributes));
         using var ipp = new IppClient(tlsSkipVerify: false, TimeSpan.FromSeconds(30));
         return await ipp.SendAsync(queueUri, request, new MemoryStream(document));
     }
