@@ -15,7 +15,8 @@ public sealed record QuotaUsage(QuotaLimit Limit, int Used, DateTimeOffset Perio
 /// Page limits, checked when jobs are released. A limit set on the user wins. Otherwise their
 /// groups' limits apply and the most generous one counts: a job may print if any of them allows
 /// it. Groups without a limit don't lift anyone's; a user with no limit anywhere is unlimited.
-/// Pages count when a job is released, as its pages times copies (1 page if it couldn't be counted).
+/// Pages count when a job is released, as its pages times copies (1 page if it couldn't be counted),
+/// less any that were given back because the job was stopped at the printer (<see cref="Jobs.JobCanceler"/>).
 /// </summary>
 public sealed class QuotaPolicy(Database database, ServerSettings settings)
 {
@@ -58,7 +59,7 @@ public sealed class QuotaPolicy(Database database, ServerSettings settings)
 
     private int PagesReleased(long userId, DateTimeOffset since) =>
         (int)Math.Min(int.MaxValue, Convert.ToInt64(database.Scalar("""
-            SELECT COALESCE(SUM(COALESCE(pages, 1) * copies), 0) FROM jobs
+            SELECT COALESCE(SUM(COALESCE(pages, 1) * copies - refunded_pages), 0) FROM jobs
             WHERE user_id = $u AND status = $released AND released_at >= $since
             """, ("$u", userId), ("$released", JobStatus.Released), ("$since", since.ToUniversalTime()))));
 

@@ -435,6 +435,13 @@ public sealed class Database
         """
             CREATE INDEX ix_jobs_released_at ON jobs(released_at) WHERE released_at IS NOT NULL;
         """,
+
+        // 17: stopping a job that's already at the printer: the printer's number for it, and the
+        // pages that were given back because they never printed.
+        """
+            ALTER TABLE jobs ADD COLUMN printer_job_id INTEGER;
+            ALTER TABLE jobs ADD COLUMN refunded_pages INTEGER NOT NULL DEFAULT 0;
+        """,
     ];
 
     public void Migrate()

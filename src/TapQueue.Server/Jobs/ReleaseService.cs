@@ -114,13 +114,17 @@ public sealed class ReleaseService(JobStore jobs, Spool spool, PrinterRegistry p
 
             using var client = new IppClient(printer.TlsSkipVerify, TimeSpan.FromMinutes(5));
             var busyUntil = DateTimeOffset.UtcNow + BusyTimeout;
+            int? printerJobId = null;
             while (true)
             {
                 IppMessage response;
                 await using (var document = spool.OpenRead(job.Id))
                     response = await client.SendAsync(printer.Uri, request, document, ct);
                 if (IppStatus.IsSuccess(response.Code))
+                {
+                    printerJobId = response.Find(IppTag.JobAttributes, "job-id")?.First?.AsInt();
                     break;
+                }
 
                 // Some printers take one job at a time and answer "busy" until the last one is done.
                 if (response.Code == IppStatus.ServerErrorBusy && DateTimeOffset.UtcNow < busyUntil)
@@ -132,7 +136,7 @@ public sealed class ReleaseService(JobStore jobs, Spool spool, PrinterRegistry p
                 throw new InvalidOperationException($"Printer rejected the job (IPP status 0x{response.Code:X4}{(message is null ? "" : $": {message}")}).");
             }
 
-            jobs.MarkReleased(job.Id, printer.Id);
+            jobs.MarkReleased(job.Id, printer.Id, printerJobId);
             spool.Delete(job.Id);
             logger.LogInformation("Released job {JobId} \"{Name}\" for {User} to {Printer}", job.Id, job.Name, user.Username, printer.Id);
             return new ReleaseResult(job.Id, job.Name, true, null);

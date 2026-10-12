@@ -412,6 +412,7 @@ public sealed record UpdateQueueRequest(
 /// <param name="ClaimedUser">The username the print client sent. Unverified; only shown to help an admin sort out unowned jobs.</param>
 /// <param name="FormerOwner">For jobs of a user who has since been deleted, their username.</param>
 /// <param name="Pages">Pages per copy (after any page range), or null if they couldn't be counted.</param>
+/// <param name="RefundedPages">Of a released job's pages times copies: how many were given back because it was stopped at the printer.</param>
 public sealed record JobDto(
     long Id,
     string Name,
@@ -428,7 +429,13 @@ public sealed record JobDto(
     string? ReleasedPrinterId,
     string? Error,
     string? FormerOwner = null,
-    int? Pages = null);
+    int? Pages = null,
+    int RefundedPages = 0);
+
+/// <summary>What deleting one of your own jobs did (servers from 0.14; older ones answer with nothing).</summary>
+/// <param name="RefundedPages">Pages that had counted against a page limit and no longer do.</param>
+/// <param name="Message">What happened, for the person who asked.</param>
+public sealed record CancelJobResponse(int RefundedPages, string Message);
 
 /// <summary>How people sign in to the tray app, set with the Active Directory settings.</summary>
 public static class ClientSignIn

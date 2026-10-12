@@ -34,14 +34,16 @@ public sealed record JobRecord(
     string? Error,
     string? FormerOwner,
     int? Pages,
-    string? Workstation = null)
+    string? Workstation = null,
+    int? PrinterJobId = null,
+    int RefundedPages = 0)
 {
     /// <summary>What the job counts against a quota: its pages times copies, and 1 page if it couldn't be counted.</summary>
     public int ChargedPages => (Pages ?? 1) * Copies;
 
     public JobDto ToDto() => new(
         Id, Name, QueueId, Status, SizeBytes, DocumentFormat, Copies, Username, OwnerHint,
-        SubmittedAt, ExpiresAt, ReleasedAt, ReleasedPrinterId, Error, FormerOwner, Pages);
+        SubmittedAt, ExpiresAt, ReleasedAt, ReleasedPrinterId, Error, FormerOwner, Pages, RefundedPages);
 }
 
 /// <param name="JobAttributes">The encoded IPP job-attributes group from the client (copies, media, page-ranges…).</param>
@@ -63,7 +65,7 @@ public sealed class JobStore(Database database)
     private const string SelectColumns = """
         SELECT j.id, j.user_id, u.username, j.owner_hint, j.queue_id, j.name, j.document_format, j.copies,
                j.size_bytes, j.status, j.source_ip, j.submitted_at, j.expires_at, j.released_at,
-               j.released_printer_id, j.error, j.former_owner, j.pages, j.workstation
+               j.released_printer_id, j.error, j.former_owner, j.pages, j.workstation, j.printer_job_id, j.refunded_pages
         FROM jobs j LEFT JOIN users u ON u.id = j.user_id
         """;
 
@@ -131,11 +133,20 @@ public sealed class JobStore(Database database)
     public void SetDocumentFormat(long id, string format) =>
         database.Execute("UPDATE jobs SET document_format = $f WHERE id = $id", ("$f", format), ("$id", id));
 
-    public void MarkReleased(long id, string printerId) =>
+    /// <param name="printerJobId">The printer's number for the job, if it gave one; what stopping it later needs.</param>
+    public void MarkReleased(long id, string printerId, int? printerJobId = null) =>
         database.Execute("""
-            UPDATE jobs SET status = $released, released_at = $now, released_printer_id = $p, error = NULL
+            UPDATE jobs SET status = $released, released_at = $now, released_printer_id = $p, printer_job_id = $pj, error = NULL
             WHERE id = $id
-            """, ("$released", JobStatus.Released), ("$now", DateTimeOffset.UtcNow), ("$p", printerId), ("$id", id));
+            """, ("$released", JobStatus.Released), ("$now", DateTimeOffset.UtcNow), ("$p", printerId), ("$pj", printerJobId), ("$id", id));
+
+    /// <summary>
+    /// A released job was stopped at the printer part way: <paramref name="pages"/> of what it was
+    /// charged never printed and no longer count. Only once per job; false if it already has a refund.
+    /// </summary>
+    public bool Refund(long id, int pages) =>
+        database.Execute("UPDATE jobs SET refunded_pages = $n WHERE id = $id AND status = $released AND refunded_pages = 0",
+            ("$n", pages), ("$id", id), ("$released", JobStatus.Released)) == 1;
 
     /// <summary>Jobs whose spool files should be deleted: held past their expiry, or stuck receiving.</summary>
     public List<JobRecord> ListStale(DateTimeOffset now, TimeSpan receivingTimeout) =>
@@ -164,5 +175,7 @@ public sealed class JobStore(Database database)
         Error: r.GetStringOrNull(15),
         FormerOwner: r.GetStringOrNull(16),
         Pages: r.IsDBNull(17) ? null : r.GetInt32(17),
-        Workstation: r.GetStringOrNull(18));
+        Workstation: r.GetStringOrNull(18),
+        PrinterJobId: r.IsDBNull(19) ? null : r.GetInt32(19),
+        RefundedPages: r.GetInt32(20));
 }

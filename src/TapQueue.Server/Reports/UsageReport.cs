@@ -23,7 +23,7 @@ public sealed class UsageReport(Database database)
     public UsageReportDto Run(DateOnly from, DateOnly to, string by, TimeZoneInfo zone)
     {
         var jobs = database.Query("""
-            SELECT released_at, user_id, former_owner, released_printer_id, queue_id, COALESCE(pages, 1) * copies, pages IS NULL
+            SELECT released_at, user_id, former_owner, released_printer_id, queue_id, COALESCE(pages, 1) * copies - refunded_pages, pages IS NULL
             FROM jobs WHERE status = $released AND released_at >= $from AND released_at < $to
             """, r => new Job(r.GetTime(0), r.GetInt64OrNull(1), r.GetStringOrNull(2), r.GetStringOrNull(3), r.GetString(4), r.GetInt64(5), r.GetBoolean(6)),
             ("$released", JobStatus.Released), ("$from", StartOf(from, zone)), ("$to", StartOf(to.AddDays(1), zone)));
