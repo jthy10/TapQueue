@@ -67,6 +67,9 @@ const string Usage = """
                                       | TapQueueClient.exe | tapqueue-client> [--platform win-x64|linux-x64] [--version-name ...]
                                                      Push a client build out; every PC of that platform
                                                      installs it when it next checks in (about a minute)
+      tapqueue-admin clients update [--check]        Publish the newest client release from GitHub (the server
+                                                     downloads and checks it); --check only says what's there
+      tapqueue-admin stations update [--check]       The same for the station build that goes with this server
       tapqueue-admin clients builds                  Published client builds, newest (the one PCs run) first
       tapqueue-admin clients sign-out <session>      Sign a client out (session number from `clients`); jobs
                                                      from that PC stop going to that user
@@ -247,6 +250,8 @@ try
         ("server", "restart") when positional.Count == 2 => await RestartServer(),
         ("server", "enrollment-code") when positional.Count == 3 && positional[2] is "new" or "off" => await SetEnrollmentCode(positional[2] == "new"),
         ("report", null) => await Report(options.GetValueOrDefault("--by"), options.GetValueOrDefault("--from"), options.GetValueOrDefault("--to"), options.ContainsKey("--csv")),
+        ("clients", "update") when positional.Count == 2 => await PublishRelease("client", "clients", options.ContainsKey("--check")),
+        ("stations", "update") when positional.Count == 2 => await PublishRelease("station", "stations", options.ContainsKey("--check")),
         ("backups", null) => await ListBackups(),
         ("backups", "create") when positional.Count == 2 => await CreateBackup(),
         ("backups", "download") when positional.Count is 3 or 4 => await DownloadBackup(positional[2], positional.ElementAtOrDefault(3)),
@@ -961,6 +966,33 @@ async Task<int> Report(string? by, string? from, string? to, bool csv)
     Console.WriteLine($"Total: {report.Pages} pages in {report.Jobs} jobs" +
         (report.UncountedJobs > 0 ? $" ({report.UncountedJobs} jobs couldn't be counted and count as 1 page a copy)" : "") +
         (report.By == ReportGrouping.Group ? ". Someone in two groups counts in both." : "."));
+    return 0;
+}
+
+async Task<int> PublishRelease(string kind, string plural, bool checkOnly)
+{
+    var found = await Get<BuildReleaseDto>($"{kind}-builds/release?refresh=true");
+    if (found is null) return 1;
+    if (found.CheckError is not null || found.Latest is null)
+    {
+        Console.Error.WriteLine(found.CheckError ?? "GitHub lists no release.");
+        return 1;
+    }
+    var published = found.Published.Count == 0 ? "nothing" : string.Join(", ", found.Published.Distinct());
+    if (!found.UpdateAvailable)
+    {
+        Console.WriteLine($"The newest release ({found.Latest.Version}) is already published ({published}).");
+        return 0;
+    }
+    Console.WriteLine($"Release {found.Latest.Version} is on GitHub; the server hands out {published}.");
+    if (checkOnly)
+    {
+        Console.WriteLine($"Publish it with: tapqueue-admin {plural} update");
+        return 0;
+    }
+    var done = await Send<BuildReleaseDto>(HttpMethod.Post, $"{kind}-builds/release", new PublishReleaseRequest(found.Latest.Version));
+    if (done is null) return 1;
+    Console.WriteLine($"Published {string.Join(", ", done.Published.Distinct())}. {(kind == "client" ? "PCs install it within about a minute" : "Stations install it within seconds")}.");
     return 0;
 }
 
