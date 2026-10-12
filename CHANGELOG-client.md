@@ -10,6 +10,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-12
+
 ### Added
 - **View printers and queue…** in the tray menu (Windows and Linux), in place of **Held jobs…**.
   It opens a window with two tabs. **Printers** lists the queues you print to, with whether this
@@ -151,7 +153,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 First working version: a tray app configured by a file that signs in, adds the printer, and shows
 and releases held jobs.
 
-[Unreleased]: https://github.com/jthy10/TapQueue/compare/client-v0.9.7...HEAD
+[Unreleased]: https://github.com/jthy10/TapQueue/compare/client-v0.10.0...HEAD
+[0.10.0]: https://github.com/jthy10/TapQueue/compare/client-v0.9.7...client-v0.10.0
 [0.9.7]: https://github.com/jthy10/TapQueue/compare/client-v0.9.6...client-v0.9.7
 [0.9.6]: https://github.com/jthy10/TapQueue/compare/client-v0.9.5...client-v0.9.6
 [0.9.5]: https://github.com/jthy10/TapQueue/compare/client-v0.8.0...client-v0.9.5
