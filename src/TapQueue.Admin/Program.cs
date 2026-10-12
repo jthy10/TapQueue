@@ -126,6 +126,11 @@ const string Usage = """
                                                      Restore one with the server stopped:
                                                      sudo -u tapqueue /opt/tapqueue/tapqueue-server --restore <file>
 
+      tapqueue-admin notifications                   Email alerts: the mail server, who gets them and what for
+      tapqueue-admin notifications test              Send a test email to everyone on the list
+      tapqueue-admin notifications on|off            Turn the emails on or off. The mail server and its
+                                                     password are set in the console, under Notifications
+
     Connection (flag > environment > ~/.config/tapqueue/admin.toml > /etc/tapqueue/server.toml):
       --server <url>    TAPQUEUE_SERVER       default http://localhost:8631
       --token <token>   TAPQUEUE_ADMIN_TOKEN  admin.token from server.toml
@@ -244,6 +249,9 @@ try
         ("directory", "sign-in") when positional.Count == 3 => await SetClientSignIn(positional[2]),
         ("directory", "scope") when positional.Count == 4 && positional[2] == "remove" =>
             await Delete($"directory/scope/{long.Parse(positional[3])}", $"Removed scope item {positional[3]}; the next sync disables users only it brought in."),
+        ("notifications", null) => await ShowNotifications(),
+        ("notifications", "test") when positional.Count == 2 => await TestNotifications(),
+        ("notifications", "on" or "off") when positional.Count == 2 => await SwitchNotifications(positional[1] == "on"),
         ("server", null) => await ShowServer(),
         ("server", "set") when positional.Count == 4 => await SetServerSetting(positional[2], positional[3]),
         ("server", "log") when positional.Count == 2 => await ServerLog(options.ContainsKey("--follow")),
@@ -993,6 +1001,51 @@ async Task<int> PublishRelease(string kind, string plural, bool checkOnly)
     var done = await Send<BuildReleaseDto>(HttpMethod.Post, $"{kind}-builds/release", new PublishReleaseRequest(found.Latest.Version));
     if (done is null) return 1;
     Console.WriteLine($"Published {string.Join(", ", done.Published.Distinct())}. {(kind == "client" ? "PCs install it within about a minute" : "Stations install it within seconds")}.");
+    return 0;
+}
+
+async Task<int> ShowNotifications()
+{
+    var n = await Get<NotificationsDto>("server/notifications");
+    if (n is null) return 1;
+    var c = n.Config;
+    Console.WriteLine(c.Enabled ? "Notifications are on." : "Notifications are off (`notifications on` turns them on).");
+    Console.WriteLine(c.Host.Length == 0
+        ? "No mail server yet: set it on the console's Notifications page."
+        : $"Mail server {c.Host}:{c.Port} ({c.Security}){(c.Username.Length > 0 ? $", signing in as {c.Username}{(c.HasPassword ? "" : " (no password saved)")}" : ", without signing in")}; sent from {c.From}.");
+    Console.WriteLine(c.Recipients.Count > 0 ? $"Sent to: {string.Join(", ", c.Recipients)}" : "Nobody to send to yet.");
+    var about = new[]
+    {
+        c.PrinterProblems ? "printer problems" : null, c.PrinterWarnings ? "printer warnings" : null,
+        c.StationsOffline ? "stations going offline" : null, c.CrashReports ? "crash reports" : null,
+    }.OfType<string>().ToList();
+    Console.WriteLine(about.Count > 0
+        ? $"About: {string.Join(", ", about)}; {(c.DelayMinutes == 0 ? "straight away" : $"once a printer or station has been that way for {c.DelayMinutes} min")}."
+        : "About: nothing (pick what on the console's Notifications page).");
+    Console.WriteLine(n.LastSentAt is { } sent ? $"Last email: {Ago(sent)}." : "No email sent since the server started.");
+    if (n.LastError is not null)
+        Console.WriteLine($"The last email couldn't be sent: {n.LastError}{(n.Waiting > 0 ? $" ({n.Waiting} waiting to be tried again)" : "")}");
+    if (n.Alerts.Count > 0)
+    {
+        Console.WriteLine();
+        Table(["WRONG RIGHT NOW", "SINCE"], n.Alerts.Select(a => new[] { a.Summary, Ago(a.Since) }));
+    }
+    return 0;
+}
+
+async Task<int> TestNotifications()
+{
+    var result = await Send<NotificationTestResultDto>(HttpMethod.Post, "server/notifications/test", new { });
+    if (result is null) return 1;
+    (result.Success ? Console.Out : Console.Error).WriteLine(result.Message);
+    return result.Success ? 0 : 1;
+}
+
+async Task<int> SwitchNotifications(bool on)
+{
+    if (await Send<NotificationsDto>(HttpMethod.Patch, "server/notifications", new UpdateNotificationConfigRequest(Enabled: on)) is null)
+        return 1;
+    Console.WriteLine(on ? "Notifications are on. `notifications test` sends an email to check." : "Notifications are off.");
     return 0;
 }
 
