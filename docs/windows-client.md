@@ -108,14 +108,8 @@ service installs the published build if it differs and the tray app restarts int
 says the PC is up to date, that the server publishes no client, or why the update failed. It also
 retries a build that failed to install before. If the service isn't running, it says so.
 
-**Updates are signed** (clients from 0.17). A build is signed where it's made, with a key the
-TapQueue server never has, and the service checks that signature before it downloads anything. So
-a server, or someone who has taken it over, can pass on builds but can't make PCs run a program
-of its own. A build with no signature, or one from a key the PC doesn't trust, is refused, and
-**Workstations** in the console shows why. PCs trust TapQueue's release key; if you build clients
-yourself, sign them with your own key and give PCs its public half as `update_key` in
-`client.toml` ([releasing](releasing.md#signed-updates)). A server can still offer an older signed
-release, so it can roll PCs back, but not to anything that was never released.
+The download is checked against the hash the server sends, which catches damaged downloads but
+not a tampered server or network. Signed builds and HTTPS are planned before production use.
 
 ## Crash reports
 

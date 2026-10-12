@@ -22,14 +22,6 @@ number says what a site runs. This one is 0.17.0; there is no client 0.11 to 0.1
 - Releasing from the tray says when a job won't come out as it was sent: in black and white, or
   on one side, because the printer you chose can't do otherwise.
 
-### Changed
-- **Updates have to be signed.** The TapQueue service used to install whatever build its server
-  published, checking only a checksum the server itself sent. It now installs a build only if
-  it's signed with TapQueue's release key, or with the key in `client.toml`'s new `update_key`
-  for clients you build yourself, and checks before downloading. An unsigned build is refused and
-  **Workstations** in the console says why. Needs a 0.17 server to pass the signature on; with an
-  older server this client doesn't update itself.
-
 ## [0.10.0] - 2026-10-12
 
 ### Added

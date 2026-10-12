@@ -62,12 +62,10 @@ areas cover.
 - list, make, download or delete [backups](backup.md). A backup holds everything at once,
   hashed passwords and the server's private key included.
 
-An **admin of Updates** decides which build every PC's TapQueue service installs and runs as
-SYSTEM (Windows) or root (Linux), and which every station runs. Clients and stations
-from 0.17 only install builds [signed](releasing.md#signed-updates) with a key they trust, so
-what the role can do there is choose between releases, including older ones, not run a program of
-their own. Older clients and stations install whatever is published: until they're all updated,
-treat the role as you would a full admin.
+An **admin of Updates** is not a full admin, but treat the role as just as trusted: the client
+build they publish is installed by every PC's TapQueue service and runs there as SYSTEM (Windows)
+or root (Linux), and a station build runs on every station. Give it only to people you'd let
+install software on all your PCs.
 
 The rule about people with admin rights stops a People admin from adding themselves to an admin
 group, or disabling the admins above them.
