@@ -111,6 +111,21 @@ const string Usage = """
       tapqueue-admin server set held-limit <megabytes|0|default>
                                                      How much one person may have waiting to print at once
                                                      (default 2048; 0 for no limit)
+      tapqueue-admin server set job-history <days|0|default>
+                                                     Delete finished jobs' history after this many days
+                                                     (default 0: never; otherwise 32 or more)
+      tapqueue-admin server set activity-log <days|0|default>
+                                                     Keep the activity log this long (default 90; 0: for ever)
+      tapqueue-admin server set time-zone <name|default>
+                                                     Where days start for page limits, reports, the daily
+                                                     backup and sync, e.g. Europe/Oslo (default: the server's)
+      tapqueue-admin server set tap-wait|printer-busy|printer-send <seconds|default>
+                                                     How long a tap waits for the printer before the station
+                                                     reads the next card (5), how long a busy printer is
+                                                     retried (120), and how long one job may take to send (300)
+      tapqueue-admin server set sign-in-attempts|sign-in-lockout <number|default>
+                                                     Wrong passwords for a name from one address before
+                                                     sign-in is refused there (5), and for how many minutes (15)
       tapqueue-admin server log [--follow]           The server's recent log lines, and new ones with --follow
       tapqueue-admin server restart                  Restart tapqueue-server (only when systemd runs it)
       tapqueue-admin server enrollment-code new|off  Make new PCs give a code to register (shown once; goes in
@@ -121,7 +136,7 @@ const string Usage = """
       tapqueue-admin backups download <name|latest> [file]
                                                      Copy a backup here (keep copies off the server)
       tapqueue-admin backups delete <name>           Delete a backup
-      tapqueue-admin backups schedule <HH:MM|off>    When the daily backup runs, on the server's clock
+      tapqueue-admin backups schedule <HH:MM|off>    When the daily backup runs, in the server's time zone
       tapqueue-admin backups keep <number>           How many daily backups to keep (default 7)
                                                      Restore one with the server stopped:
                                                      sudo -u tapqueue /opt/tapqueue/tapqueue-server --restore <file>
@@ -846,6 +861,18 @@ async Task<int> ShowServer()
     Console.WriteLine($"quota-overrun    {server.QuotaOverrun,-6} ({(server.ChangedSettings?.Contains("quotaOverrun") == true ? "set here" : "default")})");
     Console.WriteLine($"address-matching {server.AddressMatching,-6} ({(server.ChangedSettings?.Contains("addressMatching") == true ? "set here" : "default")})");
     Console.WriteLine($"held-limit       {(server.HeldMegabytesPerUser == 0 ? "none" : server.HeldMegabytesPerUser + " MB"),-6} of documents one person may have waiting ({(server.ChangedSettings?.Contains("heldMegabytesPerUser") == true ? "set here" : "default")})");
+    string Changed(string key) => server.ChangedSettings?.Contains(key) == true ? "set here" : "default";
+    Console.WriteLine($"job-history      {(server.JobHistoryDays == 0 ? "kept for ever" : $"{server.JobHistoryDays} days")} ({Changed("jobHistoryDays")})");
+    Console.WriteLine($"activity-log     {(server.ActivityDays == 0 ? "kept for ever" : $"{server.ActivityDays} days")} ({Changed("activityDays")})");
+    Console.WriteLine($"time-zone        {server.TimeZone} ({(server.ChangedSettings?.Contains("timeZone") == true ? "set here" : "the server machine's")})");
+    Console.WriteLine($"tap-wait         {server.TapWaitSeconds,-6} seconds a tap waits for the printer ({Changed("tapWaitSeconds")})");
+    Console.WriteLine($"printer-busy     {server.PrinterBusySeconds,-6} seconds a busy printer is retried ({Changed("printerBusySeconds")})");
+    Console.WriteLine($"printer-send     {server.PrinterSendSeconds,-6} seconds one job may take to send ({Changed("printerSendSeconds")})");
+    Console.WriteLine($"sign-in-attempts {server.SignInAttempts,-6} wrong passwords for a name from one address ({Changed("signInAttempts")})");
+    Console.WriteLine($"sign-in-lockout  {server.SignInLockoutMinutes,-6} minutes ({Changed("signInLockoutMinutes")})");
+    Console.WriteLine(server.TrustedProxies is { Count: > 0 } proxies
+        ? $"trusted proxies  {string.Join(", ", proxies)} (server.toml; X-Forwarded-For is believed from these)"
+        : "trusted proxies  none   (server.trusted_proxies in server.toml, if the server is behind a reverse proxy)");
     Console.WriteLine($"auth.mode        {server.AuthMode,-6} (server.toml; restart to change)");
     Console.WriteLine(server.EnrollmentCodeRequired
         ? "new PCs          need the enrollment code (`server enrollment-code new` makes another, `off` stops asking)"
@@ -874,11 +901,31 @@ async Task<int> SetServerSetting(string name, string value)
         "quota-overrun" => "quotaOverrun",
         "address-matching" => "addressMatching",
         "held-limit" => "heldMegabytesPerUser",
+        "job-history" => "jobHistoryDays",
+        "activity-log" => "activityDays",
+        "time-zone" => "timeZone",
+        "tap-wait" => "tapWaitSeconds",
+        "printer-busy" => "printerBusySeconds",
+        "printer-send" => "printerSendSeconds",
+        "sign-in-attempts" => "signInAttempts",
+        "sign-in-lockout" => "signInLockoutMinutes",
         _ => null,
     };
     if (key is null)
     {
-        Console.Error.WriteLine("Settings are hold-hours, session-timeout, quota-overrun, address-matching and held-limit.");
+        Console.Error.WriteLine("Settings are hold-hours, session-timeout, quota-overrun, address-matching, held-limit, job-history, activity-log, " +
+            "time-zone, tap-wait, printer-busy, printer-send, sign-in-attempts and sign-in-lockout.");
+        return 2;
+    }
+    if (key == "timeZone")
+    {
+        var zone = value == "default" ? new UpdateServerSettingsRequest(Reset: [key]) : new UpdateServerSettingsRequest(TimeZone: value);
+        if (await Send<ServerInfoDto>(HttpMethod.Patch, "server/settings", zone) is null) return 1;
+        return await ShowServer();
+    }
+    if (value != "default" && !int.TryParse(value, out _))
+    {
+        Console.Error.WriteLine($"{name} takes a number, or \"default\".");
         return 2;
     }
     if (key == "quotaOverrun")
@@ -897,6 +944,13 @@ async Task<int> SetServerSetting(string name, string value)
     var request = number is null ? new UpdateServerSettingsRequest(Reset: [key])
         : key == "holdHours" ? new UpdateServerSettingsRequest(HoldHours: number)
         : key == "heldMegabytesPerUser" ? new UpdateServerSettingsRequest(HeldMegabytesPerUser: number)
+        : key == "jobHistoryDays" ? new UpdateServerSettingsRequest(JobHistoryDays: number)
+        : key == "activityDays" ? new UpdateServerSettingsRequest(ActivityDays: number)
+        : key == "tapWaitSeconds" ? new UpdateServerSettingsRequest(TapWaitSeconds: number)
+        : key == "printerBusySeconds" ? new UpdateServerSettingsRequest(PrinterBusySeconds: number)
+        : key == "printerSendSeconds" ? new UpdateServerSettingsRequest(PrinterSendSeconds: number)
+        : key == "signInAttempts" ? new UpdateServerSettingsRequest(SignInAttempts: number)
+        : key == "signInLockoutMinutes" ? new UpdateServerSettingsRequest(SignInLockoutMinutes: number)
         : new UpdateServerSettingsRequest(SessionTimeoutMinutes: number);
     if (await Send<ServerInfoDto>(HttpMethod.Patch, "server/settings", request) is null) return 1;
     return await ShowServer();
@@ -966,12 +1020,12 @@ async Task<int> Report(string? by, string? from, string? to, bool csv)
     Console.WriteLine($"Pages printed {report.From} to {report.To} ({report.TimeZone}), by {report.By}");
     Console.WriteLine();
     var byTime = report.By is ReportGrouping.Day or ReportGrouping.Month;
-    Table(byTime ? [report.By.ToUpperInvariant(), "JOBS", "PAGES"] : [report.By.ToUpperInvariant(), "NAME", "JOBS", "PAGES"],
-        report.Rows.Select(r => byTime
-            ? new[] { r.Key, r.Jobs.ToString(), r.Pages.ToString() }
-            : new[] { r.Key.Length > 0 ? r.Key : "-", r.Name, r.Jobs.ToString(), r.Pages.ToString() }));
+    string[] counts = ["JOBS", "PAGES", "COLOUR", "B&W", "2-SIDED"];
+    Table(byTime ? [report.By.ToUpperInvariant(), .. counts] : [report.By.ToUpperInvariant(), "NAME", .. counts],
+        report.Rows.Select(r => (string[])[.. byTime ? new[] { r.Key } : [r.Key.Length > 0 ? r.Key : "-", r.Name],
+            r.Jobs.ToString(), r.Pages.ToString(), r.ColorPages.ToString(), r.MonoPages.ToString(), r.DuplexPages.ToString()]));
     Console.WriteLine();
-    Console.WriteLine($"Total: {report.Pages} pages in {report.Jobs} jobs" +
+    Console.WriteLine($"Total: {report.Pages} pages in {report.Jobs} jobs, {report.ColorPages} colour, {report.MonoPages} black and white, {report.DuplexPages} two-sided" +
         (report.UncountedJobs > 0 ? $" ({report.UncountedJobs} jobs couldn't be counted and count as 1 page a copy)" : "") +
         (report.By == ReportGrouping.Group ? ". Someone in two groups counts in both." : "."));
     return 0;
@@ -1055,20 +1109,33 @@ async Task<int> ListBackups()
     if (status is null) return 1;
     Console.WriteLine(status.Time is null
         ? "Daily backup: off (`backups schedule 02:00` turns it on)"
-        : $"Daily backup: at {status.Time} on the server's clock, newest {status.Keep} kept; next {status.NextRunAt?.ToLocalTime():yyyy-MM-dd HH:mm}");
+        : $"Daily backup: at {status.Time} ({Zone(status)}), newest {status.Keep} kept; next {status.NextRunAt?.ToLocalTime():yyyy-MM-dd HH:mm} here");
     if (status.LastError is not null)
         Console.WriteLine($"The last daily backup failed: {status.LastError}");
-    Console.WriteLine($"Kept in {status.Directory} on the server. Copies belong somewhere else too: `backups download latest`.");
+    Console.WriteLine(status.CopyTo is null
+        ? $"Kept in {status.Directory} on the server, and nowhere else: set backup.copy_to in server.toml, or fetch copies with `backups download latest`."
+        : $"Kept in {status.Directory} on the server and copied to {status.CopyTo}{(status.CopyError is null ? "." : $". THE LAST COPY FAILED: {status.CopyError}")}");
+    Console.WriteLine(status.Encrypted
+        ? "Encrypted with backup.passphrase from server.toml; restoring needs it."
+        : "Not encrypted (they hold password hashes and the server's TLS key): set backup.passphrase in server.toml.");
     Console.WriteLine();
-    Table(["NAME", "MADE", "WHY", "SIZE"], status.Backups.Select(b => new[] { b.Name, Ago(b.CreatedAt), b.Kind, FormatSize(b.SizeBytes) }));
+    Table(["NAME", "MADE", "WHY", "SIZE", "COPIED"], status.Backups.Select(b => new[]
+    {
+        b.Name, Ago(b.CreatedAt), b.Kind, FormatSize(b.SizeBytes), b.Copied switch { true => "yes", false => "no", null => "-" },
+    }));
     return 0;
 }
+
+// Servers before 0.16 don't say which zone; theirs is the server machine's.
+static string Zone(BackupsDto status) => status.TimeZone.Length > 0 ? status.TimeZone : "on the server's clock";
 
 async Task<int> CreateBackup()
 {
     var backup = await Send<BackupDto>(HttpMethod.Post, "server/backups", null);
     if (backup is null) return 1;
-    Console.WriteLine($"Made {backup.Name} ({FormatSize(backup.SizeBytes)}). Copy it off the server with: tapqueue-admin backups download {backup.Name}");
+    Console.WriteLine(backup.Copied == true
+        ? $"Made {backup.Name} ({FormatSize(backup.SizeBytes)}) and copied it to the server's backup.copy_to folder."
+        : $"Made {backup.Name} ({FormatSize(backup.SizeBytes)}). Copy it off the server with: tapqueue-admin backups download {backup.Name}");
     return 0;
 }
 
@@ -1110,7 +1177,7 @@ async Task<int> SetBackupSchedule(UpdateBackupScheduleRequest request)
     if (status is null) return 1;
     Console.WriteLine(status.Time is null
         ? "Daily backup: off."
-        : $"Daily backup: at {status.Time} on the server's clock, newest {status.Keep} kept; next {status.NextRunAt?.ToLocalTime():yyyy-MM-dd HH:mm}.");
+        : $"Daily backup: at {status.Time} ({Zone(status)}), newest {status.Keep} kept; next {status.NextRunAt?.ToLocalTime():yyyy-MM-dd HH:mm} here.");
     return 0;
 }
 
