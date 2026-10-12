@@ -106,6 +106,16 @@ const string Usage = """
       tapqueue-admin server enrollment-code new|off  Make new PCs give a code to register (shown once; goes in
                                                      their client.toml as enrollment_code), or stop asking
 
+      tapqueue-admin backups                         Backups on the server, and the daily schedule
+      tapqueue-admin backups create                  Make a backup now
+      tapqueue-admin backups download <name|latest> [file]
+                                                     Copy a backup here (keep copies off the server)
+      tapqueue-admin backups delete <name>           Delete a backup
+      tapqueue-admin backups schedule <HH:MM|off>    When the daily backup runs, on the server's clock
+      tapqueue-admin backups keep <number>           How many daily backups to keep (default 7)
+                                                     Restore one with the server stopped:
+                                                     sudo -u tapqueue /opt/tapqueue/tapqueue-server --restore <file>
+
     Connection (flag > environment > ~/.config/tapqueue/admin.toml > /etc/tapqueue/server.toml):
       --server <url>    TAPQUEUE_SERVER       default http://localhost:8631
       --token <token>   TAPQUEUE_ADMIN_TOKEN  admin.token from server.toml
@@ -229,6 +239,12 @@ try
         ("server", "log") when positional.Count == 2 => await ServerLog(options.ContainsKey("--follow")),
         ("server", "restart") when positional.Count == 2 => await RestartServer(),
         ("server", "enrollment-code") when positional.Count == 3 && positional[2] is "new" or "off" => await SetEnrollmentCode(positional[2] == "new"),
+        ("backups", null) => await ListBackups(),
+        ("backups", "create") when positional.Count == 2 => await CreateBackup(),
+        ("backups", "download") when positional.Count is 3 or 4 => await DownloadBackup(positional[2], positional.ElementAtOrDefault(3)),
+        ("backups", "delete") when positional.Count == 3 => await Delete($"server/backups/{Uri.EscapeDataString(positional[2])}", $"Deleted {positional[2]}."),
+        ("backups", "schedule") when positional.Count == 3 => await SetBackupSchedule(new UpdateBackupScheduleRequest(Time: positional[2])),
+        ("backups", "keep") when positional.Count == 3 => await SetBackupSchedule(new UpdateBackupScheduleRequest(Keep: int.Parse(positional[2]))),
         _ => BadUsage(),
     };
 }
@@ -903,6 +919,71 @@ async Task<int> SetEnrollmentCode(bool make)
     Console.WriteLine($"Enrollment code: {made.Code}");
     Console.WriteLine("New PCs need it to register: enrollment_code in client.toml, /ENROLL=<code> for the Windows installer,");
     Console.WriteLine("TAPQUEUE_ENROLLMENT_CODE for install.sh and install.ps1. It isn't shown again; PCs that already have a key aren't affected.");
+    return 0;
+}
+
+async Task<int> ListBackups()
+{
+    var status = await Get<BackupsDto>("server/backups");
+    if (status is null) return 1;
+    Console.WriteLine(status.Time is null
+        ? "Daily backup: off (`backups schedule 02:00` turns it on)"
+        : $"Daily backup: at {status.Time} on the server's clock, newest {status.Keep} kept; next {status.NextRunAt?.ToLocalTime():yyyy-MM-dd HH:mm}");
+    if (status.LastError is not null)
+        Console.WriteLine($"The last daily backup failed: {status.LastError}");
+    Console.WriteLine($"Kept in {status.Directory} on the server. Copies belong somewhere else too: `backups download latest`.");
+    Console.WriteLine();
+    Table(["NAME", "MADE", "WHY", "SIZE"], status.Backups.Select(b => new[] { b.Name, Ago(b.CreatedAt), b.Kind, FormatSize(b.SizeBytes) }));
+    return 0;
+}
+
+async Task<int> CreateBackup()
+{
+    var backup = await Send<BackupDto>(HttpMethod.Post, "server/backups", null);
+    if (backup is null) return 1;
+    Console.WriteLine($"Made {backup.Name} ({FormatSize(backup.SizeBytes)}). Copy it off the server with: tapqueue-admin backups download {backup.Name}");
+    return 0;
+}
+
+async Task<int> DownloadBackup(string name, string? file)
+{
+    if (name == "latest")
+    {
+        var status = await Get<BackupsDto>("server/backups");
+        if (status is null) return 1;
+        if (status.Backups.Count == 0)
+        {
+            Console.Error.WriteLine("There are no backups yet. Make one with: tapqueue-admin backups create");
+            return 1;
+        }
+        name = status.Backups[0].Name;
+    }
+    using var response = await http.GetAsync($"server/backups/{Uri.EscapeDataString(name)}", HttpCompletionOption.ResponseHeadersRead);
+    if (!response.IsSuccessStatusCode)
+    {
+        await PrintError(response);
+        return 1;
+    }
+    file ??= name;
+    if (Directory.Exists(file))
+        file = Path.Combine(file, name);
+    // It holds password hashes and the server's private key: for whoever runs this only.
+    var options = new FileStreamOptions { Mode = FileMode.Create, Access = FileAccess.Write };
+    if (!OperatingSystem.IsWindows())
+        options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+    await using (var output = new FileStream(file, options))
+        await response.Content.CopyToAsync(output);
+    Console.WriteLine($"Saved {file} ({FormatSize(new FileInfo(file).Length)}). Keep it private: it holds password hashes and the server's TLS key.");
+    return 0;
+}
+
+async Task<int> SetBackupSchedule(UpdateBackupScheduleRequest request)
+{
+    var status = await Send<BackupsDto>(HttpMethod.Patch, "server/backups/schedule", request);
+    if (status is null) return 1;
+    Console.WriteLine(status.Time is null
+        ? "Daily backup: off."
+        : $"Daily backup: at {status.Time} on the server's clock, newest {status.Keep} kept; next {status.NextRunAt?.ToLocalTime():yyyy-MM-dd HH:mm}.");
     return 0;
 }
 
