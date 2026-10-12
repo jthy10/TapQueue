@@ -7,6 +7,7 @@ using TapQueue.Server.ActiveDirectory;
 using TapQueue.Server.Admin;
 using TapQueue.Server.Admins;
 using TapQueue.Server.Api;
+using TapQueue.Server.Backups;
 using TapQueue.Server.Config;
 using TapQueue.Server.Data;
 using TapQueue.Server.Discovery;
@@ -28,6 +29,9 @@ public static class ServerApp
     public static WebApplication Build(ServerConfig config, string[]? args = null, Action<IServiceCollection>? configureServices = null)
     {
         Directory.CreateDirectory(config.Server.DataDir);
+        var backups = new BackupStore(config);
+        // A copy the previous version can still read, in case the upgrade has to be undone.
+        var beforeUpgrade = backups.CreateBeforeUpgrade();
         var database = new Database(Path.Combine(config.Server.DataDir, "tapqueue.db"));
         database.Migrate();
 
@@ -61,6 +65,9 @@ public static class ServerApp
         builder.Services.AddSingleton(new Spool(config.Server.DataDir));
         builder.Services.AddSingleton(services => new ClientBuildStore(services.GetRequiredService<Database>(), config.Server.DataDir));
         builder.Services.AddSingleton(services => new StationBuildStore(services.GetRequiredService<Database>(), config.Server.DataDir));
+        builder.Services.AddSingleton(backups);
+        builder.Services.AddSingleton<BackupService>();
+        builder.Services.AddHostedService(services => services.GetRequiredService<BackupService>());
         builder.Services.AddSingleton<ServerSettings>();
         builder.Services.AddSingleton<EventLog>();
         builder.Services.AddSingleton<AnonymousEventLimits>();
@@ -110,6 +117,9 @@ public static class ServerApp
                 limit.MaxRequestBodySize = SmallBodyLimit;
             return next(http);
         });
+        if (beforeUpgrade is not null)
+            app.Logger.LogInformation("The database was upgraded to schema {Schema}; a backup from before is in {Path}",
+                Database.LatestSchemaVersion, Path.Combine(backups.Directory, beforeUpgrade.Name));
         if (certificate is not null)
             certificate.Logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger<ServerCertificate>();
         if (config.Tls.Require)

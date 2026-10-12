@@ -1,4 +1,5 @@
 using TapQueue.Server;
+using TapQueue.Server.Backups;
 using TapQueue.Server.Config;
 using TapQueue.Server.Data;
 using TapQueue.Server.Tls;
@@ -22,6 +23,16 @@ catch (Exception ex) when (ex is IOException or InvalidDataException or Unauthor
 {
     Console.Error.WriteLine($"tapqueue-server: {ex.Message}");
     return 1;
+}
+
+if (Array.IndexOf(args, "--restore") is >= 0 and var restoreAt)
+{
+    if (restoreAt + 1 >= args.Length)
+    {
+        Console.Error.WriteLine("tapqueue-server: --restore needs a backup file.");
+        return 1;
+    }
+    return Restore(config, args[restoreAt + 1], args.Contains("--as-root"));
 }
 
 WebApplication app;
@@ -64,6 +75,37 @@ if (config.Auth.Mode == "dev")
 app.Run();
 // Non-zero when an admin asked for a restart (see AdminServerApi), so systemd starts it again.
 return Environment.ExitCode;
+
+static int Restore(ServerConfig config, string file, bool asRoot)
+{
+    // Restored files belong to whoever runs this, and the service has to be able to open them.
+    if (Environment.IsPrivilegedProcess && !asRoot)
+    {
+        Console.Error.WriteLine(
+            "tapqueue-server: run the restore as the user the server runs as, so it can read what's restored:\n" +
+            $"  sudo -u tapqueue {Environment.ProcessPath} --restore {file}\n" +
+            "Add --as-root if the server itself runs as root.");
+        return 1;
+    }
+    try
+    {
+        var result = BackupRestore.Run(config, Path.GetFullPath(file));
+        Console.WriteLine($"Restored the backup made {result.Manifest.CreatedAt.ToLocalTime():yyyy-MM-dd HH:mm} by TapQueue server {result.Manifest.ServerVersion} into {config.Server.DataDir}.");
+        if (result.ReplacedDir is not null)
+            Console.WriteLine($"What was there before is in {result.ReplacedDir}; delete it once you're happy.");
+        if (result.LostJobs > 0)
+            Console.WriteLine($"{result.LostJobs} jobs that were waiting then are canceled: backups don't hold documents. Their owners have to print again.");
+        if (result.ForgottenBuilds > 0)
+            Console.WriteLine($"{result.ForgottenBuilds} published client or station builds aren't on this server; publish the current ones again.");
+        Console.WriteLine("Start the server: sudo systemctl start tapqueue-server");
+        return 0;
+    }
+    catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException)
+    {
+        Console.Error.WriteLine($"tapqueue-server: {ex.Message}");
+        return 1;
+    }
+}
 
 static string ConfigPath(string[] args)
 {

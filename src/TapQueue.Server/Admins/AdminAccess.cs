@@ -78,6 +78,9 @@ public static class AdminAccess
         // Passwords and admins: nobody may give themselves (or take over someone with) more rights.
         if (area is null || parts is ["users", _, "password"])
             return AdminRequirement.FullAdminOnly;
+        // A backup is everything at once: every hashed password and token, and the server's private key.
+        if (parts is ["server", "backups", ..])
+            return AdminRequirement.FullAdminOnly;
         // Cards are stored hashed, but a card nobody owns yet is listed whole so it can be enrolled:
         // only for those who may enroll it.
         if (read && parts is ["badges", "unknown"])

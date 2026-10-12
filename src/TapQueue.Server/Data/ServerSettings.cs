@@ -62,6 +62,24 @@ public sealed class ServerSettings(Database database, ServerConfig config)
     /// <summary>Requires the code that hashes to <paramref name="hash"/> from new PCs, or with null none.</summary>
     public void SetEnrollmentCodeHash(string? hash) => Save(EnrollmentCodeHashKey, hash);
 
+    private const string BackupTimeKey = "backupTime";
+    private const string BackupKeepKey = "backupKeep";
+    private const string BackupOff = "off";
+
+    /// <summary>When the daily backup runs, on the server's clock; null when it's turned off. 02:00 unless changed.</summary>
+    public TimeOnly? BackupTime =>
+        Saved().GetValueOrDefault(BackupTimeKey) is not { } saved ? new TimeOnly(2, 0)
+        : TimeOnly.TryParseExact(saved, "HH:mm", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var time) ? time
+        : null;
+
+    public void SetBackupTime(TimeOnly? time) =>
+        Save(BackupTimeKey, time?.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture) ?? BackupOff);
+
+    /// <summary>How many daily backups are kept; older ones are deleted.</summary>
+    public int BackupKeep => Int(BackupKeepKey) ?? 7;
+
+    public void SetBackupKeep(int keep) => Save(BackupKeepKey, keep.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
     /// <summary>Saves a value, or with null goes back to server.toml's or the default.</summary>
     public void Set(string key, string? value)
     {

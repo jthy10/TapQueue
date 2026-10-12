@@ -491,3 +491,6 @@ $RECYCLE.BIN/
 # Release archives from scripts/package.sh
 /dist/
 /out/
+
+# The server's backup code, not the Visual Studio "Backup*/" folders ignored above
+!/src/TapQueue.Server/Backups/

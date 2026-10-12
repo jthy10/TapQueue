@@ -23,6 +23,36 @@ public sealed record ServerInfoDto(
 /// <summary>A new enrollment code for PCs, shown once: the server keeps only its hash.</summary>
 public sealed record EnrollmentCodeResponse(string Code);
 
+/// <summary>Why a backup was made.</summary>
+public static class BackupKind
+{
+    /// <summary>By the daily schedule. Old ones are deleted, keeping the newest few.</summary>
+    public const string Daily = "daily";
+    /// <summary>By an admin. Kept until an admin deletes it.</summary>
+    public const string Manual = "manual";
+    /// <summary>By a newer server, before it changed the database for itself.</summary>
+    public const string Upgrade = "upgrade";
+}
+
+/// <summary>One backup file in data_dir/backups.</summary>
+/// <param name="Kind">One of <see cref="BackupKind"/>.</param>
+public sealed record BackupDto(string Name, string Kind, DateTimeOffset CreatedAt, long SizeBytes);
+
+/// <summary>The server's backups and when it makes them.</summary>
+/// <param name="Time">"HH:mm" on the server's clock for the daily backup; null when it's off.</param>
+/// <param name="Keep">How many daily backups are kept.</param>
+/// <param name="LastError">Why the last scheduled backup failed, if it did.</param>
+public sealed record BackupsDto(
+    string? Time,
+    int Keep,
+    DateTimeOffset? NextRunAt,
+    string Directory,
+    IReadOnlyList<BackupDto> Backups,
+    string? LastError = null);
+
+/// <summary>Null leaves a setting as it is. <paramref name="Time"/> is "HH:mm", or "off" for no daily backup.</summary>
+public sealed record UpdateBackupScheduleRequest(string? Time = null, int? Keep = null);
+
 /// <summary>The server's HTTPS listener, so admins can check the fingerprint clients see.</summary>
 /// <param name="Fingerprint">SHA-256 of the certificate, "AB:CD:…". What server_cert_fingerprint in client.toml and station.toml expects.</param>
 /// <param name="CertFile">The certificate file in use: tls.cert_file, or the self-signed one in data_dir/tls.</param>
