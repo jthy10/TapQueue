@@ -10,6 +10,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.9.7] - 2026-10-11
+
 ### Fixed
 - The TapQueue service read whatever a program on the PC sent to its local pipe (Windows) or
   socket (Linux) until the line ended, so any user of the PC could make it use a lot of memory for
@@ -134,7 +136,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 First working version: a tray app configured by a file that signs in, adds the printer, and shows
 and releases held jobs.
 
-[Unreleased]: https://github.com/jthy10/TapQueue/compare/client-v0.9.6...HEAD
+[Unreleased]: https://github.com/jthy10/TapQueue/compare/client-v0.9.7...HEAD
+[0.9.7]: https://github.com/jthy10/TapQueue/compare/client-v0.9.6...client-v0.9.7
 [0.9.6]: https://github.com/jthy10/TapQueue/compare/client-v0.9.5...client-v0.9.6
 [0.9.5]: https://github.com/jthy10/TapQueue/compare/client-v0.8.0...client-v0.9.5
 [0.8.0]: https://github.com/jthy10/TapQueue/compare/client-v0.7.0...client-v0.8.0
