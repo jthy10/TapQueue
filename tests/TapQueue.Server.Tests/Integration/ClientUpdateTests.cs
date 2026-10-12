@@ -51,27 +51,6 @@ public sealed class ClientUpdateTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task ABuildIsHandedOutWithTheSignatureItWasPublishedWith()
-    {
-        using var builder = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var signature = Convert.ToBase64String(builder.SignData(Exe, HashAlgorithmName.SHA256, DSASignatureFormat.Rfc3279DerSequence));
-
-        var published = await TestServer.ReadAsync<ClientBuildDto>(await _server.Admin.PostAsync(
-            $"/api/v1/admin/client-builds?version=0.11.0&platform=linux-x64&signature={Uri.EscapeDataString(signature)}", new ByteArrayContent(Exe)));
-        var offered = (await CheckInAsync("PC-1", "linux-x64")).ClientBuild!;
-
-        Assert.Equal(signature, published.Signature);
-        Assert.Equal(signature, offered.Signature);
-        Assert.True(ReleaseSignature.IsValid(offered.Sha256, offered.Signature, [Convert.ToBase64String(builder.ExportSubjectPublicKeyInfo())]));
-        // The server can't tell who the builder is; the activity log says what PCs will make of it.
-        var events = await _server.Admin.GetFromJsonAsync<List<EventDto>>("/api/v1/admin/events", TapQueueJson.Options);
-        Assert.Contains(events!, e => e.Message.Contains("isn't signed with TapQueue's release key"));
-
-        var notOne = await _server.Admin.PostAsync("/api/v1/admin/client-builds?version=0.11.1&signature=not%20a%20signature", new ByteArrayContent(Exe));
-        Assert.Equal(System.Net.HttpStatusCode.BadRequest, notOne.StatusCode);
-    }
-
-    [Fact]
     public async Task NewestPublishedBuildWins()
     {
         using var alice = await _server.SignInAsync("alice");

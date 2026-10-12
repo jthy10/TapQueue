@@ -61,24 +61,23 @@ public sealed class BuildUpdater(IBuildFeed feed, ClientBuildStore clientBuilds,
         var tag = $"client-v{version}";
         var sums = await ChecksumsAsync(tag, dir, ct);
         // Both are fetched and checked before either is published, so PCs don't end up on different versions.
-        var programs = new List<(string Platform, string Path, string Label, string? Signature)>();
+        var programs = new List<(string Platform, string Path, string Label)>();
         foreach (var platform in ClientPlatform.All)
         {
             var archive = await FetchAsync(tag, GitHubReleaseFeed.ClientArchive(version, platform), sums, dir, ct);
             var program = Path.Combine(dir, $"client-{platform}");
-            var label = Extract(archive, platform == ClientPlatform.Windows ? "TapQueueClient.exe" : "tapqueue-client", program, out var signature)
+            var label = Extract(archive, platform == ClientPlatform.Windows ? "TapQueueClient.exe" : "tapqueue-client", program)
                         ?? await LabelAsync(tag, version, ct);
-            programs.Add((platform, program, label, signature));
+            programs.Add((platform, program, label));
         }
-        foreach (var (platform, path, label, signature) in programs)
+        foreach (var (platform, path, label) in programs)
         {
-            // The same program is published again if it now comes with a signature it lacked.
-            if (clientBuilds.Latest(platform) is { } current && current.Sha256 == Sha256(path) && (current.Signature is not null || signature is null))
+            if (clientBuilds.Latest(platform) is { } current && current.Sha256 == Sha256(path))
                 continue;
             await using var program = File.OpenRead(path);
-            var build = await clientBuilds.PublishAsync(platform, label, program, ct, signature);
+            var build = await clientBuilds.PublishAsync(platform, label, program, ct);
             logger.LogInformation("Published {Platform} client {Version} from GitHub (sha256 {Sha256})", ClientPlatform.DisplayName(platform), build.Version, build.Sha256);
-            events.Admin(null, $"Published {ClientPlatform.DisplayName(platform)} client {build.Version} from the GitHub release; PCs install it when they next check in.{build.SignatureNote}");
+            events.Admin(null, $"Published {ClientPlatform.DisplayName(platform)} client {build.Version} from the GitHub release; PCs install it when they next check in.");
         }
         return ClientStatus();
     }, ct);
@@ -91,13 +90,13 @@ public sealed class BuildUpdater(IBuildFeed feed, ClientBuildStore clientBuilds,
         var sums = await ChecksumsAsync(tag, dir, ct);
         var archive = await FetchAsync(tag, GitHubReleaseFeed.StationArchive(version), sums, dir, ct);
         var path = Path.Combine(dir, "station");
-        var label = Extract(archive, "tapqueue-station", path, out var signature) ?? await LabelAsync(tag, version, ct);
-        if (stationBuilds.Latest() is not { } current || current.Sha256 != Sha256(path) || (current.Signature is null && signature is not null))
+        var label = Extract(archive, "tapqueue-station", path) ?? await LabelAsync(tag, version, ct);
+        if (stationBuilds.Latest() is not { } current || current.Sha256 != Sha256(path))
         {
             await using var program = File.OpenRead(path);
-            var build = await stationBuilds.PublishAsync(label, program, ct, signature);
+            var build = await stationBuilds.PublishAsync(label, program, ct);
             logger.LogInformation("Published station build {Version} from GitHub (sha256 {Sha256})", build.Version, build.Sha256);
-            events.Admin(null, $"Published station build {build.Version} from the GitHub release; stations install it within seconds.{build.SignatureNote}");
+            events.Admin(null, $"Published station build {build.Version} from the GitHub release; stations install it within seconds.");
         }
         return StationStatus();
     }, ct);
@@ -202,11 +201,9 @@ public sealed class BuildUpdater(IBuildFeed feed, ClientBuildStore clientBuilds,
     /// Copies <paramref name="program"/> out of a release archive (.zip or .tar.gz) to
     /// <paramref name="destination"/> and returns the version.txt packaged with it, if there is one.
     /// </summary>
-    /// <param name="signature">The base64 of the program's .sig file, if the archive has one.</param>
-    internal static string? Extract(string archive, string program, string destination, out string? signature)
+    internal static string? Extract(string archive, string program, string destination)
     {
         string? version = null;
-        byte[]? sig = null;
         var found = false;
         void Take(string name, Func<Stream> open)
         {
@@ -221,13 +218,6 @@ public sealed class BuildUpdater(IBuildFeed feed, ClientBuildStore clientBuilds,
             {
                 using var reader = new StreamReader(open());
                 version = reader.ReadToEnd().Trim();
-            }
-            else if (name == program + ".sig")
-            {
-                using var from = open();
-                using var to = new MemoryStream();
-                from.CopyTo(to);
-                sig = to.Length is > 0 and <= 384 ? to.ToArray() : null;
             }
         }
 
@@ -246,7 +236,6 @@ public sealed class BuildUpdater(IBuildFeed feed, ClientBuildStore clientBuilds,
         }
         if (!found)
             throw new InvalidDataException($"{Path.GetFileName(archive)} has no {program} in it.");
-        signature = sig is null ? null : Convert.ToBase64String(sig);
         return string.IsNullOrWhiteSpace(version) || version.Length > 64 ? null : version;
     }
 

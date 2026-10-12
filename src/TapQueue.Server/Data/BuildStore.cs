@@ -7,21 +7,11 @@ namespace TapQueue.Server.Data;
 
 /// <param name="DownloadPath">Where the program that runs this build downloads it from.</param>
 /// <param name="Platform">For client builds, which <see cref="ClientPlatform"/> runs it; null for station builds.</param>
-/// <param name="Signature">Its builder's signature of the program (<see cref="ReleaseSignature"/>), or null if it was published without one.</param>
-public sealed record BuildRecord(long Id, string Version, string Sha256, long SizeBytes, DateTimeOffset PublishedAt, string DownloadPath, string? Platform,
-    string? Signature = null)
+public sealed record BuildRecord(long Id, string Version, string Sha256, long SizeBytes, DateTimeOffset PublishedAt, string DownloadPath, string? Platform)
 {
-    public ClientBuildDto ToDto() => new(Version, Sha256, SizeBytes, PublishedAt, DownloadPath, Platform ?? ClientPlatform.Windows, Signature);
+    public ClientBuildDto ToDto() => new(Version, Sha256, SizeBytes, PublishedAt, DownloadPath, Platform ?? ClientPlatform.Windows);
 
-    public StationBuildDto ToStationDto() => new(Version, Sha256, SizeBytes, PublishedAt, DownloadPath, Signature);
-
-    /// <summary>Whether it carries a signature made with one of TapQueue's own release keys.</summary>
-    public bool SignedByReleaseKey => ReleaseSignature.IsValid(Sha256, Signature, ReleaseSignature.ReleaseKeys);
-
-    /// <summary>What PCs or stations will make of it, to end the sentence that says it was published.</summary>
-    public string SignatureNote => SignedByReleaseKey ? ""
-        : Signature is null ? " It isn't signed: only clients and stations before 0.17 will install it."
-        : " It isn't signed with TapQueue's release key: only computers whose update_key is its signer's will install it.";
+    public StationBuildDto ToStationDto() => new(Version, Sha256, SizeBytes, PublishedAt, DownloadPath);
 }
 
 /// <summary>
@@ -38,8 +28,8 @@ public sealed class ClientBuildStore(Database database, string dataDir)
     public List<BuildRecord> LatestPerPlatform() =>
         ClientPlatform.All.Select(Latest).OfType<BuildRecord>().ToList();
 
-    public Task<BuildRecord> PublishAsync(string platform, string version, Stream program, CancellationToken ct, string? signature = null) =>
-        PublishAsync(version, program, platform, signature, ct);
+    public Task<BuildRecord> PublishAsync(string platform, string version, Stream program, CancellationToken ct) =>
+        PublishAsync(version, program, platform, ct);
 }
 
 /// <summary>Release station builds (the tapqueue-station program). Stations install the newest one the same way.</summary>
@@ -48,8 +38,8 @@ public sealed class StationBuildStore(Database database, string dataDir)
 {
     public BuildRecord? Latest() => LatestFor(null);
 
-    public Task<BuildRecord> PublishAsync(string version, Stream program, CancellationToken ct, string? signature = null) =>
-        PublishAsync(version, program, null, signature, ct);
+    public Task<BuildRecord> PublishAsync(string version, Stream program, CancellationToken ct) =>
+        PublishAsync(version, program, null, ct);
 }
 
 /// <summary>
@@ -75,7 +65,7 @@ public abstract class BuildStore
         _extension = extension;
         _downloadPrefix = downloadPrefix;
         _hasPlatform = hasPlatform;
-        _columns = "id, version, sha256, size_bytes, published_at, signature" + (hasPlatform ? ", platform" : "");
+        _columns = "id, version, sha256, size_bytes, published_at" + (hasPlatform ? ", platform" : "");
         Directory.CreateDirectory(_directory);
     }
 
@@ -93,12 +83,8 @@ public abstract class BuildStore
         _database.Query($"SELECT {_columns} FROM {_table} ORDER BY id DESC", Map);
 
     /// <summary>Stores an uploaded program and makes it the build everything (of that platform) should run.</summary>
-    /// <param name="signature">Base64, as it came with the program; kept as it is for PCs and stations to check.</param>
-    protected async Task<BuildRecord> PublishAsync(string version, Stream exe, string? platform, string? signature, CancellationToken ct)
+    protected async Task<BuildRecord> PublishAsync(string version, Stream exe, string? platform, CancellationToken ct)
     {
-        signature = string.IsNullOrWhiteSpace(signature) ? null : signature.Trim();
-        if (signature is { Length: > 512 } || signature is not null && !Convert.TryFromBase64String(signature, new byte[512], out _))
-            throw new InvalidDataException("The signature isn't one: it should be the base64 of the program's .sig file.");
         var temp = Path.Combine(_directory, $"upload-{Guid.NewGuid():N}.tmp");
         try
         {
@@ -123,15 +109,15 @@ public abstract class BuildStore
 
             return _hasPlatform
                 ? _database.QueryOne($"""
-                    INSERT INTO {_table} (version, sha256, size_bytes, published_at, signature, platform)
-                    VALUES ($version, $sha, $size, $now, $signature, $platform)
+                    INSERT INTO {_table} (version, sha256, size_bytes, published_at, platform)
+                    VALUES ($version, $sha, $size, $now, $platform)
                     RETURNING {_columns}
-                    """, Map, ("$version", version), ("$sha", sha256), ("$size", size), ("$now", DateTimeOffset.UtcNow), ("$signature", signature), ("$platform", platform))!
+                    """, Map, ("$version", version), ("$sha", sha256), ("$size", size), ("$now", DateTimeOffset.UtcNow), ("$platform", platform))!
                 : _database.QueryOne($"""
-                    INSERT INTO {_table} (version, sha256, size_bytes, published_at, signature)
-                    VALUES ($version, $sha, $size, $now, $signature)
+                    INSERT INTO {_table} (version, sha256, size_bytes, published_at)
+                    VALUES ($version, $sha, $size, $now)
                     RETURNING {_columns}
-                    """, Map, ("$version", version), ("$sha", sha256), ("$size", size), ("$now", DateTimeOffset.UtcNow), ("$signature", signature))!;
+                    """, Map, ("$version", version), ("$sha", sha256), ("$size", size), ("$now", DateTimeOffset.UtcNow))!;
         }
         finally
         {
@@ -152,5 +138,5 @@ public abstract class BuildStore
 
     private BuildRecord Map(SqliteDataReader r) =>
         new(r.GetInt64(0), r.GetString(1), r.GetString(2), r.GetInt64(3), r.GetTime(4), _downloadPrefix + r.GetString(2),
-            _hasPlatform ? r.GetString(6) : null, r.GetStringOrNull(5));
+            _hasPlatform ? r.GetString(5) : null);
 }

@@ -264,8 +264,7 @@ public static class AdminApi
     /// The request body is the client program (TapQueueClient.exe or tapqueue-client) for
     /// <paramref name="platform"/>, Windows if not given. PCs of that platform install it when they next check in.
     /// </summary>
-    /// <param name="signature">The base64 of the .sig file packaged with the program; clients from 0.17 need it.</param>
-    private static async Task<IResult> PublishClientBuild(HttpContext http, string? version, string? platform, string? signature, ClientBuildStore builds, EventLog events, ILoggerFactory loggers)
+    private static async Task<IResult> PublishClientBuild(HttpContext http, string? version, string? platform, ClientBuildStore builds, EventLog events, ILoggerFactory loggers)
     {
         version = Clean(version);
         if (version is null)
@@ -275,7 +274,7 @@ public static class AdminApi
         BuildRecord build;
         try
         {
-            build = await builds.PublishAsync(parsed, version, http.Request.Body, http.RequestAborted, signature);
+            build = await builds.PublishAsync(parsed, version, http.Request.Body, http.RequestAborted);
         }
         catch (InvalidDataException ex)
         {
@@ -284,7 +283,7 @@ public static class AdminApi
         loggers.CreateLogger("TapQueue.Server.Api.AdminApi").LogInformation(
             "Published {Platform} client {Version} ({Size} bytes, sha256 {Sha256}); PCs will update when they next check in",
             ClientPlatform.DisplayName(parsed), build.Version, build.SizeBytes, build.Sha256);
-        events.Admin(null, $"Published {ClientPlatform.DisplayName(parsed)} client {build.Version}; PCs install it when they next check in.{build.SignatureNote}");
+        events.Admin(null, $"Published {ClientPlatform.DisplayName(parsed)} client {build.Version}; PCs install it when they next check in.");
         return Results.Ok(build.ToDto());
     }
 

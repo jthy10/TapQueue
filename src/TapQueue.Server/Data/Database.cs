@@ -459,14 +459,7 @@ public sealed class Database
             CREATE INDEX ix_jobs_printing ON jobs(print_state) WHERE print_state = 'printing';
         """,
 
-        // 20: signed builds. The signature a client or station build was published with (base64), which
-        // PCs and stations check against the keys they trust before installing; NULL for unsigned ones.
-        """
-            ALTER TABLE client_builds ADD COLUMN signature TEXT;
-            ALTER TABLE station_builds ADD COLUMN signature TEXT;
-        """,
-
-        // 21: a station's screen (the page at /screen/<id>) is opened with a key; its hash, or NULL
+        // 20: a station's screen (the page at /screen/<id>) is opened with a key; its hash, or NULL
         // while the station has no screen link.
         """
             ALTER TABLE stations ADD COLUMN screen_key_hash TEXT;

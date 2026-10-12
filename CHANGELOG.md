@@ -36,7 +36,7 @@ breaking changes; they're listed under **Changed** with what to do.
   printing, amber for nothing waiting, red with the reason for a refusal or an unknown card, and
   between taps whether the printer is ready. **Screen link** on a station in the console, or
   `tapqueue-admin stations screen <id>`, makes its address. The station program isn't involved,
-  so it works with stations on any version. Database schema 21. See
+  so it works with stations on any version. Database schema 20. See
   [docs/release-station.md](docs/release-station.md#a-screen-at-the-station).
 - **A tap that printed nothing is explained on the person's PC.** With a 0.17 client, the tray
   says "You tapped at Office printer, but nothing was waiting to print", or why a release was
