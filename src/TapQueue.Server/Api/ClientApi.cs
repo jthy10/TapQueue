@@ -38,6 +38,9 @@ public static class ClientApi
             printers.All.Where(p => access.CanReleaseAt(CurrentUser(http).Id, p.Id)).Select(printers.ToDto));
         me.MapGet("/me/jobs", (HttpContext http, JobStore jobs, bool? all) =>
             jobs.ListForUser(CurrentUser(http).Id, heldOnly: all != true).Select(j => j.ToDto()));
+        // What the session was given at sign-in, as it is now: the queues this person may print to.
+        me.MapGet("/queues", (HttpContext http, QueueStore queues, AccessPolicy access) =>
+            queues.List().Where(q => access.CanPrintTo(CurrentUser(http).Id, q.Id)).Select(q => ToDto(q)));
         me.MapPost("/client/sign-out", SignOut);
         me.MapDelete("/me/jobs/{id:long}", CancelJob);
         me.MapPost("/me/release", Release);
@@ -316,16 +319,17 @@ public static class ClientApi
             : Results.File(path, "application/octet-stream", "tapqueue-client");
     }
 
-    private static IResult CancelJob(long id, HttpContext http, JobStore jobs, Spool spool, EventLog events)
+    /// <summary>Deleting your own job: a held one, or one already at the printer if it can still be stopped there.</summary>
+    private static async Task<IResult> CancelJob(long id, HttpContext http, JobStore jobs, JobCanceler canceler)
     {
+        var user = CurrentUser(http);
         var job = jobs.Get(id);
-        if (job is null || job.UserId != CurrentUser(http).Id)
+        if (job is null || job.UserId != user.Id)
             return Results.NotFound(new ErrorResponse("No such job."));
-        if (!jobs.TryTransition(id, JobStatus.Held, JobStatus.Canceled))
-            return Results.Conflict(new ErrorResponse("Job is no longer held."));
-        spool.Delete(id);
-        events.Record(EventCategory.Job, job.Username!, EventLog.User(job.Username!), $"{job.Username} canceled \"{job.Name}\" (job #{job.Id}).");
-        return Results.NoContent();
+        var result = await canceler.CancelAsync(user, job, http.RequestAborted);
+        return result.Done
+            ? Results.Ok(new CancelJobResponse(result.RefundedPages, result.Message))
+            : Results.Conflict(new ErrorResponse(result.Message));
     }
 
     private static async Task<IResult> Release(ReleaseRequest request, HttpContext http, PrinterRegistry printers, ReleaseService release)

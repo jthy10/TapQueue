@@ -95,6 +95,7 @@ public static class ServerApp
         builder.Services.AddSingleton<JobOwnerResolver>();
         builder.Services.AddSingleton<PrinterRegistry>();
         builder.Services.AddSingleton<ReleaseService>();
+        builder.Services.AddSingleton<JobCanceler>();
         builder.Services.AddSingleton<IppPrinterEndpoint>();
         builder.Services.AddHostedService<PrinterMonitor>();
         builder.Services.AddHostedService<JobCleanupService>();
