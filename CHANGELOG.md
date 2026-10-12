@@ -11,6 +11,8 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-11
+
 ### Added
 - Reports: pages printed over any period, added up by person, group, printer, queue, day or
   month. **Reports** in the console (for anyone with a role in Jobs) with a CSV download,
@@ -351,7 +353,8 @@ First working version.
   readers. A tap releases the user's held jobs to the station's printer.
 - Badge enrollment by an admin (`badges add --last-tap`).
 
-[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.11.0...HEAD
+[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.12.0...HEAD
+[0.12.0]: https://github.com/jthy10/TapQueue/compare/server-v0.11.0...server-v0.12.0
 [0.11.0]: https://github.com/jthy10/TapQueue/compare/server-v0.10.0...server-v0.11.0
 [0.10.0]: https://github.com/jthy10/TapQueue/compare/server-v0.9.5...server-v0.10.0
 [0.9.5]: https://github.com/jthy10/TapQueue/compare/server-v0.9.0...server-v0.9.5
