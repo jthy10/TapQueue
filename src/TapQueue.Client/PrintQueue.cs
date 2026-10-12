@@ -69,6 +69,37 @@ public static class PrintQueue
         return string.Join("\n\n", parts);
     }
 
+    /// <summary>
+    /// Deletes jobs that are waiting and stops ones already sent to a printer. Returns what's worth
+    /// telling the person: what was stopped and given back, and anything that couldn't be done.
+    /// </summary>
+    public static async Task<List<string>> DeleteAsync(TapQueueApi api, IReadOnlyList<JobDto> jobs, CancellationToken ct = default)
+    {
+        var notes = new List<string>();
+        foreach (var job in jobs)
+        {
+            try
+            {
+                var result = await api.CancelJobAsync(job.Id, ct);
+                if (!IsHeld(job) && result is not null)
+                    notes.Add(result.Message);
+            }
+            catch (TapQueueApiException ex) when (ex.Status == System.Net.HttpStatusCode.Conflict)
+            {
+                // A server older than 0.14 only deletes jobs that are waiting, and says just this.
+                notes.Add(!IsHeld(job) && ex.Message == "Job is no longer held."
+                    ? $"\"{job.Name}\" has already been sent to the printer, and your TapQueue server can't stop jobs there."
+                    : ex.Message);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TapQueueApiException or TaskCanceledException)
+            {
+                notes.Add($"Couldn't delete \"{job.Name}\": {ex.Message}");
+                break; // the rest would go the same way
+            }
+        }
+        return notes;
+    }
+
     public static string PrinterStatus(PrinterDto printer) =>
         !printer.Online ? "Offline" : string.IsNullOrWhiteSpace(printer.StateMessage) ? "Ready" : printer.StateMessage;
 

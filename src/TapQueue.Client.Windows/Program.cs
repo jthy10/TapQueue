@@ -13,9 +13,6 @@ namespace TapQueue.Client.Windows;
 /// </summary>
 internal static class Program
 {
-    public const string WaitForArg = "--wait-for";
-    public const string UpdatedFromArg = "--updated-from";
-
     [STAThread]
     private static int Main(string[] args)
     {
@@ -41,9 +38,10 @@ internal static class Program
         if (Array.IndexOf(args, "--discover") is var discover and >= 0 && discover + 1 < args.Length)
             return DiscoverAsync(args[discover + 1]).GetAwaiter().GetResult();
 
-        // Restarted after an update: let the old version exit (and release the mutex) first.
-        var (appArgs, waitFor, updatedFrom) = SplitUpdateArgs(args);
-        if (waitFor is { } pid)
+        // Restarted after an update or "Refresh TapQueue": let the old one exit (and release the mutex) first.
+        var start = RestartArgs.Parse(args);
+        var appArgs = start.AppArgs;
+        if (start.WaitFor is { } pid)
             WaitForExit(pid);
 
         // One tray icon per user session.
@@ -69,7 +67,7 @@ internal static class Program
         }
 
         _ = Task.Run(() => CrashReporter.SendPendingAsync(CrashProgram.Tray, config, TimeSpan.FromSeconds(30)));
-        Application.Run(new TrayApp(config, appArgs, updatedFrom));
+        Application.Run(new TrayApp(config, start));
         return 0;
     }
 
@@ -82,28 +80,6 @@ internal static class Program
         var servers = await ServerDiscovery.FindAsync(TimeSpan.FromSeconds(3));
         await File.WriteAllLinesAsync(outputPath, servers.Select(s => $"{s.Url}|{s.Name}|{s.Version}"));
         return 0;
-    }
-
-    /// <summary>Separates the arguments <see cref="TrayApp"/> adds when it restarts after an update.</summary>
-    private static (string[] AppArgs, int? WaitFor, string? UpdatedFrom) SplitUpdateArgs(string[] args)
-    {
-        var appArgs = new List<string>();
-        int? waitFor = null;
-        string? updatedFrom = null;
-        for (var i = 0; i < args.Length; i++)
-        {
-            if (args[i] == WaitForArg && i + 1 < args.Length && int.TryParse(args[i + 1], out var pid))
-                waitFor = pid;
-            else if (args[i] == UpdatedFromArg && i + 1 < args.Length)
-                updatedFrom = args[i + 1];
-            else
-            {
-                appArgs.Add(args[i]);
-                continue;
-            }
-            i++;
-        }
-        return ([.. appArgs], waitFor, updatedFrom);
     }
 
     private static void WaitForExit(int pid)
