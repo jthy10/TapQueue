@@ -153,6 +153,12 @@ decides ownership.
 - Tokens (user, station, session) are stored hashed. Badge numbers are stored hashed, with only
   the last four characters kept so admins can tell badges apart.
 - Held documents live in `/var/lib/tapqueue/spool`, readable only by the `tapqueue` user.
+- A job's pages are counted from the document itself, and for a PDF that means the page count
+  the file states. Someone who edits their PDFs by hand can make a long job count as a short one,
+  so page limits and reports are for accounting among your own users, not a defence against one
+  who sets out to cheat. The printer's own page counter is the check on that.
+- One job can be at most 512 MB, but there's no limit yet on how much one person can have
+  waiting: someone who may print can fill the server's disk with held jobs until they expire.
 - Card numbers from cheap 125 kHz and MIFARE readers are easy to copy. A tap means "this person is
   standing at the printer", nothing stronger.
 - `auth.mode = "dev"` lets anyone sign in as anyone. It's for testing.
