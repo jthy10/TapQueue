@@ -77,7 +77,7 @@ Reference: [admin console](docs/admin-ui.md) · [TLS](docs/tls.md) · [admin sig
 - [x] Printer health monitoring (state, problems, toner levels)
 - [x] Admin sign-in and roles (SSO later)
 - [x] Active Directory sync (Entra ID later)
-- [ ] TLS for client and IPP connections
+- [x] TLS for client and IPP connections
 - [x] Per-job identity instead of IP-based ownership
 - [ ] Feedback at the printer (screen or status light) for "nothing to print" and errors
 - [ ] Follow-me printing, reports and cost accounting
