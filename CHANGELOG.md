@@ -11,6 +11,8 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-12
+
 ### Added
 - **Check for updates** for clients and stations, on the console's Updates page. It asks GitHub
   for the newest client release, or the station build that goes with this server (never a newer
@@ -370,7 +372,8 @@ First working version.
   readers. A tap releases the user's held jobs to the station's printer.
 - Badge enrollment by an admin (`badges add --last-tap`).
 
-[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.12.1...HEAD
+[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.13.0...HEAD
+[0.13.0]: https://github.com/jthy10/TapQueue/compare/server-v0.12.1...server-v0.13.0
 [0.12.1]: https://github.com/jthy10/TapQueue/compare/server-v0.12.0...server-v0.12.1
 [0.12.0]: https://github.com/jthy10/TapQueue/compare/server-v0.11.0...server-v0.12.0
 [0.11.0]: https://github.com/jthy10/TapQueue/compare/server-v0.10.0...server-v0.11.0
