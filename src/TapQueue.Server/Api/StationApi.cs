@@ -34,8 +34,15 @@ public static class StationApi
 
     private static async Task<IResult> Tap(StationTapRequest request, HttpContext http, BadgeStore badges, UserStore users,
         PrinterRegistry printers, ReleaseService release, UnknownTaps unknownTaps, AccessPolicy access, EventLog events, ServerSettings settings,
-        ILoggerFactory loggers)
+        StationScreens screens, ILoggerFactory loggers)
     {
+        // Whatever the tap comes to is also what the station's screen shows, if it has one.
+        IResult Answer(StationTapResponse response)
+        {
+            screens.Show(CurrentStation(http).Id, response.Outcome, response.Message);
+            return Results.Ok(response);
+        }
+
         var logger = loggers.CreateLogger("TapQueue.Server.Api.StationApi");
         var station = CurrentStation(http);
         var card = BadgeStore.Normalize(request.Card ?? "");
@@ -51,7 +58,7 @@ public static class StationApi
         if (!station.Settings.Enabled)
         {
             logger.LogInformation("Tap at disabled station {Station} ignored", station.Id);
-            return Results.Ok(new StationTapResponse(TapOutcome.StationDisabled,
+            return Answer(new StationTapResponse(TapOutcome.StationDisabled,
                 station.Settings.MaintenanceMessage.Length > 0 ? station.Settings.MaintenanceMessage : "This station is out of service. Use another printer.", null, []));
         }
 
@@ -63,7 +70,7 @@ public static class StationApi
             logger.LogInformation("Unknown badge {Hint} tapped at station {Station}", BadgeStore.Hint(card), station.Id);
             events.Record(EventCategory.Tap, EventLog.Station(station.Id), EventLog.Station(station.Id),
                 $"Unknown card {BadgeStore.Hint(card)} tapped at station {station.Id}.");
-            return Results.Ok(new StationTapResponse(TapOutcome.UnknownBadge, "Badge not recognized. Ask an admin to link it to your account.", null, []));
+            return Answer(new StationTapResponse(TapOutcome.UnknownBadge, "Badge not recognized. Ask an admin to link it to your account.", null, []));
         }
 
         if (user.Disabled)
@@ -71,14 +78,14 @@ public static class StationApi
             logger.LogInformation("Disabled user {User} tapped at station {Station}", user.Username, station.Id);
             events.Record(EventCategory.Tap, EventLog.Station(station.Id), EventLog.User(user.Username),
                 $"{user.Username} tapped at station {station.Id}, but their account is disabled.");
-            return Results.Ok(new StationTapResponse(TapOutcome.Disabled, $"Sorry {user.DisplayName}, your account is disabled. Ask an admin.", user.ToDto(), []));
+            return Answer(new StationTapResponse(TapOutcome.Disabled, $"Sorry {user.DisplayName}, your account is disabled. Ask an admin.", user.ToDto(), []));
         }
 
         if (!access.CanReleaseAt(user.Id, printer.Id))
         {
             events.Record(EventCategory.Tap, EventLog.Station(station.Id), EventLog.User(user.Username),
                 $"{user.Username} tapped at station {station.Id}, but their groups don't allow printing at {printer.Name}.");
-            return Results.Ok(new StationTapResponse(TapOutcome.NotAllowed, $"Sorry {user.DisplayName}, you can't print at {printer.Name}.", user.ToDto(), []));
+            return Answer(new StationTapResponse(TapOutcome.NotAllowed, $"Sorry {user.DisplayName}, you can't print at {printer.Name}.", user.ToDto(), []));
         }
 
         // Not tied to the request: the station giving up on a slow printer shouldn't leave a job half-sent.
@@ -88,10 +95,16 @@ public static class StationApi
         // of it is in the activity log, and anything that fails goes back on hold.
         if (await Task.WhenAny(releasing, Task.Delay(settings.TapWait)) != releasing)
         {
-            _ = releasing.ContinueWith(t => logger.LogError(t.Exception, "Releasing {User}'s jobs at station {Station} failed", user.Username, station.Id),
-                TaskContinuationOptions.OnlyOnFaulted);
+            _ = releasing.ContinueWith(t =>
+            {
+                if (t.IsFaulted)
+                    logger.LogError(t.Exception, "Releasing {User}'s jobs at station {Station} failed", user.Username, station.Id);
+                // The tap was answered "on their way"; if some didn't get there, the screen says so after all.
+                else if (t.Result.Results.FirstOrDefault(r => !r.Success) is { } failure)
+                    screens.Show(station.Id, TapOutcome.Failed, $"Couldn't print: {failure.Error}");
+            }, TaskScheduler.Default);
             logger.LogInformation("{User} tapped at station {Station}: still sending to {Printer}", user.Username, station.Id, printer.Id);
-            return Results.Ok(new StationTapResponse(TapOutcome.Releasing, $"Hi {user.DisplayName}, your jobs are on their way to {printer.Name}.", user.ToDto(), []));
+            return Answer(new StationTapResponse(TapOutcome.Releasing, $"Hi {user.DisplayName}, your jobs are on their way to {printer.Name}.", user.ToDto(), []));
         }
         var result = await releasing;
         var sent = result.Results.Count(r => r.Success);
@@ -108,7 +121,7 @@ public static class StationApi
             (0, _) => (TapOutcome.Failed, $"Couldn't print: {result.Results.First(r => !r.Success).Error}"),
             _ => (TapOutcome.Failed, $"Printing {Plural(sent, "job")}; {failed} couldn't be sent and are still held."),
         };
-        return Results.Ok(new StationTapResponse(outcome, message, user.ToDto(), result.Results));
+        return Answer(new StationTapResponse(outcome, message, user.ToDto(), result.Results));
     }
 
     private static string Plural(int n, string noun) => n == 1 ? $"1 {noun}" : $"{n} {noun}s";

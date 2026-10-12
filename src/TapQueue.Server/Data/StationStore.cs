@@ -15,7 +15,10 @@ public sealed record StationSettings(
     bool Enabled,
     string MaintenanceMessage)
 {
-    /// <summary>The only kind so far. Reserved for a screen or status light at the station later.</summary>
+    /// <summary>
+    /// The only kind so far: what the station box itself does at a tap, reserved for a status light
+    /// or sound. The screen page (<see cref="Api.StationScreenApi"/>) needs nothing from the station.
+    /// </summary>
     public const string NoFeedback = "none";
 
     public StationSettingsDto ToDto() => new(Version, PrinterId, Reader, Device, RepeatSeconds, MinCardLength, Feedback, Enabled, MaintenanceMessage);
@@ -92,6 +95,14 @@ public sealed class StationStore(Database database)
 
     public void SetTokenHash(string id, string tokenHash) =>
         database.Execute("UPDATE stations SET token_hash = $t WHERE id = $id", ("$t", tokenHash), ("$id", id));
+
+    /// <summary>The hash of the key the station's screen page is opened with; null if it has no screen link.</summary>
+    public string? ScreenKeyHash(string id) =>
+        database.Scalar("SELECT screen_key_hash FROM stations WHERE id = $id", ("$id", id)) as string;
+
+    /// <summary>Sets the screen key (replacing the old one, whose link stops working), or with null turns the screen off.</summary>
+    public void SetScreenKeyHash(string id, string? keyHash) =>
+        database.Execute("UPDATE stations SET screen_key_hash = $k WHERE id = $id", ("$k", keyHash), ("$id", id));
 
     /// <summary>Queues a command for the station's next heartbeat, replacing any it hasn't picked up.</summary>
     public void SetCommand(string id, string? command) =>

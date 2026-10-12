@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>TapQueue</title>
+<style>
+  :root { --bg: #10151c; --fg: #f3f5f7; --dim: #9aa6b2; --ok: #1f8a4c; --wait: #b7791f; --bad: #b83232; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--fg); font-family: system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+    padding: 4vmin; transition: background-color .2s; cursor: none; user-select: none;
+  }
+  body.ok { background: var(--ok); }
+  body.wait { background: var(--wait); }
+  body.bad { background: var(--bad); }
+  #mark { font-size: 22vmin; line-height: 1; font-weight: 700; height: 24vmin; }
+  #text { font-size: 7vmin; font-weight: 600; line-height: 1.2; max-width: 22em; text-wrap: balance; overflow-wrap: anywhere; }
+  #sub { font-size: 3.6vmin; color: var(--dim); margin-top: 4vmin; min-height: 1.3em; }
+  body.ok #sub, body.wait #sub, body.bad #sub { color: var(--fg); opacity: .85; }
+</style>
+</head>
+<body>
+<div id="mark" aria-hidden="true"></div>
+<div id="text" role="status" aria-live="assertive">Connecting…</div>
+<div id="sub"></div>
+<script>
+  // What a tap came to stays up this long, then the screen goes back to waiting for the next one.
+  const SHOW_MS = 9000;
+  const station = decodeURIComponent(location.pathname.split("/").pop());
+  const key = new URLSearchParams(location.search).get("key") ?? "";
+  // [colour, mark] for each outcome the server sends; the mark says the same as the colour, for people who can't tell them apart.
+  const looks = {
+    "released": ["ok", "✓"], "releasing": ["ok", "✓"],
+    "no-jobs": ["wait", "–"],
+    "unknown-badge": ["bad", "?"], "not-allowed": ["bad", "✕"], "disabled": ["bad", "✕"], "failed": ["bad", "!"],
+    "station-disabled": ["wait", "!"],
+  };
+  const el = (id) => document.getElementById(id);
+  let after = 0, state = null, showingUntil = 0, timer = null;
+
+  function show(look, mark, text, sub) {
+    document.body.className = look;
+    el("mark").textContent = mark;
+    el("text").textContent = text;
+    el("sub").textContent = sub ?? "";
+  }
+
+  function idle() {
+    if (!state) return;
+    if (!state.enabled) show("wait", "!", state.notice ?? "This station is out of service.", state.printer);
+    else if (!state.printerReady) show("wait", "!", `${state.printer} can't print right now`, state.printerProblem ? `${state.printerProblem}. Your jobs stay held.` : "Your jobs stay held.");
+    else show("", "", "Tap your badge to print", state.printer);
+  }
+
+  function apply(s) {
+    state = s;
+    if (s.seq > after && s.message && s.ageMs < SHOW_MS) {
+      const [look, mark] = looks[s.outcome] ?? ["wait", "!"];
+      show(look, mark, s.message, s.printer);
+      showingUntil = Date.now() + SHOW_MS - s.ageMs;
+      clearTimeout(timer);
+      timer = setTimeout(idle, SHOW_MS - s.ageMs);
+    } else if (Date.now() >= showingUntil) {
+      idle();
+    }
+    after = Math.max(after, s.seq);
+  }
+
+  async function run() {
+    for (;;) {
+      try {
+        const response = await fetch(`/api/v1/screen/${encodeURIComponent(station)}?key=${encodeURIComponent(key)}&after=${after}`, { cache: "no-store" });
+        if (response.status === 404) {
+          show("bad", "!", "This screen link doesn't work any more", "Ask an admin for a new one.");
+          await new Promise((r) => setTimeout(r, 60000));
+          continue;
+        }
+        if (!response.ok) throw new Error(response.status);
+        apply(await response.json());
+      } catch {
+        if (Date.now() >= showingUntil) show("", "", "Can't reach the TapQueue server", "Trying again…");
+        await new Promise((r) => setTimeout(r, 5000));
+      }
+    }
+  }
+  run();
+</script>
+</body>
+</html>

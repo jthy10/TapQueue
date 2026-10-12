@@ -87,6 +87,7 @@ public static class ServerApp
         builder.Services.AddSingleton(new BadgeKey(config));
         builder.Services.AddSingleton<BadgeStore>();
         builder.Services.AddSingleton<StationStore>();
+        builder.Services.AddSingleton<StationScreens>();
         builder.Services.AddSingleton<WorkstationStore>();
         builder.Services.AddSingleton<CrashStore>();
         builder.Services.AddSingleton<PrinterStore>();
@@ -157,6 +158,7 @@ public static class ServerApp
         app.MapAdminApi();
         app.MapAdminAuthApi();
         app.MapStationApi();
+        app.MapStationScreenApi();
         app.MapAdminUi();
         return app;
     }

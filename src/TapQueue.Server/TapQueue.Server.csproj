@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Assets\*.png" />
+    <EmbeddedResource Include="Assets\*.html" />
     <!-- The admin console, served at /admin. LogicalName keeps the path so AdminUi can look files up by it. -->
     <EmbeddedResource Include="Admin\wwwroot\**" LogicalName="admin/$([System.String]::Copy('%(RecursiveDir)').Replace('\','/'))%(Filename)%(Extension)" />
   </ItemGroup>

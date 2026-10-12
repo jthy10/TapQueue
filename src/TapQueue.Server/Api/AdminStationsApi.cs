@@ -18,6 +18,8 @@ public static class AdminStationsApi
         admin.MapPatch("/stations/{id}", Update);
         admin.MapPost("/stations/{id}/token", ResetToken);
         admin.MapPost("/stations/{id}/restart", Restart);
+        admin.MapPost("/stations/{id}/screen", NewScreenLink);
+        admin.MapDelete("/stations/{id}/screen", RemoveScreenLink);
         admin.MapDelete("/stations/{id}", Delete);
 
         admin.MapGet("/station-builds", (StationBuildStore builds) => builds.List().Select(b => b.ToStationDto()));
@@ -125,6 +127,26 @@ public static class AdminStationsApi
         stations.SetTokenHash(station.Id, Tokens.Hash(token));
         events.Admin(EventLog.Station(station.Id), $"Made a new token for station {station.Id}; the old one stopped working.");
         return Results.Ok(new StationTokenResponse(station.ToDto(), token));
+    }
+
+    /// <summary>A new link to the station's screen page; one made before stops working.</summary>
+    private static IResult NewScreenLink(string id, StationStore stations, EventLog events)
+    {
+        if (stations.Get(id) is not { } station)
+            return NotFound(id);
+        var key = Tokens.New();
+        stations.SetScreenKeyHash(station.Id, Tokens.Hash(key));
+        events.Admin(EventLog.Station(station.Id), $"Made a new screen link for station {station.Id}; any older one stopped working.");
+        return Results.Ok(new StationScreenLinkResponse(station.Id, $"/screen/{Uri.EscapeDataString(station.Id)}?key={key}"));
+    }
+
+    private static IResult RemoveScreenLink(string id, StationStore stations, EventLog events)
+    {
+        if (stations.Get(id) is not { } station)
+            return NotFound(id);
+        stations.SetScreenKeyHash(station.Id, null);
+        events.Admin(EventLog.Station(station.Id), $"Turned off station {station.Id}'s screen link.");
+        return Results.NoContent();
     }
 
     private static IResult Restart(string id, StationStore stations, EventLog events)

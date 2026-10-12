@@ -465,6 +465,12 @@ public sealed class Database
             ALTER TABLE client_builds ADD COLUMN signature TEXT;
             ALTER TABLE station_builds ADD COLUMN signature TEXT;
         """,
+
+        // 21: a station's screen (the page at /screen/<id>) is opened with a key; its hash, or NULL
+        // while the station has no screen link.
+        """
+            ALTER TABLE stations ADD COLUMN screen_key_hash TEXT;
+        """,
     ];
 
     public void Migrate()

@@ -779,6 +779,19 @@ public static class TapOutcome
     public const string Failed = "failed";
 }
 
+/// <summary>What a station's screen shows: the printer's state, and the last tap if there was one.</summary>
+/// <param name="PrinterProblem">What's wrong with the printer in a few words ("paper jam"), when it can't print.</param>
+/// <param name="Notice">The station's out-of-service message, when it's disabled and has one.</param>
+/// <param name="Seq">The last tap's number, to ask for the next one with (<c>after</c>); 0 if there hasn't been one.</param>
+/// <param name="Outcome">The last tap's <see cref="TapOutcome"/>.</param>
+/// <param name="AgeMs">How long ago the last tap was, by the server's clock.</param>
+public sealed record StationScreenDto(string Station, string Printer, bool PrinterReady, string? PrinterProblem, bool Enabled, string? Notice,
+    long Seq, string? Outcome, string? Message, long? AgeMs);
+
+/// <summary>A station's new screen link. The key in it is shown once, like a token.</summary>
+/// <param name="Path">The page's path and key on this server: /screen/office?key=…</param>
+public sealed record StationScreenLinkResponse(string StationId, string Path);
+
 /// <param name="Outcome">One of <see cref="TapOutcome"/>.</param>
 /// <param name="Message">A short sentence suitable for showing at the printer.</param>
 public sealed record StationTapResponse(string Outcome, string Message, UserDto? User, IReadOnlyList<ReleaseResult> Results);
