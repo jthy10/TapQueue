@@ -14,6 +14,7 @@ using TapQueue.Server.Discovery;
 using TapQueue.Server.Ipp;
 using TapQueue.Server.Jobs;
 using TapQueue.Server.Logging;
+using TapQueue.Server.Notifications;
 using TapQueue.Server.Printers;
 using TapQueue.Server.Reports;
 using TapQueue.Server.Tls;
@@ -98,6 +99,10 @@ public static class ServerApp
         builder.Services.AddSingleton<JobCanceler>();
         builder.Services.AddSingleton<IppPrinterEndpoint>();
         builder.Services.AddHostedService<PrinterMonitor>();
+        builder.Services.AddSingleton<NotificationStore>();
+        builder.Services.AddSingleton<IMailSender, SmtpMailSender>();
+        builder.Services.AddSingleton<NotificationService>();
+        builder.Services.AddHostedService(services => services.GetRequiredService<NotificationService>());
         builder.Services.AddHostedService<JobCleanupService>();
         builder.Services.AddHostedService<DiscoveryResponder>();
         builder.Services.AddSingleton<DirectoryStore>();
