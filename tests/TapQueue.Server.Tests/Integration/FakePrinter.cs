@@ -36,6 +36,17 @@ public sealed class FakePrinter : IAsyncDisposable
     /// <summary>The black toner's level in percent (its low level is 10).</summary>
     public int TonerLevel { get; set; } = 80;
 
+    /// <summary>The state jobs are in once accepted: by default they've printed by the time anyone asks.</summary>
+    public int NewJobState { get; set; } = IppJobState.Completed;
+
+    /// <summary>What a job that isn't finished reports as job-impressions-completed; null leaves it out, as some printers do.</summary>
+    public int? ImpressionsCompleted { get; set; }
+
+    /// <summary>The printer's own job numbers and their job-state. Cancel-Job moves an unfinished one to canceled.</summary>
+    public ConcurrentDictionary<int, int> JobStates { get; } = new();
+
+    private int _lastJobId = 100;
+
     public string Uri { get; }
 
     private FakePrinter(WebApplication app)
@@ -92,7 +103,32 @@ public sealed class FakePrinter : IAsyncDisposable
             await Task.Delay(PrintJobDelay);
             response = IppMessage.CreateResponse(request, PrintJobStatus, PrintJobStatus == IppStatus.Ok ? null : "Out of paper");
             if (PrintJobStatus == IppStatus.Ok)
+            {
                 Jobs.Enqueue(new ReceivedJob(request, body.ToArray()[(int)body.Position..]));
+                var id = Interlocked.Increment(ref _lastJobId);
+                JobStates[id] = NewJobState;
+                response.Group(IppTag.JobAttributes).Add("job-id", IppValue.Integer(id)).Add("job-state", IppValue.Enum(NewJobState));
+            }
+        }
+        else if (request.Code is IppOperation.GetJobAttributes or IppOperation.CancelJob)
+        {
+            var id = request.OperationInt("job-id") ?? 0;
+            if (!JobStates.TryGetValue(id, out var state))
+                response = IppMessage.CreateResponse(request, IppStatus.ClientErrorNotFound);
+            else if (request.Code == IppOperation.CancelJob)
+            {
+                var finished = state >= IppJobState.Canceled;
+                if (!finished)
+                    JobStates[id] = IppJobState.Canceled;
+                response = IppMessage.CreateResponse(request, finished ? IppStatus.ClientErrorNotPossible : IppStatus.Ok);
+            }
+            else
+            {
+                response = IppMessage.CreateResponse(request, IppStatus.Ok);
+                var job = response.Group(IppTag.JobAttributes).Add("job-state", IppValue.Enum(state));
+                if (ImpressionsCompleted is { } printed)
+                    job.Add("job-impressions-completed", IppValue.Integer(printed));
+            }
         }
         else
         {

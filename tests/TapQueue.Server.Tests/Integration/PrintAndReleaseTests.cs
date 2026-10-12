@@ -147,7 +147,7 @@ public sealed class PrintAndReleaseTests : IAsyncLifetime
         await _server.PrintAsync("Oops", Pdf);
         var job = Assert.Single(await alice.GetFromJsonAsync<List<JobDto>>("/api/v1/me/jobs", TapQueueJson.Options) ?? []);
 
-        Assert.Equal(HttpStatusCode.NoContent, (await alice.DeleteAsync($"/api/v1/me/jobs/{job.Id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await alice.DeleteAsync($"/api/v1/me/jobs/{job.Id}")).StatusCode);
 
         Assert.Empty(await alice.GetFromJsonAsync<List<JobDto>>("/api/v1/me/jobs", TapQueueJson.Options) ?? []);
         await alice.PostAsJsonAsync("/api/v1/me/release", new ReleaseRequest(TestServer.PrinterId), TapQueueJson.Options);
