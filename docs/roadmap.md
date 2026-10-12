@@ -42,7 +42,9 @@ checklist; [admin-ui.md](admin-ui.md#roadmap) has the admin console's own phases
 
 12. **Notifications.** Email or webhook alerts for printer problems, stations going offline and
     crash reports.
-13. **Backup and restore** of the database: a CLI command and a scheduled backup.
+13. **Backup and restore.** *(Done in 0.11.0, see [backup.md](backup.md).)* A daily backup of the
+    database, certificate and AD CA, one before each upgrade, `tapqueue-admin backups` and the
+    console's Server page, and `tapqueue-server --restore`.
 14. **Packaging.** Signed Windows builds (no SmartScreen warning), .deb packages, ARM builds for
     small release stations like a Raspberry Pi.
 15. **Single sign-on** for the admin console (and maybe the tray): OIDC with Entra ID, Google or

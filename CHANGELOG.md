@@ -11,6 +11,17 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+### Added
+- Backups. The server backs up its database, TLS certificate and Active Directory CA into
+  `data_dir/backups` every day at 02:00 (the newest 7 are kept) and before an upgrade changes the
+  database. `tapqueue-admin backups` and **Server → Backups** in the console list them, make one
+  now, download and delete them and change the schedule; full admins only, since a backup holds
+  every hashed password and the server's private key. Restore one with the server stopped:
+  `sudo -u tapqueue /opt/tapqueue/tapqueue-server --restore <file>`, which moves what was there
+  aside instead of deleting it. Held documents and published builds aren't in a backup, and the
+  backups are on the server's own disk: copy them off with `tapqueue-admin backups download latest`.
+  See [docs/backup.md](docs/backup.md).
+
 ## [0.10.0] - 2026-10-11
 
 ### Changed

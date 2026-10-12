@@ -58,7 +58,9 @@ areas cover.
 - change someone who has admin rights (rename, disable, delete), or change the members of a
   group that gives admin rights (or delete it);
 - change which domain controller Active Directory is read from, its CA certificate, or the bind
-  account. Whoever answers as the domain controller decides who each AD admin is.
+  account. Whoever answers as the domain controller decides who each AD admin is;
+- list, make, download or delete [backups](backup.md). A backup holds everything at once,
+  hashed passwords and the server's private key included.
 
 An **admin of Updates** is not a full admin, but treat the role as just as trusted: the client
 build they publish is installed by every PC's TapQueue service and runs there as SYSTEM (Windows)

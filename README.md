@@ -56,7 +56,7 @@ More in [how TapQueue works](docs/how-it-works.md), including how jobs are match
 2. Install the client on each PC: [Windows](docs/windows-client.md) or [Linux](docs/linux-client.md).
 3. [Set up a release station](docs/release-station.md) next to each printer and enroll badges.
 
-Reference: [admin console](docs/admin-ui.md) · [TLS](docs/tls.md) · [admin sign-in and roles](docs/admin-roles.md) · [admin CLI](docs/admin-cli.md) · [Active Directory sync](docs/active-directory.md) · changelogs: [server and station](CHANGELOG.md),
+Reference: [admin console](docs/admin-ui.md) · [TLS](docs/tls.md) · [backups](docs/backup.md) · [admin sign-in and roles](docs/admin-roles.md) · [admin CLI](docs/admin-cli.md) · [Active Directory sync](docs/active-directory.md) · changelogs: [server and station](CHANGELOG.md),
 [clients](CHANGELOG-client.md) ·
 [development](docs/development.md) · [releasing](docs/releasing.md)
 
@@ -82,7 +82,8 @@ Reference: [admin console](docs/admin-ui.md) · [TLS](docs/tls.md) · [admin sig
 - [ ] Feedback at the printer (screen or status light) for "nothing to print" and errors
 - [ ] Follow-me printing, reports and cost accounting
 - [ ] Self-service badge enrollment from the tray app
-- [ ] Notifications and database backups
+- [x] Database backups and restore
+- [ ] Notifications
 - [ ] Signed Windows builds; .deb packages; ARM builds for small release devices
 
 The full list, with what each item means, is in [docs/roadmap.md](docs/roadmap.md).

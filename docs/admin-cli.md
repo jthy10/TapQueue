@@ -70,6 +70,14 @@ tapqueue-admin server set address-matching on|off|default
 tapqueue-admin server log [--follow]           Recent server log lines; --follow keeps printing new ones
 tapqueue-admin server restart                  Restart tapqueue-server (only when systemd runs it)
 tapqueue-admin server enrollment-code new|off  Make new PCs give a code to register (shown once), or stop asking
+
+tapqueue-admin backups                         Backups on the server, and the daily schedule (see backup.md)
+tapqueue-admin backups create                  Make a backup now
+tapqueue-admin backups download <name|latest> [file]
+                                               Copy a backup here
+tapqueue-admin backups delete <name>           Delete a backup
+tapqueue-admin backups schedule <HH:MM|off>    When the daily backup runs, on the server's clock
+tapqueue-admin backups keep <number>           How many daily backups to keep
 ```
 
 `tapqueue-admin --help` shows every option.

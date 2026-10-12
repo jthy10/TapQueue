@@ -109,11 +109,16 @@ service. Database changes are applied automatically at startup.
 ## Backups
 
 Everything is in `/var/lib/tapqueue` (`tapqueue.db`, plus `spool/` with the held jobs) and
-`/etc/tapqueue/server.toml`. To back up the database while the server runs:
+`/etc/tapqueue/server.toml`. The server backs up its database, certificate and Active Directory CA
+into `/var/lib/tapqueue/backups` every day at 02:00 and before an upgrade changes the database.
+Copy them somewhere else, and keep a copy of `server.toml` too:
 
 ```sh
-sudo sqlite3 /var/lib/tapqueue/tapqueue.db ".backup /root/tapqueue-$(date +%F).db"
+tapqueue-admin backups                         # what there is, and the schedule
+tapqueue-admin backups download latest /mnt/nas/tapqueue/
 ```
+
+Restoring, moving to a new machine and undoing an upgrade are in [backup.md](backup.md).
 
 ## Logs
 
