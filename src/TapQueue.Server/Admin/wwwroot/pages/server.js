@@ -1,5 +1,5 @@
-import { api } from "../api.js";
-import { h, pageHead, panel, button, pill, props, time, dateTime, duration, plural, field, input, select, formDialog, confirm, attempt, toast } from "../ui.js";
+import { api, enc } from "../api.js";
+import { h, pageHead, panel, button, pill, props, time, dateTime, duration, plural, bytes, table, empty, field, input, select, formDialog, confirm, attempt, toast } from "../ui.js";
 
 const MAX_LINES = 2000;
 
@@ -7,9 +7,12 @@ export async function render(root, ctx) {
   let s = await api.get("server");
   // Null for admins without a role in the Server area.
   let u = await api.maybe("server/update", null);
+  // Null for everyone but full admins: a backup holds everything.
+  let b = await api.maybe("server/backups", null);
   if (!ctx.current) return;
 
   const status = h("div");
+  const backups = h("div");
   const settings = h("div");
   const updates = h("div");
   const checkButton = button("Check for updates", { small: true, iconName: "refresh", onclick: () => checkForUpdates(true) });
@@ -20,6 +23,12 @@ export async function render(root, ctx) {
     panel({ title: "Status", body: status }),
     panel({ title: "Settings", actions: button("Edit", { small: true, onclick: edit }), body: settings })),
   u && panel({ title: "Updates", description: "New TapQueue server releases on GitHub.", actions: checkButton, body: updates }),
+  b && panel({
+    title: "Backups",
+    description: "The database, this server's certificate and the Active Directory CA. Held documents and published builds aren't in them.",
+    actions: [button("Schedule", { small: true, onclick: editBackupSchedule }), button("Back up now", { small: true, onclick: backUpNow })],
+    body: backups,
+  }),
   liveLog(ctx));
 
   function draw() {
@@ -84,6 +93,74 @@ export async function render(root, ctx) {
         ? button(`Update to ${latest.version}…`, { kind: "primary", onclick: offerUpdate })
         : null,
     ].filter(Boolean));
+  }
+
+  function drawBackups() {
+    const why = { daily: "Daily", manual: "Made by an admin", upgrade: "Before an upgrade" };
+    backups.replaceChildren(...[
+      b.lastError ? h("div", { class: "callout bad" }, `The last daily backup failed: ${b.lastError}`) : null,
+      props([
+        ["Daily backup", b.time
+          ? [`At ${b.time} on the server's clock`, h("span", { class: "sub" }, `The newest ${b.keep} are kept. Next: ${dateTime(b.nextRunAt)}`)]
+          : [pill("Off", "warn"), h("span", { class: "sub" }, "Only backups you make here, and one before each upgrade.")]],
+        ["Kept in", [h("code", null, b.directory), h("span", { class: "sub" },
+          "On this server's own disk: download copies, or fetch them from another machine with tapqueue-admin backups download latest. ",
+          "To restore one, stop the server and run tapqueue-server --restore.")]],
+      ]),
+      table({
+        rows: b.backups,
+        empty: empty("No backups yet", b.time ? `The first daily one is made at ${b.time}.` : "Make one with Back up now."),
+        columns: [
+          { label: "Made", value: (x) => h("span", { class: "cell-strong", title: x.name }, dateTime(x.createdAt)) },
+          { label: "Why", value: (x) => why[x.kind] ?? x.kind },
+          { label: "Size", class: "num", value: (x) => bytes(x.sizeBytes) },
+          { label: "", class: "num", value: (x) => h("span", { style: "display:inline-flex;gap:8px" },
+            h("a", { class: "btn small", href: `/api/v1/admin/server/backups/${enc(x.name)}`, download: x.name }, "Download"),
+            button("Delete", { small: true, kind: "ghost danger", onclick: () => deleteBackup(x) })) },
+        ],
+      }),
+    ].filter(Boolean));
+  }
+
+  async function backUpNow() {
+    const made = await attempt(() => api.post("server/backups"));
+    if (!made || !ctx.current) return;
+    b = await api.get("server/backups");
+    drawBackups();
+    toast(`Backup made (${bytes(made.sizeBytes)})`);
+  }
+
+  async function deleteBackup(backup) {
+    if (!await confirm({
+      title: "Delete this backup?",
+      message: `The backup made ${dateTime(backup.createdAt)} is deleted from the server. Copies you downloaded aren't touched.`,
+      confirmLabel: "Delete",
+    })) return;
+    if (await attempt(() => api.del(`server/backups/${enc(backup.name)}`), "Backup deleted") === undefined) return;
+    b = await api.get("server/backups");
+    drawBackups();
+  }
+
+  function editBackupSchedule() {
+    const on = select("on", [["on", "Every day"], ["off", "Off"]], b.time ? "on" : "off");
+    const at = input("time", { type: "time", required: true, value: b.time ?? "02:00" });
+    const atField = field("At", at, "On the server's clock. If the server is off then, it's made when it next starts.");
+    atField.hidden = !b.time;
+    on.onchange = () => { atField.hidden = on.value === "off"; };
+    formDialog({
+      title: "Backup schedule",
+      body: [
+        field("Back up", on),
+        atField,
+        field("Daily backups to keep", input("keep", { type: "number", min: 1, max: 365, required: true, value: b.keep }),
+          "Older daily ones are deleted. Backups you make yourself stay until you delete them."),
+      ],
+      onSubmit: async (v) => {
+        b = await api.patch("server/backups/schedule", { time: v.on === "off" ? "off" : v.time, keep: Number(v.keep) });
+        drawBackups();
+        toast("Backup schedule saved");
+      },
+    });
   }
 
   async function checkForUpdates(offer) {
@@ -262,10 +339,12 @@ export async function render(root, ctx) {
 
   draw();
   if (u) drawUpdates();
+  if (b) drawBackups();
   ctx.every(30000, async () => {
     s = await api.get("server");
     if (u) u = await api.get("server/update");
-    if (ctx.current) { draw(); if (u) drawUpdates(); }
+    if (b) b = await api.get("server/backups");
+    if (ctx.current) { draw(); if (u) drawUpdates(); if (b) drawBackups(); }
   });
 }
 
