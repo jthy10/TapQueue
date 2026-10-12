@@ -77,6 +77,35 @@ public sealed class UpdateCheckTests
         Assert.False(reply.Success);
     }
 
+    [Fact]
+    public async Task ALineThatNeverEndsIsDroppedNotReadIntoMemory()
+    {
+        var (service, tray) = Connect();
+        var requests = Channel.CreateUnbounded<UpdateCheck.Request>();
+        var verified = false;
+        var handling = UpdateCheck.HandleAsync(service, requests.Writer, NullLogger.Instance, CancellationToken.None,
+            pcUser: () => "CORP\\alice",
+            verify: (_, _, _) =>
+            {
+                verified = true;
+                return Task.FromResult(new SessionVerifyReply(true, null));
+            });
+
+        // Far more than the service reads; it hangs up, so the rest of the write may fail.
+        var flood = new byte[8 * 1024 * 1024];
+        Array.Fill(flood, (byte)'x');
+        var writing = tray.WriteAsync(flood).AsTask();
+
+        await handling.WaitAsync(TimeSpan.FromSeconds(5));
+        await Assert.ThrowsAnyAsync<IOException>(async () =>
+        {
+            await writing;
+            await tray.WriteAsync(flood);
+        });
+        Assert.False(verified);
+        Assert.False(requests.Reader.TryRead(out _));
+    }
+
     /// <summary>A connected pair of local sockets: the service's end and the tray app's end.</summary>
     private static (Stream Service, Stream Tray) Connect()
     {

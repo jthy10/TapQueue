@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
 using System.Threading.Channels;
@@ -69,10 +70,10 @@ public static class UpdateCheck
                 using var reader = new StreamReader(connection, leaveOpen: true);
                 using var readTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 readTimeout.CancelAfter(TimeSpan.FromSeconds(10));
-                var command = await reader.ReadLineAsync(readTimeout.Token);
+                var command = await ReadLineAsync(reader, readTimeout.Token);
                 if (command == VerifySessionCommand && verify is not null && pcUser is not null)
                 {
-                    var token = await reader.ReadLineAsync(readTimeout.Token);
+                    var token = await ReadLineAsync(reader, readTimeout.Token);
                     var user = string.IsNullOrWhiteSpace(token) ? null : pcUser();
                     var verified = user is null
                         ? new SessionVerifyReply(false, "The TapQueue service couldn't tell which PC user is asking.")
@@ -100,6 +101,28 @@ public static class UpdateCheck
                 request?.Sent.TrySetResult();
             }
         }
+    }
+
+    /// <summary>Commands and session tokens are far shorter than this.</summary>
+    internal const int MaxLineLength = 4096;
+
+    /// <summary>
+    /// One line from a tray app, or anyone else on the PC who connects: the service runs as SYSTEM or
+    /// root, so a line that never ends is dropped instead of being read into memory.
+    /// </summary>
+    private static async Task<string?> ReadLineAsync(StreamReader reader, CancellationToken ct)
+    {
+        var line = new StringBuilder();
+        var next = new char[1];
+        while (await reader.ReadAsync(next.AsMemory(), ct) > 0)
+        {
+            if (next[0] == '\n')
+                return line.ToString().TrimEnd('\r');
+            if (line.Length >= MaxLineLength)
+                throw new IOException("The request is too long to be a tray app's.");
+            line.Append(next[0]);
+        }
+        return line.Length > 0 ? line.ToString() : null;
     }
 
     /// <summary>Written even while the service stops to restart into an update.</summary>

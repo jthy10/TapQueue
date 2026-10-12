@@ -10,6 +10,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Fixed
+- The TapQueue service read whatever a program on the PC sent to its local pipe (Windows) or
+  socket (Linux) until the line ended, so any user of the PC could make it use a lot of memory for
+  ten seconds at a time. It now drops a request longer than a tray app's could be.
+
 ## [0.9.6] - 2026-10-09
 
 ### Fixed
