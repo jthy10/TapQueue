@@ -11,6 +11,16 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+### Added
+- **Released jobs are followed at the printer.** "Released" used to mean the printer accepted the
+  job; what happened to it afterwards was never looked at, and the document was already gone. Now
+  the server asks the printer about each job until it's finished and keeps the document that
+  long. A job the printer aborts is held again, counts against no page limit, and can be released
+  at another printer. A job stopped at the printer's panel gives back the pages that didn't print
+  when the printer says how many did. The console, `tapqueue-admin jobs` and the API's `printState`
+  say **printing**, **printed** or **stopped**, and `printedPages` is the printer's own count
+  where it gives one. Printers that can't be asked about a job behave as before. Database schema 19.
+
 ## [0.16.0] - 2026-10-12
 
 ### Added

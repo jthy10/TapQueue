@@ -15,7 +15,8 @@
 ```
 receiving ──▶ held ──▶ releasing ──▶ released
     │           │          │             │
-    │           │          │             └─(owner stops it at the printer before it prints)──▶ canceled
+    │           │          │             ├─(stopped at the printer before it prints)──▶ canceled
+    │           │          │             └─(the printer gives up on it)──▶ held, with the error
     │           │          └─(printer refused, unreachable or stopped)──▶ held, with the error
     │           ├─(user deletes it)──▶ canceled
     │           └─(hold_hours pass)──▶ expired
@@ -28,7 +29,20 @@ receiving ──▶ held ──▶ releasing ──▶ released
   point of view it has been delivered, so it doesn't sit in the user's local print queue for hours.
 - Releasing sends jobs oldest first. If a printer answers "busy", the server retries for up to two
   minutes. A job that can't be sent goes back to **held**, so the user can try another printer.
-- The document is deleted from disk when the job is released, canceled or expires.
+- **Released means the printer took the job, not that it printed.** So the server keeps asking the
+  printer about each job it released (IPP Get-Job-Attributes, every 5 seconds) and keeps the
+  document until the printer says how it ended. The console, `tapqueue-admin jobs` and the tray
+  show such a job as **printing** and then **printed**.
+  - A job the printer **aborts** (a document it can't render, a fault) goes back to **held** with
+    the printer's reason, as if it had never been released: it counts against no page limit and
+    can be released again, there or at another printer.
+  - A job someone **stops at the printer's own panel** gives back the pages that didn't print, by
+    the same rules as deleting it from the tray (below).
+  - A job waiting behind a paper jam or an empty tray is neither. The printer carries on with it
+    once that's fixed, so it stays **printing**.
+  - A printer that gives its jobs no number, forgets them before it can be asked, or can't be
+    reached for a day leaves the job simply **released**, and the document is deleted then.
+- Otherwise the document is deleted from disk when the job is canceled or expires.
 - The person a job belongs to can delete it from the tray app's **My print queue**. A held job is
   simply dropped; it never counted against a page limit. One that was already released is stopped
   at the printer, if the printer still has it (IPP Cancel-Job, as the person who printed it), and

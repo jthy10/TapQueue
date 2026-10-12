@@ -7,6 +7,10 @@ const filters = [["held", "Held"], ["", "All"], ["released", "Released"], ["canc
 /** A status pill for a job, shared with the overview and user details. */
 export function jobStatus(job) {
   if (job.error && job.status === "held") return pill("Held, last release failed", "bad");
+  // A released job is followed at the printer when the printer can be asked about it.
+  if (job.status === "released" && job.printState === "printing") return pill("Printing", "warn");
+  if (job.status === "released" && job.printState === "printed") return pill("Printed", "ok");
+  if (job.status === "released" && job.printState === "stopped") return pill("Stopped at the printer", "warn");
   const tone = { held: "accent", releasing: "warn", released: "ok" }[job.status];
   return pill(job.status[0].toUpperCase() + job.status.slice(1), tone);
 }

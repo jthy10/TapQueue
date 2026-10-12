@@ -43,6 +43,8 @@ public sealed class PrintQueueTests
         Assert.Equal("Stopped at Office printer, 1 page given back", PrintQueue.Status(Job(3, PrintQueue.Released, refunded: 1), Printers));
         // A printer the person may no longer release at isn't in their list any more.
         Assert.StartsWith("Sent to office at ", PrintQueue.Status(Job(4, PrintQueue.Released), []));
+        Assert.Equal("Printing at Office printer", PrintQueue.Status(Job(5, PrintQueue.Released) with { PrintState = "printing" }, Printers));
+        Assert.Equal("Printed at Office printer", PrintQueue.Status(Job(5, PrintQueue.Released) with { PrintState = "printed" }, Printers));
     }
 
     [Fact]

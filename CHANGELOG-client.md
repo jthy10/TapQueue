@@ -10,6 +10,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Added
+- **My print queue** says whether a job you released is still **printing** or has **printed**,
+  with a 0.17 server and a printer that can be asked.
+
 ## [0.10.0] - 2026-10-12
 
 ### Added

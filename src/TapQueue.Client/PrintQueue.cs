@@ -43,6 +43,9 @@ public static class PrintQueue
             Held => $"Waiting until {job.ExpiresAt.ToLocalTime():g}",
             Releasing => "Going to the printer…",
             Released when job.RefundedPages > 0 => $"Stopped at {printer}, {Count(job.RefundedPages)} given back",
+            Released when job.PrintState == "stopped" => $"Stopped at {printer}",
+            Released when job.PrintState == "printing" => $"Printing at {printer}",
+            Released when job.PrintState == "printed" => $"Printed at {printer}",
             Released => $"Sent to {printer} at {job.ReleasedAt?.ToLocalTime():t}",
             _ => job.Status,
         };

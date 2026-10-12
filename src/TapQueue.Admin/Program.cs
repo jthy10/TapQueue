@@ -416,7 +416,7 @@ async Task<int> ListJobs(string? status)
     if (jobs is null) return 1;
     Table(["ID", "OWNER", "STATUS", "NAME", "PAGES", "SIZE", "SUBMITTED", "PRINTER"], jobs.Select(j => new[]
     {
-        j.Id.ToString(), j.Owner ?? $"unowned ({j.ClaimedUser ?? "?"})", j.Status, Truncate(j.Name, 40),
+        j.Id.ToString(), j.Owner ?? $"unowned ({j.ClaimedUser ?? "?"})", j.PrintState is "printing" or "printed" or "stopped" ? j.PrintState : j.Status, Truncate(j.Name, 40),
         (j.Pages?.ToString() ?? "?") + (j.Copies > 1 ? $" x{j.Copies}" : ""), FormatSize(j.SizeBytes),
         j.SubmittedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"), j.ReleasedPrinterId ?? "",
     }));
