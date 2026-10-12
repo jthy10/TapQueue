@@ -137,8 +137,7 @@ public sealed class IppPrinterEndpoint(
 
         var job = NewJob(c);
         var size = await ReceiveDocumentAsync(c, job.Id, append: false);
-        await HoldAsync(job.Id, size, c.Http.RequestAborted);
-        return JobResponse(c, jobs.Get(job.Id)!);
+        return await HoldAsync(c, job.Id, size) ?? JobResponse(c, jobs.Get(job.Id)!);
     }
 
     private IppMessage CreateJob(RequestContext c)
@@ -172,8 +171,8 @@ public sealed class IppPrinterEndpoint(
             logger.LogWarning("Job {JobId} from {Source} canceled: it grew past {Limit} MB", job.Id, c.Source, ServerApp.MaxJobBytes / 1024 / 1024);
             return IppMessage.CreateResponse(c.Request, IppStatus.ClientErrorNotPossible, "The document is too big");
         }
-        if (lastDocument.Value)
-            await HoldAsync(job.Id, size, c.Http.RequestAborted);
+        if (lastDocument.Value && await HoldAsync(c, job.Id, size) is { } tooMuch)
+            return tooMuch;
         return JobResponse(c, jobs.Get(job.Id)!);
     }
 
@@ -185,7 +184,8 @@ public sealed class IppPrinterEndpoint(
         {
             var path = spool.PathFor(job.Id);
             var size = File.Exists(path) ? new FileInfo(path).Length : 0;
-            await HoldAsync(job.Id, size, c.Http.RequestAborted);
+            if (await HoldAsync(c, job.Id, size) is { } tooMuch)
+                return tooMuch;
         }
         return JobResponse(c, jobs.Get(job.Id)!);
     }
@@ -306,6 +306,49 @@ public sealed class IppPrinterEndpoint(
         return new FileInfo(spool.PathFor(jobId)).Length;
     }
 
+    private readonly SemaphoreSlim _holding = new(1, 1);
+
+    private const string TooMuchWaiting = "You have too much waiting to print. Release or delete some jobs (the TapQueue icon near the clock), then print again.";
+
+    /// <summary>True if <paramref name="more"/> bytes on top of what the user has waiting would pass the limit for one person.</summary>
+    private bool OverHeldLimit(long userId, long more) =>
+        settings.HeldMegabytesPerUser is > 0 and var limit && jobs.HeldBytes(userId) + more > limit * 1024L * 1024L;
+
+    /// <summary>
+    /// Holds a job whose whole document is here, unless it takes its owner past what one person may
+    /// have waiting; then the job is canceled and the answer to send comes back. One at a time, so two
+    /// jobs arriving together can't both fit in the same space.
+    /// </summary>
+    private async Task<IppMessage?> HoldAsync(RequestContext c, long jobId, long size)
+    {
+        await _holding.WaitAsync(c.Http.RequestAborted);
+        try
+        {
+            if (jobs.Get(jobId) is { UserId: { } userId } job && OverHeldLimit(userId, size))
+            {
+                if (jobs.TryTransition(jobId, JobStatus.Receiving, JobStatus.Canceled, "Its owner had too much waiting to print."))
+                    spool.Delete(jobId);
+                RefuseForHeldLimit(c, job.Username ?? "?");
+                return IppMessage.CreateResponse(c.Request, IppStatus.ClientErrorNotPossible, TooMuchWaiting);
+            }
+            await HoldAsync(jobId, size, c.Http.RequestAborted);
+            return null;
+        }
+        finally
+        {
+            _holding.Release();
+        }
+    }
+
+    private void RefuseForHeldLimit(RequestContext c, string username)
+    {
+        logger.LogInformation("Refused a job from {User} at {Source}: they have more than {Limit} MB waiting", username, c.Source, settings.HeldMegabytesPerUser);
+        // A PC retrying a refused job shouldn't fill the activity log: one line a minute per person.
+        if (_unownedRefusals.ShouldRecord($"held-limit:{username}"))
+            events.Record(EventCategory.Job, username, EventLog.User(username),
+                $"Refused a job from {username}: it would take them past the {settings.HeldMegabytesPerUser} MB one person may have waiting.");
+    }
+
     /// <summary>The whole document is here: count its pages and hold it for its owner.</summary>
     private async Task HoldAsync(long jobId, long size, CancellationToken ct)
     {
@@ -382,7 +425,13 @@ public sealed class IppPrinterEndpoint(
             : !access.CanPrintTo(user.Id, c.Queue.Id) ? $"their groups don't allow printing to {c.Queue.Name}"
             : null;
         if (reason is null)
-            return null;
+        {
+            // Already full: say so before the PC sends the document.
+            if (!OverHeldLimit(user.Id, 1))
+                return null;
+            RefuseForHeldLimit(c, user.Username);
+            return IppMessage.CreateResponse(c.Request, IppStatus.ClientErrorNotPossible, TooMuchWaiting);
+        }
         logger.LogInformation("Refused a job from {User} at {Source}: {Reason}", user.Username, c.Source, reason);
         events.Record(EventCategory.Job, user.Username, EventLog.User(user.Username), $"Refused a job from {user.Username}: {reason}.");
         return IppMessage.CreateResponse(c.Request, IppStatus.ClientErrorNotAuthorized,

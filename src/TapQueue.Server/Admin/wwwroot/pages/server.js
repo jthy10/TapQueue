@@ -50,6 +50,10 @@ export async function render(root, ctx) {
         h("span", { class: "sub" }, s.quotaOverrun === "deny"
           ? "A job prints only if it fits in the pages someone has left."
           : "A job prints in full if someone is under their limit when it starts, even if it takes them over.")]],
+      ["Waiting per person", [s.heldMegabytesPerUser ? `Up to ${s.heldMegabytesPerUser.toLocaleString()} MB` : "No limit",
+        h("span", { class: "sub" }, s.heldMegabytesPerUser
+          ? "A job that would take someone's held documents past this is refused, so nobody can fill the disk."
+          : "Anyone who may print can fill the server's disk with held jobs.")]],
       ["Jobs without a PC key", [s.addressMatching === "off" ? "Refused" : "Matched by address",
         h("span", { class: "sub" }, s.addressMatching === "off"
           ? "Only jobs from PCs whose TapQueue client has a key (0.8 on) go to someone."
@@ -260,6 +264,9 @@ export async function render(root, ctx) {
           ["allow", "Print it if they're under the limit when it starts"],
           ["deny", "Only print jobs that fit in what's left"],
         ], s.quotaOverrun)),
+        field("Held documents one person may have waiting (MB)",
+          input("heldMegabytesPerUser", { type: "number", min: 0, max: 1000000, required: true, value: s.heldMegabytesPerUser }),
+          "0 for no limit. One job can be 512 MB at most."),
         field("Jobs that arrive without a PC key", select("addressMatching", [
           ["on", "Match them to whoever is signed in at that address"],
           ["off", "Don't match them to anyone"],
@@ -272,6 +279,7 @@ export async function render(root, ctx) {
         if (v.sessionTimeoutSource === "file") body.reset.push("sessionTimeoutMinutes"); else body.sessionTimeoutMinutes = Number(v.sessionTimeoutMinutes);
         if (v.quotaOverrun !== s.quotaOverrun) body.quotaOverrun = v.quotaOverrun;
         if (v.addressMatching !== s.addressMatching) body.addressMatching = v.addressMatching;
+        if (Number(v.heldMegabytesPerUser) !== s.heldMegabytesPerUser) body.heldMegabytesPerUser = Number(v.heldMegabytesPerUser);
         s = await api.patch("server/settings", body);
         draw();
         toast("Settings saved");

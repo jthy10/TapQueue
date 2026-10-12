@@ -11,6 +11,12 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+### Added
+- A limit on how much one person can have waiting to print: 2048 MB of held documents unless
+  changed with `tapqueue-admin server set held-limit <megabytes>` or under **Server → Settings**
+  (0 for no limit). Before, anyone who may print could fill the server's disk with held jobs. A
+  job that would go past the limit is refused with a message to release or delete some first.
+
 ## [0.12.0] - 2026-10-11
 
 ### Added

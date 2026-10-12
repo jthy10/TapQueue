@@ -105,6 +105,9 @@ const string Usage = """
       tapqueue-admin server set address-matching on|off|default
                                                      on (default): jobs without a PC key (clients before 0.8)
                                                      go to whoever is signed in at their address; off: nobody
+      tapqueue-admin server set held-limit <megabytes|0|default>
+                                                     How much one person may have waiting to print at once
+                                                     (default 2048; 0 for no limit)
       tapqueue-admin server log [--follow]           The server's recent log lines, and new ones with --follow
       tapqueue-admin server restart                  Restart tapqueue-server (only when systemd runs it)
       tapqueue-admin server enrollment-code new|off  Make new PCs give a code to register (shown once; goes in
@@ -829,6 +832,7 @@ async Task<int> ShowServer()
     Console.WriteLine($"session-timeout  {server.SessionTimeoutMinutes,-6} minutes ({Source("sessionTimeoutMinutes")})");
     Console.WriteLine($"quota-overrun    {server.QuotaOverrun,-6} ({(server.ChangedSettings?.Contains("quotaOverrun") == true ? "set here" : "default")})");
     Console.WriteLine($"address-matching {server.AddressMatching,-6} ({(server.ChangedSettings?.Contains("addressMatching") == true ? "set here" : "default")})");
+    Console.WriteLine($"held-limit       {(server.HeldMegabytesPerUser == 0 ? "none" : server.HeldMegabytesPerUser + " MB"),-6} of documents one person may have waiting ({(server.ChangedSettings?.Contains("heldMegabytesPerUser") == true ? "set here" : "default")})");
     Console.WriteLine($"auth.mode        {server.AuthMode,-6} (server.toml; restart to change)");
     Console.WriteLine(server.EnrollmentCodeRequired
         ? "new PCs          need the enrollment code (`server enrollment-code new` makes another, `off` stops asking)"
@@ -856,11 +860,12 @@ async Task<int> SetServerSetting(string name, string value)
         "session-timeout" => "sessionTimeoutMinutes",
         "quota-overrun" => "quotaOverrun",
         "address-matching" => "addressMatching",
+        "held-limit" => "heldMegabytesPerUser",
         _ => null,
     };
     if (key is null)
     {
-        Console.Error.WriteLine("Settings are hold-hours, session-timeout, quota-overrun and address-matching.");
+        Console.Error.WriteLine("Settings are hold-hours, session-timeout, quota-overrun, address-matching and held-limit.");
         return 2;
     }
     if (key == "quotaOverrun")
@@ -878,6 +883,7 @@ async Task<int> SetServerSetting(string name, string value)
     int? number = value == "default" ? null : int.Parse(value);
     var request = number is null ? new UpdateServerSettingsRequest(Reset: [key])
         : key == "holdHours" ? new UpdateServerSettingsRequest(HoldHours: number)
+        : key == "heldMegabytesPerUser" ? new UpdateServerSettingsRequest(HeldMegabytesPerUser: number)
         : new UpdateServerSettingsRequest(SessionTimeoutMinutes: number);
     if (await Send<ServerInfoDto>(HttpMethod.Patch, "server/settings", request) is null) return 1;
     return await ShowServer();

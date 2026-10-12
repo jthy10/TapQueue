@@ -114,7 +114,7 @@ public static class AdminApi
         TapQueueVersion.Current, ServerClock.StartedAt, config.Auth.Mode, config.Server.Listen, config.Server.DataDir,
         database.SchemaVersion(), settings.HoldHours, settings.SessionTimeoutMinutes, jobs.CountHeld(),
         ServerSettings.Keys.Where(settings.IsSaved).ToList(), AdminServerApi.CanRestart, settings.QuotaOverrun,
-        TlsInfo(config, services), settings.AddressMatching, settings.EnrollmentCodeHash is not null);
+        TlsInfo(config, services), settings.AddressMatching, settings.EnrollmentCodeHash is not null, settings.HeldMegabytesPerUser);
 
     private static ServerTlsDto? TlsInfo(ServerConfig config, IServiceProvider services)
     {
@@ -138,6 +138,8 @@ public static class AdminApi
             return Results.BadRequest(new ErrorResponse($"quotaOverrun must be {string.Join(" or ", QuotaOverrun.All)}."));
         if (request.AddressMatching is { } matching && !AddressMatching.All.Contains(matching))
             return Results.BadRequest(new ErrorResponse($"addressMatching must be {string.Join(" or ", AddressMatching.All)}."));
+        if (request.HeldMegabytesPerUser is < 0 or > 1_000_000)
+            return Results.BadRequest(new ErrorResponse("heldMegabytesPerUser must be 0 (no limit) to 1000000."));
         foreach (var key in request.Reset ?? [])
             if (!ServerSettings.Keys.Contains(key))
                 return Results.BadRequest(new ErrorResponse($"Can't reset \"{key}\"; only {string.Join(", ", ServerSettings.Keys)}."));
@@ -168,6 +170,17 @@ public static class AdminApi
         {
             settings.Set(ServerSettings.QuotaOverrunKey, o);
             changes.Add($"over page limits: {DescribeOverrun(o)}");
+        }
+
+        if (request.Reset?.Contains(ServerSettings.HeldMegabytesKey) == true)
+        {
+            settings.Reset(ServerSettings.HeldMegabytesKey);
+            changes.Add($"held documents per person back to the default ({settings.HeldMegabytesPerUser} MB)");
+        }
+        else if (request.HeldMegabytesPerUser is { } mb && (mb != settings.HeldMegabytesPerUser || !settings.IsSaved(ServerSettings.HeldMegabytesKey)))
+        {
+            settings.Set(ServerSettings.HeldMegabytesKey, mb);
+            changes.Add(mb == 0 ? "no limit on held documents per person" : $"held documents per person limited to {mb} MB");
         }
 
         if (request.Reset?.Contains(ServerSettings.AddressMatchingKey) == true)

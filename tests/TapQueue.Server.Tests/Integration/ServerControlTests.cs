@@ -57,6 +57,36 @@ public sealed class ServerControlTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task OnePersonCantHaveMoreWaitingThanTheLimit()
+    {
+        var info = (await _server.Admin.GetFromJsonAsync<ServerInfoDto>("/api/v1/admin/server", TapQueueJson.Options))!;
+        Assert.Equal(2048, info.HeldMegabytesPerUser);
+        await TestServer.ReadAsync<ServerInfoDto>(await PatchSettings(new(HeldMegabytesPerUser: 1)));
+        using var alice = await _server.SignInAsync("alice");
+        var document = new byte[700 * 1024];
+        "%PDF-1.4 test"u8.CopyTo(document);
+
+        Assert.Equal(Ipp.IppStatus.Ok, (await _server.PrintAsync("first.pdf", document)).Code);
+        // It doesn't fit beside the first, and from then on they're told before sending anything.
+        Assert.Equal(Ipp.IppStatus.ClientErrorNotPossible, (await _server.PrintAsync("second.pdf", document)).Code);
+        var held = Assert.Single((await alice.GetFromJsonAsync<List<JobDto>>("/api/v1/me/jobs", TapQueueJson.Options))!);
+        Assert.Equal("first.pdf", held.Name);
+        Assert.Single(Directory.GetFiles(Path.Combine(info.DataDir, "spool")));
+
+        // Releasing makes room again.
+        (await alice.PostAsJsonAsync("/api/v1/me/release", new ReleaseRequest(TestServer.PrinterId), TapQueueJson.Options)).EnsureSuccessStatusCode();
+        Assert.Equal(Ipp.IppStatus.Ok, (await _server.PrintAsync("third.pdf", document)).Code);
+
+        var off = await TestServer.ReadAsync<ServerInfoDto>(await PatchSettings(new(HeldMegabytesPerUser: 0)));
+        Assert.Equal(0, off.HeldMegabytesPerUser);
+        Assert.Equal(Ipp.IppStatus.Ok, (await _server.PrintAsync("fourth.pdf", document)).Code);
+
+        var reset = await TestServer.ReadAsync<ServerInfoDto>(await PatchSettings(new(Reset: ["heldMegabytesPerUser"])));
+        Assert.Equal(2048, reset.HeldMegabytesPerUser);
+        Assert.Equal(HttpStatusCode.BadRequest, (await PatchSettings(new(HeldMegabytesPerUser: -1))).StatusCode);
+    }
+
+    [Fact]
     public async Task NewJobsAreHeldForTheChangedTime()
     {
         await TestServer.ReadAsync<ServerInfoDto>(await PatchSettings(new(HoldHours: 2)));

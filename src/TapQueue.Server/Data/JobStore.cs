@@ -101,6 +101,11 @@ public sealed class JobStore(Database database)
         Convert.ToInt32(database.Scalar("SELECT COUNT(*) FROM jobs WHERE status = $held", ("$held", JobStatus.Held)));
 
     /// <summary>Moves a job between states only if it is currently in <paramref name="from"/>. Returns false if it wasn't.</summary>
+    /// <summary>The size of the documents a user has waiting: held, or on their way to a printer.</summary>
+    public long HeldBytes(long userId) =>
+        Convert.ToInt64(database.Scalar("SELECT COALESCE(SUM(size_bytes), 0) FROM jobs WHERE user_id = $u AND status IN ($held, $releasing)",
+            ("$u", userId), ("$held", JobStatus.Held), ("$releasing", JobStatus.Releasing)));
+
     public bool TryTransition(long id, string from, string to, string? error = null) =>
         database.Execute("UPDATE jobs SET status = $to, error = $err WHERE id = $id AND status = $from",
             ("$to", to), ("$err", error), ("$id", id), ("$from", from)) == 1;

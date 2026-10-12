@@ -18,7 +18,8 @@ public sealed record ServerInfoDto(
     string QuotaOverrun = Api.QuotaOverrun.Allow,
     ServerTlsDto? Tls = null,
     string AddressMatching = Api.AddressMatching.On,
-    bool EnrollmentCodeRequired = false);
+    bool EnrollmentCodeRequired = false,
+    int HeldMegabytesPerUser = 0);
 
 /// <summary>A new enrollment code for PCs, shown once: the server keeps only its hash.</summary>
 public sealed record EnrollmentCodeResponse(string Code);
@@ -105,16 +106,18 @@ public sealed record LogLineDto(long Id, DateTimeOffset At, string Level, string
 
 /// <summary>
 /// Settings that apply while the server runs. Null leaves one as it is; <see cref="Reset"/> names
-/// ones (holdHours, sessionTimeoutMinutes, quotaOverrun, addressMatching) to take from server.toml, or the default, again.
+/// ones (holdHours, sessionTimeoutMinutes, quotaOverrun, addressMatching, heldMegabytesPerUser) to take from server.toml, or the default, again.
 /// </summary>
 /// <param name="QuotaOverrun">One of <see cref="Api.QuotaOverrun"/>.</param>
 /// <param name="AddressMatching">One of <see cref="Api.AddressMatching"/>.</param>
+/// <param name="HeldMegabytesPerUser">Megabytes of held documents one person may have waiting; 0 for no limit.</param>
 public sealed record UpdateServerSettingsRequest(
     int? HoldHours = null,
     int? SessionTimeoutMinutes = null,
     IReadOnlyList<string>? Reset = null,
     string? QuotaOverrun = null,
-    string? AddressMatching = null);
+    string? AddressMatching = null,
+    int? HeldMegabytesPerUser = null);
 
 /// <summary>
 /// Upgrading the server itself to a newer GitHub release: what's running, what's out, and any

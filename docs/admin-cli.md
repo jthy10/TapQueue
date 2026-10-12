@@ -70,6 +70,8 @@ tapqueue-admin server set quota-overrun allow|deny|default
 tapqueue-admin server set address-matching on|off|default
                                                Whether jobs without a PC key are matched by address
                                                (see how-it-works.md)
+tapqueue-admin server set held-limit <megabytes|0|default>
+                                               How much one person may have waiting at once (default 2048 MB)
 tapqueue-admin server log [--follow]           Recent server log lines; --follow keeps printing new ones
 tapqueue-admin server restart                  Restart tapqueue-server (only when systemd runs it)
 tapqueue-admin server enrollment-code new|off  Make new PCs give a code to register (shown once), or stop asking

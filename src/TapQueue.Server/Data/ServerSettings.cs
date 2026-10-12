@@ -15,8 +15,9 @@ public sealed class ServerSettings(Database database, ServerConfig config)
     public const string SessionTimeoutKey = "sessionTimeoutMinutes";
     public const string QuotaOverrunKey = "quotaOverrun";
     public const string AddressMatchingKey = "addressMatching";
+    public const string HeldMegabytesKey = "heldMegabytesPerUser";
 
-    public static readonly string[] Keys = [HoldHoursKey, SessionTimeoutKey, QuotaOverrunKey, AddressMatchingKey];
+    public static readonly string[] Keys = [HoldHoursKey, SessionTimeoutKey, QuotaOverrunKey, AddressMatchingKey, HeldMegabytesKey];
 
     private readonly Lock _lock = new();
     private Dictionary<string, string>? _saved;
@@ -42,6 +43,14 @@ public sealed class ServerSettings(Database database, ServerConfig config)
     /// </summary>
     public string AddressMatching =>
         Saved().TryGetValue(AddressMatchingKey, out var value) && Shared.Api.AddressMatching.All.Contains(value) ? value : Shared.Api.AddressMatching.On;
+
+    public const int DefaultHeldMegabytes = 2048;
+
+    /// <summary>
+    /// How many megabytes of documents one person may have waiting at once, so nobody can fill the
+    /// disk with held jobs; 0 for no limit. Not in server.toml.
+    /// </summary>
+    public int HeldMegabytesPerUser => Int(HeldMegabytesKey) is >= 0 and var mb ? mb : DefaultHeldMegabytes;
 
     /// <summary>True if <paramref name="key"/> was set here rather than coming from server.toml.</summary>
     public bool IsSaved(string key) => Saved().ContainsKey(key);
