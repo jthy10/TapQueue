@@ -29,6 +29,7 @@ const nav = [
   { group: "System", items: [
     { id: "updates", label: "Updates", icon: "updates", area: "updates" },
     { id: "server", label: "Server", icon: "server", area: "server" },
+    { id: "notifications", label: "Notifications", icon: "notifications", area: "server" },
     { id: "admins", label: "Admins", icon: "admins", area: "full" },
   ] },
 ];
