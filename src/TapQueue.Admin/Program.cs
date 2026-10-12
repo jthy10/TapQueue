@@ -24,6 +24,10 @@ const string Usage = """
       tapqueue-admin quotas                          Everyone with a page limit and how much of it they've used
       tapqueue-admin jobs [--status held|released|expired|canceled]
                                                      List recent jobs
+      tapqueue-admin report [--by user|group|printer|queue|day|month] [--from 2026-10-01] [--to 2026-10-31] [--csv]
+                                                     Pages printed, added up by person (the default) or another
+                                                     way; this month so far unless dates are given. --csv prints
+                                                     it for a spreadsheet: tapqueue-admin report --csv > pages.csv
       tapqueue-admin printers [--refresh]            List printers with their health and toner levels
       tapqueue-admin printers add <printer-id> <uri> [--name "Office printer"] [--location ...] [--tls-skip-verify]
                                                      Add a printer, e.g. uri ipp://192.0.2.10/ipp/print
@@ -139,7 +143,7 @@ for (var i = 0; i < args.Length; i++)
     }
     if (args[i].StartsWith("--"))
     {
-        var takesValue = args[i] is "--server" or "--token" or "--fingerprint" or "--name" or "--status" or "--uri" or "--location" or "--description" or "--media" or "--version-name" or "--platform" or "--area" or "--station";
+        var takesValue = args[i] is "--server" or "--token" or "--fingerprint" or "--name" or "--status" or "--uri" or "--location" or "--description" or "--media" or "--version-name" or "--platform" or "--area" or "--station" or "--by" or "--from" or "--to";
         var switchWithValue = args[i] is "--tls-skip-verify" or "--color" or "--duplex" && i + 1 < args.Length && ParseSwitch(args[i + 1]) is not null;
         options[args[i]] = (takesValue || switchWithValue) && i + 1 < args.Length ? args[++i] : null;
     }
@@ -239,6 +243,7 @@ try
         ("server", "log") when positional.Count == 2 => await ServerLog(options.ContainsKey("--follow")),
         ("server", "restart") when positional.Count == 2 => await RestartServer(),
         ("server", "enrollment-code") when positional.Count == 3 && positional[2] is "new" or "off" => await SetEnrollmentCode(positional[2] == "new"),
+        ("report", null) => await Report(options.GetValueOrDefault("--by"), options.GetValueOrDefault("--from"), options.GetValueOrDefault("--to"), options.ContainsKey("--csv")),
         ("backups", null) => await ListBackups(),
         ("backups", "create") when positional.Count == 2 => await CreateBackup(),
         ("backups", "download") when positional.Count is 3 or 4 => await DownloadBackup(positional[2], positional.ElementAtOrDefault(3)),
@@ -919,6 +924,37 @@ async Task<int> SetEnrollmentCode(bool make)
     Console.WriteLine($"Enrollment code: {made.Code}");
     Console.WriteLine("New PCs need it to register: enrollment_code in client.toml, /ENROLL=<code> for the Windows installer,");
     Console.WriteLine("TAPQUEUE_ENROLLMENT_CODE for install.sh and install.ps1. It isn't shown again; PCs that already have a key aren't affected.");
+    return 0;
+}
+
+async Task<int> Report(string? by, string? from, string? to, bool csv)
+{
+    var query = string.Join('&', new[] { ("by", by), ("from", from), ("to", to), ("format", csv ? "csv" : null) }
+        .Where(p => p.Item2 is not null).Select(p => $"{p.Item1}={Uri.EscapeDataString(p.Item2!)}"));
+    if (csv)
+    {
+        using var response = await http.GetAsync($"reports/usage?{query}");
+        if (!response.IsSuccessStatusCode)
+        {
+            await PrintError(response);
+            return 1;
+        }
+        Console.Write(await response.Content.ReadAsStringAsync());
+        return 0;
+    }
+    var report = await Get<UsageReportDto>($"reports/usage?{query}");
+    if (report is null) return 1;
+    Console.WriteLine($"Pages printed {report.From} to {report.To} ({report.TimeZone}), by {report.By}");
+    Console.WriteLine();
+    var byTime = report.By is ReportGrouping.Day or ReportGrouping.Month;
+    Table(byTime ? [report.By.ToUpperInvariant(), "JOBS", "PAGES"] : [report.By.ToUpperInvariant(), "NAME", "JOBS", "PAGES"],
+        report.Rows.Select(r => byTime
+            ? new[] { r.Key, r.Jobs.ToString(), r.Pages.ToString() }
+            : new[] { r.Key.Length > 0 ? r.Key : "-", r.Name, r.Jobs.ToString(), r.Pages.ToString() }));
+    Console.WriteLine();
+    Console.WriteLine($"Total: {report.Pages} pages in {report.Jobs} jobs" +
+        (report.UncountedJobs > 0 ? $" ({report.UncountedJobs} jobs couldn't be counted and count as 1 page a copy)" : "") +
+        (report.By == ReportGrouping.Group ? ". Someone in two groups counts in both." : "."));
     return 0;
 }
 
