@@ -13,7 +13,7 @@ namespace TapQueue.Client;
 /// its platform and which client it runs, so it shows under Workstations), gets its queues and
 /// client build, keeps the PC's printers in step, and installs a newly published client, straight
 /// away when someone chooses "Check for updates" in the tray menu (<see cref="UpdateCheck"/>).
-/// "Refresh printers" in the tray menu makes it check in straight away and reinstall every printer.
+/// "Refresh TapQueue" in the tray menu makes it check in straight away and reinstall every printer.
 /// The server gives the PC a key on its first check-in (<see cref="WorkstationKey"/>); the printers
 /// then carry a print key made from it, and the service vouches for each tray app on the PC that
 /// signs in (<see cref="UpdateCheck.VerifySessionCommand"/>), so jobs are matched by PC and PC user.

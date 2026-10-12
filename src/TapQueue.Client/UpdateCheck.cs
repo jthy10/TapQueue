@@ -23,7 +23,7 @@ public sealed record SessionVerifyReply(bool Success, string? Error);
 /// away, installs the published build if it differs, and writes back one line of JSON
 /// (<see cref="UpdateCheckReply"/>). The service only ever installs the build the server
 /// publishes, checked against its SHA-256, so any signed-in user may ask.
-/// "Refresh printers" goes the same way (<see cref="RefreshPrintersCommand"/>): the service checks
+/// "Refresh TapQueue" goes the same way (<see cref="RefreshPrintersCommand"/>): the service checks
 /// in, removes and adds every TapQueue printer again, and answers with a <see cref="PrinterRefreshReply"/>.
 /// After signing in, the tray app also asks the service to vouch for it (<see cref="VerifySessionCommand"/>,
 /// then its session token on a second line): the service asks the operating system which PC user is at
@@ -42,7 +42,7 @@ public static class UpdateCheck
     /// <summary>A check (or printer refresh) asked for by a tray app, waiting for the service's next check-in.</summary>
     public sealed class Request
     {
-        /// <summary>True for "Refresh printers", answered through <see cref="PrintersReply"/> instead of <see cref="Reply"/>.</summary>
+        /// <summary>True for "Refresh TapQueue", answered through <see cref="PrintersReply"/> instead of <see cref="Reply"/>.</summary>
         public bool RefreshPrinters { get; init; }
 
         public TaskCompletionSource<UpdateCheckReply> Reply { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);

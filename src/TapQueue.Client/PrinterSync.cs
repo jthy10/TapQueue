@@ -42,7 +42,7 @@ public sealed class PrinterSync(IPrinterInstaller installer, ILogger logger, str
 
     /// <summary>
     /// Adds, repoints or removes printers. Does nothing if the queues haven't changed since last time,
-    /// unless <paramref name="reinstallAll"/> ("Refresh printers" in the tray menu), which removes and
+    /// unless <paramref name="reinstallAll"/> ("Refresh TapQueue" in the tray menu), which removes and
     /// adds every printer again. Returns the first failure, or null when everything worked.
     /// </summary>
     /// <param name="serverCertificate">The server's certificate when it's trusted only because it's pinned (<see cref="ServerCertificatePin.Pinned"/>).</param>
