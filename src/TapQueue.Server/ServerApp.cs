@@ -15,6 +15,7 @@ using TapQueue.Server.Ipp;
 using TapQueue.Server.Jobs;
 using TapQueue.Server.Logging;
 using TapQueue.Server.Printers;
+using TapQueue.Server.Reports;
 using TapQueue.Server.Tls;
 using TapQueue.Server.Updates;
 using TapQueue.Server.Users;
@@ -90,6 +91,7 @@ public static class ServerApp
         builder.Services.AddSingleton<QueueStore>();
         builder.Services.AddSingleton<UnknownTaps>();
         builder.Services.AddSingleton<JobStore>();
+        builder.Services.AddSingleton<UsageReport>();
         builder.Services.AddSingleton<JobOwnerResolver>();
         builder.Services.AddSingleton<PrinterRegistry>();
         builder.Services.AddSingleton<ReleaseService>();

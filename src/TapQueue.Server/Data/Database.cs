@@ -430,6 +430,11 @@ public sealed class Database
             CREATE INDEX ix_sessions_workstation ON sessions(workstation) WHERE workstation IS NOT NULL;
             ALTER TABLE jobs ADD COLUMN workstation TEXT COLLATE NOCASE;
         """,
+
+        // 16: usage reports read released jobs by when they were released.
+        """
+            CREATE INDEX ix_jobs_released_at ON jobs(released_at) WHERE released_at IS NOT NULL;
+        """,
     ];
 
     public void Migrate()

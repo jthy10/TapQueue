@@ -62,7 +62,7 @@ public static class AdminAccess
         var read = HttpMethods.IsGet(method) || HttpMethods.IsHead(method);
         var area = parts.FirstOrDefault() switch
         {
-            "jobs" or "release" => AdminArea.Jobs,
+            "jobs" or "release" or "reports" => AdminArea.Jobs,
             "users" or "groups" or "badges" or "quotas" => AdminArea.People,
             "directory" => AdminArea.Directory,
             "printers" or "queues" or "stations" or "workstations" or "clients" => AdminArea.Fleet,

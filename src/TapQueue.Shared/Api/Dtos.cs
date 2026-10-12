@@ -23,6 +23,38 @@ public sealed record ServerInfoDto(
 /// <summary>A new enrollment code for PCs, shown once: the server keeps only its hash.</summary>
 public sealed record EnrollmentCodeResponse(string Code);
 
+/// <summary>What a usage report adds pages up by.</summary>
+public static class ReportGrouping
+{
+    public const string User = "user";
+    /// <summary>The groups people are in now. Someone in two groups counts in both.</summary>
+    public const string Group = "group";
+    public const string Printer = "printer";
+    public const string Queue = "queue";
+    public const string Day = "day";
+    public const string Month = "month";
+
+    public static readonly string[] All = [User, Group, Printer, Queue, Day, Month];
+}
+
+/// <summary>Pages printed from <paramref name="From"/> to <paramref name="To"/> (both "yyyy-MM-dd", both included).</summary>
+/// <param name="By">One of <see cref="ReportGrouping"/>.</param>
+/// <param name="TimeZone">The server's time zone, which decides where days and months start.</param>
+/// <param name="Jobs">Released jobs in the period. With <see cref="ReportGrouping.Group"/> the rows can add up to more.</param>
+/// <param name="UncountedJobs">Jobs whose pages couldn't be counted; each counts as 1 page a copy.</param>
+public sealed record UsageReportDto(
+    string From,
+    string To,
+    string By,
+    string TimeZone,
+    int Jobs,
+    long Pages,
+    int UncountedJobs,
+    IReadOnlyList<UsageRowDto> Rows);
+
+/// <param name="Key">The username, group, printer or queue id, or the day ("yyyy-MM-dd") or month ("yyyy-MM"). Empty for "nobody" rows.</param>
+public sealed record UsageRowDto(string Key, string Name, int Jobs, long Pages, int UncountedJobs);
+
 /// <summary>Why a backup was made.</summary>
 public static class BackupKind
 {
