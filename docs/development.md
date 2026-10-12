@@ -53,6 +53,10 @@ The schema is a list of numbered migrations in
 Never edit one that has been released. The server applies pending migrations at startup, and it
 refuses to run against a database from a newer version.
 
+Every migration after schema 20 (server 0.17.0) also needs its undoing in `Downgrades`, in the same
+file: the SQL that takes the database back to how the previous migration left it. That's what lets
+a site [go back to an older release](install-server.md#downgrading); a test fails if one is missing.
+
 ## Layout
 
 ```

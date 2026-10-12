@@ -41,6 +41,19 @@ breaking changes; they're listed under **Changed** with what to do.
 - **A tap that printed nothing is explained on the person's PC.** With a 0.17 client, the tray
   says "You tapped at Office printer, but nothing was waiting to print", or why a release was
   refused, or that a printer gave up on a job and it's waiting again (`GET /api/v1/me/notices`).
+- **Downgrade.** The Server page has a Downgrade section (`tapqueue-admin server downgrade`) that
+  takes the whole site back to an older release when an update turned out badly: it hands out that
+  release's clients and station build, then installs that release of the server. The running
+  server steps its database back first, after making a backup. 0.17.0 is the oldest release that
+  can be gone back to. See [docs/install-server.md](docs/install-server.md#downgrading).
+
+### Changed
+- **Client and station builds only come from GitHub releases.** Uploading a build is gone: the
+  upload forms on the Updates page, `tapqueue-admin clients publish`, and `POST` to
+  `/api/v1/admin/client-builds` and `/station-builds`. Nobody with access to the console can hand
+  PCs and stations a program of their own any more. Use **Check for updates** (or
+  `tapqueue-admin clients update` and `stations update`), which needs the server to reach GitHub.
+- **The clients share this version number** from now on (see the clients' changelog).
 
 ## [0.16.0] - 2026-10-12
 

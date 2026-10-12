@@ -153,6 +153,29 @@ Servers installed before 0.8.0 don't have `tapqueue-update` yet: upgrade them on
 `install-server.sh`). It replaces the programs, keeps your config and data, and restarts the
 service. Database changes are applied automatically at startup.
 
+## Downgrading
+
+When an update turns out badly, the Server page's **Downgrade** section takes the whole site back
+to an older release: **Look for older releases** lists them, and **Go back to X.Y.Z** does it
+(`tapqueue-admin server downgrade` lists them, `tapqueue-admin server downgrade X.Y.Z` goes back).
+
+- **Everything goes back together.** The server first hands out that release's clients and station
+  build, which every PC and station installs within about a minute, then installs that release of
+  the server and restarts. Only releases that have all of those under one version are listed.
+- **0.17.0 is as far back as it goes.** It's the first release that can be gone back to; nothing
+  older is ever listed.
+- **The database is stepped back first.** An older server can't read a database a newer one has
+  changed. So before the older server is installed, the one that's running undoes its own
+  database changes, back to what the older one needs. Whatever only the newer version kept track
+  of is dropped. A backup is made first (**Before a downgrade** under Backups, kept until you
+  delete it); held jobs, users, badges and settings are kept.
+- Like upgrading, it needs a server installed by `install-server.sh` and run by systemd, and it
+  has to reach GitHub. If the database can't be stepped back, nothing is installed and the server
+  starts again as it was. Details are in `journalctl -u tapqueue-update`.
+
+A PC or station that's switched off catches up when it's next on: it installs whatever build the
+server hands out then.
+
 ## Backups
 
 Everything is in `/var/lib/tapqueue` (`tapqueue.db`, plus `spool/` with the held jobs) and

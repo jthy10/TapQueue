@@ -1,7 +1,7 @@
 # Builds the Windows client release into dist/. Runs on Windows (Inno Setup is Windows-only);
 # used by CI and the release workflow.
 #   TapQueue_client_<version>.exe            the installer (what people download and run)
-#   TapQueue_client_<version>_win-x64.zip    TapQueueClient.exe + version.txt, for `tapqueue-admin clients publish`
+#   TapQueue_client_<version>_win-x64.zip    TapQueueClient.exe + version.txt: what servers hand out to PCs
 #   SHA256SUMS
 $ErrorActionPreference = 'Stop'
 Set-Location (Join-Path $PSScriptRoot '..')
@@ -25,7 +25,7 @@ New-Item -ItemType Directory -Force dist | Out-Null
 & $iscc /Qp "/DAppVersion=$version" "/DExeSource=$PWD\out\client\TapQueueClient.exe" "/DOutputDir=$PWD\dist" deploy/windows/tapqueue-client.iss
 if ($LASTEXITCODE -ne 0) { throw 'Inno Setup failed' }
 
-# What the client reports as its version (TapQueueVersion.Current); `tapqueue-admin clients publish` reads it.
+# What the client reports as its version (TapQueueVersion.Current); servers label the build with it.
 "$version+$(git rev-parse --short=7 HEAD)" | Set-Content -NoNewline out/client/version.txt
 Compress-Archive -Force -Path out/client/TapQueueClient.exe, out/client/version.txt -DestinationPath "dist/TapQueue_client_${version}_win-x64.zip"
 

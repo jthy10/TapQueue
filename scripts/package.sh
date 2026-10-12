@@ -7,11 +7,11 @@
 #     TapQueue_station_<version>_linux-x64.tar.gz   tapqueue-station, example config, systemd unit, udev rule,
 #                                                   install-station.sh
 #   scripts/package.sh client    the Windows and Linux clients (<TapQueueClientVersion>):
-#     TapQueue_client_<version>_win-x64.zip         TapQueueClient.exe and version.txt, for `tapqueue-admin clients publish`
+#     TapQueue_client_<version>_win-x64.zip         TapQueueClient.exe and version.txt: what servers hand out to PCs
 #                                                   (the installer, TapQueue_client_<version>.exe, is built on Windows by
 #                                                   scripts/package-client-installer.ps1)
 #     TapQueue_client_<version>_linux-x64.tar.gz    tapqueue-client, version.txt, example config, systemd unit, desktop
-#                                                   entry, install-client.sh; also what `clients publish` takes
+#                                                   entry, install-client.sh; also what servers hand out to Linux PCs
 #   scripts/package.sh           both
 #
 # Each run writes SHA256SUMS for what it built. Used by CI on every push and by the release workflow on tags.
@@ -57,7 +57,7 @@ fi
 
 if [ "$what" != server ]; then
     publish TapQueue.Client.Windows win-x64 client -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true
-    # `tapqueue-admin clients publish` reads this; it matches what the client reports (TapQueueVersion.Current).
+    # Servers label the build with this; it matches what the client reports (TapQueueVersion.Current).
     echo "$client_version+$(git rev-parse --short=7 HEAD)" > "$out/client/version.txt"
     (cd "$out/client" && zip -q "../../$dist/TapQueue_client_${client_version}_win-x64.zip" TapQueueClient.exe version.txt)
 

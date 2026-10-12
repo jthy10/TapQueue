@@ -45,9 +45,9 @@ tapqueue-admin stations reset-token <id>       Issue a new station token
 tapqueue-admin stations remove <id>            Delete a station
 
 tapqueue-admin clients                         Signed-in clients and their versions
-tapqueue-admin clients publish <zip|tar.gz|program> [--platform win-x64|linux-x64] [--version-name]
-                                               Push a client build to every PC of its platform
-                                               (told from the program itself)
+tapqueue-admin clients update [--check]        Publish the newest client release from GitHub
+tapqueue-admin stations update [--check]       The same for the station build that goes with the server
+tapqueue-admin server downgrade [<version>]    Older releases to go back to; with one, go back to it
 tapqueue-admin clients builds                  Published client builds
 tapqueue-admin clients sign-out <session>      Sign a client out; jobs from that PC stop going to them
 

@@ -93,14 +93,15 @@ sudo tapqueue-admin clients update     # the newest release on GitHub, Windows a
 sudo tapqueue-admin clients            # each PC's version; "(updating)" until it has installed it
 ```
 
-For a build that isn't a GitHub release, or a server that can't reach GitHub, upload it instead:
-`sudo tapqueue-admin clients publish TapQueue_client_X.Y.Z_win-x64.zip`.
+Builds only come from TapQueue's releases on GitHub: there's no way to upload one to the server
+(since server 0.17), so nobody with access to the console can hand PCs a program of their own. The
+server has to be able to reach `api.github.com` and `github.com` to publish an update.
 
 The TapQueue service on each PC checks with the server once a minute. If its
 `TapQueueClient.exe` differs from the newest published build, it downloads the build (the server
 log shows each PC doing so), checks its SHA-256, replaces the exe and restarts. The tray apps
-notice within a minute, restart into the new version and say "TapQueue updated". Publishing an
-older build rolls PCs back the same way.
+notice within a minute, restart into the new version and say "TapQueue updated". Going back to an
+older release works the same way: see [Downgrading](install-server.md#downgrading).
 
 To update a PC without waiting, choose **Check for updates** in the tray menu. The tray app asks
 the TapQueue service (over the local pipe `\\.\pipe\TapQueue`) to check with the server now; the
@@ -108,8 +109,10 @@ service installs the published build if it differs and the tray app restarts int
 says the PC is up to date, that the server publishes no client, or why the update failed. It also
 retries a build that failed to install before. If the service isn't running, it says so.
 
-The download is checked against the hash the server sends, which catches damaged downloads but
-not a tampered server or network. Signed builds and HTTPS are planned before production use.
+The server checks each release it downloads against the release's `SHA256SUMS` on GitHub. A PC
+checks its download against the hash the server sends, which catches a damaged download. PCs
+trust their server: someone who took over the server machine itself could hand them another
+program. Use HTTPS ([tls.md](tls.md)) so nobody on the network between can.
 
 ## Crash reports
 

@@ -63,8 +63,8 @@ Clients (`client-vX.Y.Z`):
 | File | Contents |
 |---|---|
 | `TapQueue_client_X.Y.Z.exe` | The Windows installer: what people download and run on a PC |
-| `TapQueue_client_X.Y.Z_win-x64.zip` | `TapQueueClient.exe` and `version.txt`, for `tapqueue-admin clients publish` |
-| `TapQueue_client_X.Y.Z_linux-x64.tar.gz` | `tapqueue-client`, `version.txt`, example config, systemd unit, desktop entry, `install-client.sh`; installed by `install.sh client` and published with `tapqueue-admin clients publish` |
+| `TapQueue_client_X.Y.Z_win-x64.zip` | `TapQueueClient.exe` and `version.txt`: what servers download and hand out to PCs |
+| `TapQueue_client_X.Y.Z_linux-x64.tar.gz` | `tapqueue-client`, `version.txt`, example config, systemd unit, desktop entry, `install-client.sh`; installed by `install.sh client`, and what servers download and hand out to Linux PCs |
 | `SHA256SUMS` | checksums of the above |
 
 Build the server and station archives locally with `scripts/package.sh server`, the client zip

@@ -93,7 +93,7 @@ sudo tapqueue-admin clients update     # the newest release on GitHub, Windows a
 sudo tapqueue-admin workstations       # each PC's OS and version; "(behind)" until it has installed it
 ```
 
-To upload a build yourself instead: `sudo tapqueue-admin clients publish TapQueue_client_X.Y.Z_linux-x64.tar.gz`.
+Builds only come from TapQueue's releases on GitHub; there's no way to upload one to the server.
 
 Windows and Linux builds are published separately; each PC installs the newest build for its own
 platform. The service checks with the server once a minute, downloads a build that differs from
