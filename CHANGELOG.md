@@ -11,6 +11,8 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-11
+
 ### Added
 - Backups. The server backs up its database, TLS certificate and Active Directory CA into
   `data_dir/backups` every day at 02:00 (the newest 7 are kept) and before an upgrade changes the
@@ -338,7 +340,8 @@ First working version.
   readers. A tap releases the user's held jobs to the station's printer.
 - Badge enrollment by an admin (`badges add --last-tap`).
 
-[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.10.0...HEAD
+[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.11.0...HEAD
+[0.11.0]: https://github.com/jthy10/TapQueue/compare/server-v0.10.0...server-v0.11.0
 [0.10.0]: https://github.com/jthy10/TapQueue/compare/server-v0.9.5...server-v0.10.0
 [0.9.5]: https://github.com/jthy10/TapQueue/compare/server-v0.9.0...server-v0.9.5
 [0.9.0]: https://github.com/jthy10/TapQueue/compare/server-v0.8.0...server-v0.9.0
