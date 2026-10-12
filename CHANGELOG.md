@@ -29,6 +29,15 @@ breaking changes; they're listed under **Changed** with what to do.
   two-sided job released at a printer that can't prints in black and white or on one side, the
   release result says so (`note`), and the job is recorded as it came out. See
   [docs/how-it-works.md](docs/how-it-works.md#what-a-queue-offers).
+- **A screen at the station.** A tap that found nothing waiting, one that was refused (over a
+  page limit, a printer that can't print, not allowed there) and a card nobody has all looked the
+  same at the printer: nothing happened. Each station now has a screen page that any browser
+  next to the reader can show, on a tablet, an old phone or a monitor: green with a tick for
+  printing, amber for nothing waiting, red with the reason for a refusal or an unknown card, and
+  between taps whether the printer is ready. **Screen link** on a station in the console, or
+  `tapqueue-admin stations screen <id>`, makes its address. The station program isn't involved,
+  so it works with stations on any version. Database schema 21. See
+  [docs/release-station.md](docs/release-station.md#a-screen-at-the-station).
 - **Signed updates.** Client and station builds are signed with a release key when they're
   packaged, and the server keeps the signature and hands it out with the build. Stations from this
   version, and clients from 0.11, install nothing from their server that isn't signed with a key

@@ -82,10 +82,12 @@ Each phase ships on its own and leaves the console usable.
    uptime) and get settings, commands (restart) and the published build back. Every setting
    except the server address and token can be set from the console, and a station can be taken
    out of service with a message. Station builds are published and installed like client builds.
-   Not done: tap feedback. The pcProx's LED and beeper are only reachable through the
-   configuration commands that stop it reading cards, sound would need ALSA installed on every
-   station, and the HP M404n ignores PJL panel messages. A screen or USB status light at the
-   station is the likely way; `feedback` in station settings is reserved for it.
+   Tap feedback is a screen: **Screen link** on a station makes the address of a page that shows
+   what each tap did ([release-station.md](release-station.md#a-screen-at-the-station)). The
+   station box itself still gives none: the pcProx's LED and beeper are only reachable through
+   the configuration commands that stop it reading cards, sound would need ALSA installed on
+   every station, and the HP M404n ignores PJL panel messages. A USB status light is the likely
+   next step; `feedback` in station settings is reserved for it.
 5. **Workstation and server control.** *(Done.)* The TapQueue service on each PC checks in once
    a minute, so Workstations lists PCs with their client version, a failed update's error and
    who's signed in. Sign a person out of a PC (the tray app stays signed out and their jobs stop

@@ -60,6 +60,10 @@ const string Usage = """
                                                      Make a station release to a different printer
       tapqueue-admin stations reset-token <station-id>
                                                      Issue a new station token (the old one stops working)
+      tapqueue-admin stations screen <station-id> [off]
+                                                     A link to the station's screen page, for a tablet or monitor
+                                                     next to the reader: it shows what each tap did. A new link
+                                                     ends the old one; "off" ends it without a new one
       tapqueue-admin stations remove <station-id>    Delete a station
 
       tapqueue-admin clients                         Signed-in clients and the version each runs
@@ -247,6 +251,9 @@ try
         ("stations", "add") when positional.Count == 4 => await AddStation(positional[2], positional[3]),
         ("stations", "move") when positional.Count == 4 => await MoveStation(positional[2], positional[3]),
         ("stations", "reset-token") when positional.Count == 3 => await ResetStationToken(positional[2]),
+        ("stations", "screen") when positional.Count == 3 => await StationScreenLink(positional[2]),
+        ("stations", "screen") when positional.Count == 4 && positional[3] == "off" =>
+            await Delete($"stations/{Uri.EscapeDataString(positional[2])}/screen", $"Station {positional[2]}'s screen link no longer works."),
         ("stations", "remove") when positional.Count == 3 => await RemoveStation(positional[2]),
         ("clients", null) => await ListClients(),
         ("clients", "publish") when positional.Count == 3 => await PublishClient(positional[2], options.GetValueOrDefault("--version-name"), options.GetValueOrDefault("--platform")),
@@ -753,6 +760,15 @@ async Task<int> ResetStationToken(string id)
     var result = await Send<StationTokenResponse>(HttpMethod.Post, $"stations/{Uri.EscapeDataString(id)}/token", null);
     if (result is null) return 1;
     Console.WriteLine($"New token for station {result.Station.Id}: {result.Token}");
+    return 0;
+}
+
+async Task<int> StationScreenLink(string id)
+{
+    var link = await Send<StationScreenLinkResponse>(HttpMethod.Post, $"stations/{Uri.EscapeDataString(id)}/screen", null);
+    if (link is null) return 1;
+    Console.WriteLine($"Open this on the device next to station {link.StationId}, full screen. Any earlier link has stopped working:");
+    Console.WriteLine($"  {serverUrl.TrimEnd('/')}{link.Path}");
     return 0;
 }
 

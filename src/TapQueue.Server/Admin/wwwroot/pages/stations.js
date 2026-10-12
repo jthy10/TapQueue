@@ -79,6 +79,7 @@ export async function render(root, ctx) {
       footer: [
         h("div", { class: "left" }, button("Remove", { kind: "ghost danger", onclick: () => remove(s) })),
         button("New token", { iconName: "key", onclick: () => resetToken(s) }),
+        button("Screen link", { onclick: () => screenLink(s) }),
         button("Restart", { iconName: "refresh", onclick: () => restart(s) }),
         set.enabled
           ? button("Take out of service", { onclick: () => outOfService(s) })
@@ -179,6 +180,20 @@ export async function render(root, ctx) {
       submitLabel: "Make new token",
       danger: true,
       onSubmit: async () => stationConfig(await api.post(`stations/${enc(s.id)}/token`)),
+    });
+  }
+
+  function screenLink(s) {
+    formDialog({
+      title: `Screen for ${title(s)}`,
+      description: "A page for a tablet, phone or monitor next to the reader. It shows what each tap did (printing, nothing waiting, why it was refused) and whether the printer is ready. Making a link ends any earlier one.",
+      submitLabel: "Make screen link",
+      onSubmit: async () => {
+        const link = await api.post(`stations/${enc(s.id)}/screen`);
+        return h("div", null,
+          h("p", { style: "margin:0 0 10px" }, "Open this on the device at the station, full screen:"),
+          secret(location.origin + link.path, "Anyone with the link can see what's shown at this station, so it won't be shown again."));
+      },
     });
   }
 

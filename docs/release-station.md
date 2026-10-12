@@ -82,6 +82,39 @@ take (`printer-send`, 300 seconds).
 > Card numbers from cheap 125 kHz and MIFARE readers are easy to copy, just like a building badge.
 > TapQueue treats a tap as "this person is standing at the printer", nothing stronger.
 
+## A screen at the station
+
+A reader by itself tells nobody anything: a tap that found nothing waiting, one that was refused
+and a card nobody has all look the same, which is nothing happening. Put a screen next to it.
+
+Every station has a screen page on the server. Anything with a browser will do: a tablet on the
+wall, an old phone on a stand, a monitor on the reader box with a browser in kiosk mode. The
+station program isn't involved, so there's nothing to install or update on the station.
+
+1. In the console, open the station and choose **Screen link**, or run
+   `tapqueue-admin stations screen <station-id>`. You get an address like
+   `https://tapqueue-server:8632/screen/office?key=…`.
+2. Open it on the device at the station, full screen.
+
+Between taps it says **Tap your badge to print**, or that the printer can't print right now and
+why (a jam, no paper), or the station's out-of-service message. After a tap it shows what
+happened for a few seconds:
+
+| Screen | Means |
+|---|---|
+| green, ✓ | "Hi Jake, printing 2 jobs." Also when a big job is still on its way to the printer. |
+| amber, – | The card's owner has nothing waiting. |
+| red, ! | The release was refused, with the reason: over the page limit, the printer can't print, the printer doesn't take the job's paper size. Jobs stay held. |
+| red, ✕ | The person isn't allowed to print at this printer, or their account is disabled. |
+| red, ? | Nobody has this card. |
+
+The colour is never the only signal; the mark and the sentence say the same.
+
+The link carries a key, and anyone who has it can see what's shown at that station, people's
+display names included. It's shown once. Making a new link ends the old one, and
+`tapqueue-admin stations screen <station-id> off` ends it without making another. The page needs
+to reach the server, so use the server's `https://` address if it has one.
+
 ## Managing stations from the server
 
 Once a station has its server address and token, everything else can be set from the admin

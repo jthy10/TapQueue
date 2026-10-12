@@ -22,9 +22,11 @@ checklist; [admin-ui.md](admin-ui.md#roadmap) has the admin console's own phases
    for which PC user runs each tray app, so the job goes to the person who printed it. Works on
    shared PCs, terminal servers and behind NAT. Address matching stays for older clients until
    it's turned off.
-6. **Feedback at the station.** A tap with nothing to print, a refused release and an
-   over-limit user all look the same today: nothing happens. A USB status light or a small
-   kiosk screen; the `feedback` station setting is reserved for it.
+6. **Feedback at the station.** *(A screen: done in 0.17.0, see
+   [release-station.md](release-station.md#a-screen-at-the-station).)* A tap with nothing to
+   print, a refused release and an over-limit user all looked the same: nothing happened. Any
+   browser next to the reader can now show what each tap did. Still to do: a USB status light or
+   a sound for stations without a screen; the `feedback` station setting is reserved for it.
 
 ## What people expect from print management
 
