@@ -18,7 +18,8 @@ $newSha = (Get-FileHash $new -Algorithm SHA256).Hash.ToLower()
 if ($oldSha -eq $newSha) { throw '-From and -To are the same build.' }
 $port = 18631
 $config = Join-Path $dir 'client.toml'
-Set-Content $config "server_url = `"http://127.0.0.1:$port`"`ninstall_printers = false"
+# The service only installs a build that its release lists. The stand-in server plays the releases too.
+Set-Content $config "server_url = `"http://127.0.0.1:$port`"`ninstall_printers = false`nreleases_url = `"http://127.0.0.1:$port/releases`""
 $checkIns = Join-Path $dir 'check-ins.txt'
 
 # The stand-in server: offers the new build at every check-in, serves it, and records each
@@ -44,6 +45,9 @@ $server = Start-Job -ArgumentList $port, $new, $newSha, $checkIns -ScriptBlock {
         }
         elseif ($request.Url.AbsolutePath -eq "/api/v1/client/builds/$newSha") {
             $bytes = [System.IO.File]::ReadAllBytes($new)
+        }
+        elseif ($request.Url.AbsolutePath -eq '/releases/client-v9.9.9/SHA256SUMS.programs') {
+            $bytes = [System.Text.Encoding]::UTF8.GetBytes("$newSha  TapQueueClient.exe`n")
         }
         else {
             $response.StatusCode = 404

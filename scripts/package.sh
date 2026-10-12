@@ -14,7 +14,7 @@
 #                                                   entry, install-client.sh; also what servers hand out to Linux PCs
 #   scripts/package.sh           both
 #
-# Each run writes SHA256SUMS for what it built. Used by CI on every push and by the release workflow on tags.
+# Each run writes SHA256SUMS.programs (the programs' own checksums, scripts/program-sums.sh) and SHA256SUMS for what it built. Used by CI on every push and by the release workflow on tags.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -67,5 +67,7 @@ if [ "$what" != server ]; then
     tarball client-linux "TapQueue_client_${client_version}_linux-x64"
 fi
 
+# What PCs and stations check an offered build against; goes on the release with the archives.
+scripts/program-sums.sh "$dist"
 (cd "$dist" && sha256sum -- * > SHA256SUMS)
 ls -l "$dist"

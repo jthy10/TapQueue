@@ -73,7 +73,7 @@ internal sealed class StationRuntime(HttpClient http, StationConfig local, Actio
                 && DateTimeOffset.UtcNow - _lastUpdateAttempt > UpdateRetry)
             {
                 _lastUpdateAttempt = DateTimeOffset.UtcNow;
-                if (await SelfUpdate.InstallAsync(http, local.ServerUrl, build, log, ct))
+                if (await SelfUpdate.InstallAsync(http, local.ServerUrl, local.ReleasesUrl, build, log, ct))
                     Restart($"installed station build {build.Version}");
             }
         }
@@ -123,8 +123,19 @@ internal sealed class StationRuntime(HttpClient http, StationConfig local, Actio
 /// </summary>
 internal static class SelfUpdate
 {
-    public static async Task<bool> InstallAsync(HttpClient http, string serverUrl, StationBuildDto build, Action<string> log, CancellationToken ct)
+    public static async Task<bool> InstallAsync(HttpClient http, string serverUrl, string releasesUrl, StationBuildDto build, Action<string> log, CancellationToken ct)
     {
+        // The server passes builds on; this station asks TapQueue's releases itself whether this is one of theirs.
+        using (var releases = ReleaseCheck.CreateHttpClient())
+        {
+            var check = await ReleaseCheck.VerifyAsync(releases, releasesUrl, ReleaseCheck.StationTag, build.Version, "tapqueue-station", build.Sha256, ct);
+            if (!check.Ok)
+            {
+                log(check.Problem!);
+                return false;
+            }
+        }
+
         var stateDir = Environment.GetEnvironmentVariable("STATE_DIRECTORY");
         if (string.IsNullOrEmpty(stateDir))
         {

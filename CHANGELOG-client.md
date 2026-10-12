@@ -13,6 +13,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 From this release the clients carry the same version number as the server and station, so one
 number says what a site runs. This one is 0.17.0; there is no client 0.11 to 0.16.
 
+### Changed
+- **Updates are checked against GitHub before they're installed.** The TapQueue service used to
+  install whatever build its server published, checking only a checksum the server itself sent.
+  It now fetches the release's list of programs (`SHA256SUMS.programs`) from GitHub and installs
+  the build only if it's on it, so a server that was taken over can pass on TapQueue releases but
+  can't run a program of its own on every PC. PCs need to reach `github.com` to update; one that
+  can't says so under **Workstations** and tries again every 10 minutes. `releases_url` in
+  `client.toml` is for sites that build their own TapQueue.
+
 ### Added
 - **My print queue** says whether a job you released is still **printing** or has **printed**,
   with a 0.17 server and a printer that can be asked.

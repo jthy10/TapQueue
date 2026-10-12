@@ -64,7 +64,8 @@ areas cover.
 
 An **admin of Updates** decides when every PC and station moves to the newest TapQueue release.
 They can't hand out a program of their own: builds only come from TapQueue's releases on GitHub,
-which the server downloads and checks itself, and nothing can be uploaded (since 0.17). Going back
+which the server downloads and checks itself, nothing can be uploaded, and every PC and station
+checks what it's offered against the release on GitHub before installing it (since 0.17). Going back
 to an older release is on the Server page and needs an admin of Server.
 
 The rule about people with admin rights stops a People admin from adding themselves to an admin

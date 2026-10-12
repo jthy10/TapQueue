@@ -12,6 +12,12 @@ public sealed class StationConfig
     /// </summary>
     public string ServerCertFingerprint { get; set; } = "";
 
+    /// <summary>
+    /// Where this station checks the builds its server offers against TapQueue's releases. Empty:
+    /// TapQueue's own releases on GitHub. Only for a site that builds TapQueue itself.
+    /// </summary>
+    public string ReleasesUrl { get; set; } = "";
+
     /// <summary>From `tapqueue-admin stations add`.</summary>
     public string Token { get; set; } = "";
 

@@ -15,6 +15,11 @@ server_cert_fingerprint = ""
 # `tapqueue-admin server enrollment-code new`). Only needed until this PC has registered.
 enrollment_code = ""
 
+# Before installing an update its server offers, this PC checks it against TapQueue's releases on
+# GitHub, so it needs to reach github.com. Leave empty unless you build TapQueue yourself and
+# publish your releases elsewhere: then the address their files are under, <url>/client-vX.Y.Z/.
+releases_url = ""
+
 # Your TapQueue username. Leave empty to use the name you sign in to the PC with.
 username = ""
 

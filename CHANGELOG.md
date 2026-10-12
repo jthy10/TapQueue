@@ -53,6 +53,11 @@ breaking changes; they're listed under **Changed** with what to do.
   `/api/v1/admin/client-builds` and `/station-builds`. Nobody with access to the console can hand
   PCs and stations a program of their own any more. Use **Check for updates** (or
   `tapqueue-admin clients update` and `stations update`), which needs the server to reach GitHub.
+- **Stations check an update against GitHub before installing it.** A station used to install
+  whatever build its server handed out. It now fetches the release's list of programs
+  (`SHA256SUMS.programs`) from GitHub itself and installs the build only if it's on it, so a
+  server that was taken over can't run a program of its own on the stations. Stations need to
+  reach `github.com` to update. `releases_url` in `station.toml` is for sites that build their own.
 - **The clients share this version number** from now on (see the clients' changelog).
 
 ## [0.16.0] - 2026-10-12

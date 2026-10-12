@@ -29,6 +29,13 @@ public sealed class ClientConfig
     /// </summary>
     public string EnrollmentCode { get; set; } = "";
 
+    /// <summary>
+    /// Where this PC checks the builds its server offers against TapQueue's releases
+    /// (<see cref="ReleaseCheck"/>). Empty: TapQueue's own releases on GitHub. Only for a site that
+    /// builds TapQueue itself and publishes its releases somewhere else.
+    /// </summary>
+    public string ReleasesUrl { get; set; } = "";
+
     /// <summary>Let the TapQueue service add the server's print queues to this PC as printers.</summary>
     public bool InstallPrinters { get; set; } = true;
 

@@ -8,6 +8,11 @@ server_url = "https://tapqueue-server:8632"
 # shows it). Leave empty to trust the certificate seen the first time the station connects.
 server_cert_fingerprint = ""
 
+# Before installing an update its server offers, the station checks it against TapQueue's releases
+# on GitHub, so it needs to reach github.com. Leave empty unless you build TapQueue yourself and
+# publish your releases elsewhere: then the address their files are under, <url>/server-vX.Y.Z/.
+releases_url = ""
+
 # From `tapqueue-admin stations add <station-id> <printer-id>`. The server decides which printer
 # this station releases to.
 token = ""

@@ -8,13 +8,25 @@ namespace TapQueue.Client;
 /// <summary>
 /// Installs the client build the server says every PC of this platform should run. Run by the
 /// TapQueue service, which can write to where the client is installed (Program Files, /opt). If
-/// the running program's SHA-256 differs from the server's build, it downloads the build next to
-/// it, verifies it and swaps the files (Windows allows renaming a running exe). An installed Linux
+/// the running program's SHA-256 differs from the server's build, it first checks that the build is
+/// the client of a TapQueue release, by asking where releases are published itself
+/// (<see cref="ReleaseCheck"/>): the server passes builds on, it doesn't get to choose what runs
+/// here. Then it downloads the build next to the running program, verifies it and swaps the files
+/// (Windows allows renaming a running exe). An installed Linux
 /// client instead adds the build next to the others and repoints the launcher (<see cref="LinuxBuilds"/>).
 /// Tray apps notice their program changed and restart themselves; the service restarts itself.
 /// </summary>
-public sealed class ClientUpdater(HttpClient http, ILogger logger)
+/// <param name="http">For the TapQueue server.</param>
+/// <param name="releases">For asking where TapQueue's releases are published.</param>
+/// <param name="releasesUrl">client.toml's releases_url; empty for TapQueue's own releases.</param>
+public sealed class ClientUpdater(HttpClient http, ILogger logger, HttpClient releases, string? releasesUrl = null)
 {
+    /// <summary>A build that couldn't be checked because the releases couldn't be reached is tried again after this long.</summary>
+    private static readonly TimeSpan RecheckAfter = TimeSpan.FromMinutes(10);
+
+    private static string ProgramName => OperatingSystem.IsWindows() ? "TapQueueClient.exe" : "tapqueue-client";
+
+    private (string Sha256, DateTimeOffset At)? _unchecked;
     private readonly string _exePath = Environment.ProcessPath!;
     private readonly string? _linuxLauncher = LinuxBuilds.LauncherFor(Environment.ProcessPath!);
     private string? _ownSha256;
@@ -27,7 +39,7 @@ public sealed class ClientUpdater(HttpClient http, ILogger logger)
     public async Task<string> OwnSha256Async(CancellationToken ct) => _ownSha256 ??= await HashFileAsync(_exePath, ct);
 
     /// <summary>An admin asked for an update now: try the build again even if it failed before.</summary>
-    public void RetryFailed() => _failedSha256 = null;
+    public void RetryFailed() => (_failedSha256, _unchecked) = (null, null);
 
     private string NewExePath => _exePath + ".new";
     private string OldExePath => _exePath + ".old";
@@ -56,6 +68,22 @@ public sealed class ClientUpdater(HttpClient http, ILogger logger)
             LastError = null;
             return UpdateOutcome.UpToDate;
         }
+
+        if (_unchecked is { } waiting && waiting.Sha256 == build.Sha256 && DateTimeOffset.UtcNow - waiting.At < RecheckAfter)
+            return UpdateOutcome.Failed;
+        var check = await ReleaseCheck.VerifyAsync(releases, releasesUrl, ReleaseCheck.ClientTag, build.Version, ProgramName, build.Sha256, ct);
+        if (!check.Ok)
+        {
+            // Not being able to ask is tried again in a while; not being in the release is final for this build.
+            if (check.TryAgain)
+                _unchecked = (build.Sha256, DateTimeOffset.UtcNow);
+            else
+                _failedSha256 = build.Sha256;
+            LastError = check.Problem;
+            logger.LogError("Not installing client {Version}: {Error}", build.Version, check.Problem);
+            return UpdateOutcome.Failed;
+        }
+        _unchecked = null;
 
         logger.LogInformation("Installing TapQueue client {Version} (running {Current})", build.Version, Shared.TapQueueVersion.Current);
         try

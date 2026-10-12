@@ -43,6 +43,23 @@ the console, or `sudo tapqueue-admin clients update` on the server. After a serv
 upgrade, the same under Release stations (`tapqueue-admin stations update`). Both look for the
 asset names below, so keep them as they are.
 
+## What PCs and stations check
+
+PCs and stations install new builds from their TapQueue server by themselves, as SYSTEM or root.
+So that a server can only pass releases on, each one checks what it's offered against the release
+itself: it downloads `SHA256SUMS.programs` for that version from GitHub
+(`…/releases/download/client-vX.Y.Z/` for a PC, `server-vX.Y.Z/` for a station) and installs the
+build only if its SHA-256 is listed there under its program's name.
+
+- `scripts/program-sums.sh dist` writes that file from the archives in `dist/`; `scripts/package.sh`
+  and the `release` workflow run it. **A release without it can't be installed from**, so keep it
+  attached, and don't replace a release's archives without replacing it too.
+- Whoever can publish releases in the repository decides what every site's PCs will run. Protect
+  the GitHub account accordingly (two-factor sign-in, no spare tokens with release rights).
+- A site that builds TapQueue itself publishes its releases the same way (same tags, same file)
+  anywhere that serves HTTPS, and sets `releases_url` in `client.toml` and `station.toml` to the
+  address the tags' folders are under.
+
 ## What a release contains
 
 Server and station (`server-vX.Y.Z`):
@@ -51,6 +68,7 @@ Server and station (`server-vX.Y.Z`):
 |---|---|
 | `TapQueue_server_X.Y.Z_linux-x64.tar.gz` | `tapqueue-server`, `tapqueue-admin`, `libe_sqlite3.so`, example config, systemd units, `install-server.sh`, `update-server.sh` |
 | `TapQueue_station_X.Y.Z_linux-x64.tar.gz` | `tapqueue-station`, example config, systemd unit, pcProx udev rule, `install-station.sh` |
+| `SHA256SUMS.programs` | the checksum of `tapqueue-station` itself, which stations check before installing it |
 | `SHA256SUMS` | checksums of the above |
 
 `install.sh` in the repository root downloads the newest of these and runs the installer in it.
@@ -65,6 +83,7 @@ Clients (`client-vX.Y.Z`):
 | `TapQueue_client_X.Y.Z.exe` | The Windows installer: what people download and run on a PC |
 | `TapQueue_client_X.Y.Z_win-x64.zip` | `TapQueueClient.exe` and `version.txt`: what servers download and hand out to PCs |
 | `TapQueue_client_X.Y.Z_linux-x64.tar.gz` | `tapqueue-client`, `version.txt`, example config, systemd unit, desktop entry, `install-client.sh`; installed by `install.sh client`, and what servers download and hand out to Linux PCs |
+| `SHA256SUMS.programs` | the checksums of `TapQueueClient.exe` and `tapqueue-client` themselves, which PCs check before installing them |
 | `SHA256SUMS` | checksums of the above |
 
 Build the server and station archives locally with `scripts/package.sh server`, the client zip

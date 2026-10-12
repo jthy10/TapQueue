@@ -109,10 +109,17 @@ service installs the published build if it differs and the tray app restarts int
 says the PC is up to date, that the server publishes no client, or why the update failed. It also
 retries a build that failed to install before. If the service isn't running, it says so.
 
-The server checks each release it downloads against the release's `SHA256SUMS` on GitHub. A PC
-checks its download against the hash the server sends, which catches a damaged download. PCs
-trust their server: someone who took over the server machine itself could hand them another
-program. Use HTTPS ([tls.md](tls.md)) so nobody on the network between can.
+**Every PC checks an update against GitHub itself** (clients from 0.17). The server only passes
+builds on. Before installing one, the TapQueue service fetches the list of programs in that
+TapQueue release straight from GitHub (`SHA256SUMS.programs`, attached to every release) and
+installs the build only if its SHA-256 is on it. Someone who took over the server could offer PCs
+any TapQueue release, but not a program of their own.
+
+- PCs need to reach `github.com` (HTTPS) to update. One that can't installs nothing, says why
+  under **Workstations** in the console, and tries again every 10 minutes.
+- A build that isn't in its release is refused for good, and **Workstations** shows that too.
+- If you build TapQueue yourself, publish your releases with the same files and set
+  `releases_url` in `client.toml` to where they are ([releasing](releasing.md#what-pcs-and-stations-check)).
 
 ## Crash reports
 
