@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using System.Text.Json;
 using System.Threading.Channels;
 using TapQueue.Shared;
+using TapQueue.Shared.Api;
 
 namespace TapQueue.Client;
 
@@ -14,6 +15,12 @@ public sealed record PrinterRefreshReply(bool Success, int Printers, string? Err
 
 /// <summary>Whether the service vouched for the tray app's session with the server, or why it couldn't.</summary>
 public sealed record SessionVerifyReply(bool Success, string? Error);
+
+/// <summary>
+/// The session the service signed a tray app's PC user in with (<see cref="ClientSignIn.Workstation"/>), or why it couldn't.
+/// </summary>
+/// <param name="Refused">The server said no (not a TapQueue user, disabled): trying again won't help until an admin changes something.</param>
+public sealed record ServiceSignInReply(bool Success, string? Error, ClientSessionResponse? Session = null, bool Refused = false);
 
 /// <summary>
 /// "Check for updates" in the tray menu. The tray app runs as the signed-in user and can't write
@@ -29,15 +36,22 @@ public sealed record SessionVerifyReply(bool Success, string? Error);
 /// then its session token on a second line): the service asks the operating system which PC user is at
 /// the other end, tells the server with the PC's key (<see cref="WorkstationKey"/>), and answers with a
 /// <see cref="SessionVerifyReply"/>. That's how the server knows whose jobs come from this PC.
+/// When the server signs people in as their PC's user (<see cref="ClientSignIn.Workstation"/>), the tray
+/// app doesn't sign in at all: it asks the service to (<see cref="SignInCommand"/>), which finds the PC
+/// user the same way, signs them in with the PC's key and hands the session back in a <see cref="ServiceSignInReply"/>.
 /// </summary>
 public static class UpdateCheck
 {
     public const string CheckCommand = "check-updates";
     public const string RefreshPrintersCommand = "refresh-printers";
     public const string VerifySessionCommand = "verify-session";
+    public const string SignInCommand = "sign-in";
 
     /// <summary>Service side: vouches for session <c>sessionToken</c>, run by <c>pcUser</c>, with the server.</summary>
     public delegate Task<SessionVerifyReply> SessionVerifier(string sessionToken, string pcUser, CancellationToken ct);
+
+    /// <summary>Service side: signs <c>pcUser</c> in with the server and returns their session.</summary>
+    public delegate Task<ServiceSignInReply> SessionSigner(string pcUser, CancellationToken ct);
 
     /// <summary>A check (or printer refresh) asked for by a tray app, waiting for the service's next check-in.</summary>
     public sealed class Request
@@ -59,8 +73,9 @@ public static class UpdateCheck
     /// (null if it can't tell). Only called once the tray app has written its request.
     /// </param>
     /// <param name="verify">Vouches for a tray app's session with the server; without it, <see cref="VerifySessionCommand"/> is ignored.</param>
+    /// <param name="signIn">Signs a tray app's PC user in with the server; without it, <see cref="SignInCommand"/> is ignored.</param>
     public static async Task HandleAsync(Stream connection, ChannelWriter<Request> requests, ILogger logger, CancellationToken ct,
-        Func<string?>? pcUser = null, SessionVerifier? verify = null)
+        Func<string?>? pcUser = null, SessionVerifier? verify = null, SessionSigner? signIn = null)
     {
         Request? request = null;
         await using (connection)
@@ -79,6 +94,14 @@ public static class UpdateCheck
                         ? new SessionVerifyReply(false, "The TapQueue service couldn't tell which PC user is asking.")
                         : await verify(token!, user, ct);
                     await WriteReplyAsync(connection, JsonSerializer.SerializeToUtf8Bytes(verified, TapQueueJson.Options));
+                    return;
+                }
+                if (command == SignInCommand && signIn is not null && pcUser is not null)
+                {
+                    var signedIn = pcUser() is { } user
+                        ? await signIn(user, ct)
+                        : new ServiceSignInReply(false, "The TapQueue service couldn't tell which PC user is asking.");
+                    await WriteReplyAsync(connection, JsonSerializer.SerializeToUtf8Bytes(signedIn, TapQueueJson.Options));
                     return;
                 }
                 if (command is not (CheckCommand or RefreshPrintersCommand))
@@ -146,6 +169,10 @@ public static class UpdateCheck
     public static Task<SessionVerifyReply> AskVerifySessionAsync(Stream connection, string sessionToken, CancellationToken ct) =>
         SendAsync<SessionVerifyReply>(connection, VerifySessionCommand + "\n" + sessionToken, ct);
 
+    /// <summary>Tray side: asks the service connected on <paramref name="connection"/> to sign this PC user in.</summary>
+    public static Task<ServiceSignInReply> AskSignInAsync(Stream connection, CancellationToken ct) =>
+        SendAsync<ServiceSignInReply>(connection, SignInCommand, ct);
+
     private static async Task<T> SendAsync<T>(Stream connection, string command, CancellationToken ct)
     {
         await using (var writer = new StreamWriter(connection, leaveOpen: true))
@@ -166,5 +193,5 @@ public interface IUpdateCheckListener
     /// Accepts connections until <paramref name="ct"/> is cancelled, handing each to <see cref="UpdateCheck.HandleAsync"/>
     /// along with a way to tell which PC user connected.
     /// </summary>
-    Task ServeAsync(ChannelWriter<UpdateCheck.Request> requests, UpdateCheck.SessionVerifier verify, ILogger logger, CancellationToken ct);
+    Task ServeAsync(ChannelWriter<UpdateCheck.Request> requests, UpdateCheck.SessionVerifier verify, UpdateCheck.SessionSigner signIn, ILogger logger, CancellationToken ct);
 }

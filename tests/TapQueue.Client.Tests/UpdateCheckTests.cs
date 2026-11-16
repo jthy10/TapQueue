@@ -78,6 +78,46 @@ public sealed class UpdateCheckTests
     }
 
     [Fact]
+    public async Task SignInIsForTheOsUserAndHandsTheirSessionBack()
+    {
+        var (service, tray) = Connect();
+        var requests = Channel.CreateUnbounded<UpdateCheck.Request>();
+        string? asked = null;
+        var session = new TapQueue.Shared.Api.ClientSessionResponse("session-token", new TapQueue.Shared.Api.UserDto(7, "alice", "Alice Anders"), [], [], 60);
+        var handling = UpdateCheck.HandleAsync(service, requests.Writer, NullLogger.Instance, CancellationToken.None,
+            pcUser: () => "CORP\\alice",
+            signIn: (pcUser, _) =>
+            {
+                asked = pcUser;
+                return Task.FromResult(new ServiceSignInReply(true, null, session));
+            });
+
+        var reply = await UpdateCheck.AskSignInAsync(tray, CancellationToken.None);
+        await handling;
+
+        Assert.True(reply.Success);
+        Assert.Equal("CORP\\alice", asked);
+        Assert.Equal("session-token", reply.Session!.SessionToken);
+        Assert.Equal("alice", reply.Session.User.Username);
+        Assert.False(requests.Reader.TryRead(out _)); // not a check-in
+    }
+
+    [Fact]
+    public async Task SignInFailsWhenTheServiceCantTellWhoIsAsking()
+    {
+        var (service, tray) = Connect();
+        var requests = Channel.CreateUnbounded<UpdateCheck.Request>();
+        var handling = UpdateCheck.HandleAsync(service, requests.Writer, NullLogger.Instance, CancellationToken.None,
+            pcUser: () => null,
+            signIn: (_, _) => throw new InvalidOperationException("must not be called"));
+
+        var reply = await UpdateCheck.AskSignInAsync(tray, CancellationToken.None);
+        await handling;
+        Assert.False(reply.Success);
+        Assert.Null(reply.Session);
+    }
+
+    [Fact]
     public async Task ALineThatNeverEndsIsDroppedNotReadIntoMemory()
     {
         var (service, tray) = Connect();

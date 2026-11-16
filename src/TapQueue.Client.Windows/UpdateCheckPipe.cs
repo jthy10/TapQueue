@@ -16,7 +16,7 @@ public sealed class UpdateCheckPipe : IUpdateCheckListener
     public const string PipeName = "TapQueue";
 
     /// <summary>Service side: accepts connections until <paramref name="ct"/> is cancelled and queues each check on <paramref name="requests"/>.</summary>
-    public async Task ServeAsync(ChannelWriter<UpdateCheck.Request> requests, UpdateCheck.SessionVerifier verify, ILogger logger, CancellationToken ct)
+    public async Task ServeAsync(ChannelWriter<UpdateCheck.Request> requests, UpdateCheck.SessionVerifier verify, UpdateCheck.SessionSigner signIn, ILogger logger, CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
         {
@@ -44,7 +44,7 @@ public sealed class UpdateCheckPipe : IUpdateCheckListener
                 }
                 continue;
             }
-            _ = UpdateCheck.HandleAsync(pipe, requests, logger, ct, () => PcUser(pipe, logger), verify);
+            _ = UpdateCheck.HandleAsync(pipe, requests, logger, ct, () => PcUser(pipe, logger), verify, signIn);
         }
     }
 
@@ -157,6 +157,19 @@ public sealed class UpdateCheckPipe : IUpdateCheckListener
         if (!OwnedBySystem(pipe))
             return new SessionVerifyReply(false, "The TapQueue pipe isn't the TapQueue service's.");
         return await UpdateCheck.AskVerifySessionAsync(pipe, sessionToken, ct);
+    }
+
+    /// <summary>
+    /// Tray side: asks the service to sign this Windows user in to TapQueue, and returns the session it
+    /// got. Throws <see cref="TimeoutException"/> if the service isn't running.
+    /// </summary>
+    public static async Task<ServiceSignInReply> SignInAsync(CancellationToken ct)
+    {
+        await using var pipe = await ConnectAsync(ct);
+        // A session is only taken from the real service, not from a pipe someone else made in its name.
+        if (!OwnedBySystem(pipe))
+            return new ServiceSignInReply(false, "The TapQueue pipe isn't the TapQueue service's.");
+        return await UpdateCheck.AskSignInAsync(pipe, ct);
     }
 
     /// <summary>The pipe was created by SYSTEM (owned by it, or by Administrators as SYSTEM's objects are), not by a user.</summary>

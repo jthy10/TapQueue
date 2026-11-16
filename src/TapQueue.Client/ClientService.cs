@@ -57,7 +57,7 @@ public sealed class ClientService(
         var checks = Channel.CreateUnbounded<UpdateCheck.Request>();
         using var stopListening = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
         var listening = Task.Run(() => listener.ServeAsync(checks.Writer, (token, pcUser, ct) => VerifySessionAsync(http, token, pcUser, ct),
-            logger, stopListening.Token), CancellationToken.None);
+            (pcUser, ct) => SignInAsync(http, pcUser, ct), logger, stopListening.Token), CancellationToken.None);
 
         string? lastError = null;
         while (!stoppingToken.IsCancellationRequested)
@@ -213,6 +213,36 @@ public sealed class ClientService(
         catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException)
         {
             return new SessionVerifyReply(false, $"Can't reach the TapQueue server: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// A tray app on this PC, run by <paramref name="pcUser"/>, asked to be signed in: when the server signs
+    /// people in as their PC's user (<see cref="ClientSignIn.Workstation"/>), this gets them a session with the PC's key.
+    /// </summary>
+    private async Task<ServiceSignInReply> SignInAsync(HttpClient http, string pcUser, CancellationToken ct)
+    {
+        if (WorkstationKey.Load(config.ServerUrl) is not { } key)
+            return new ServiceSignInReply(false, "This PC hasn't got its TapQueue key from the server yet. It asks for one every minute.");
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromSeconds(15));
+            using var response = await http.PostAsJsonAsync("api/v1/client/workstation-sign-in",
+                new WorkstationSignInRequest(Environment.MachineName, key, pcUser, TapQueueVersion.Current, ClientPlatform.Current), TapQueueJson.Options, timeout.Token);
+            if (response.IsSuccessStatusCode)
+            {
+                var session = await response.Content.ReadFromJsonAsync<ClientSessionResponse>(TapQueueJson.Options, timeout.Token);
+                logger.LogInformation("Signed {PcUser} in to TapQueue as {User}", pcUser, session?.User.Username);
+                return session is null ? new ServiceSignInReply(false, "Empty response from the server.") : new ServiceSignInReply(true, null, session);
+            }
+            var error = await ErrorAsync(response, timeout.Token);
+            logger.LogWarning("Couldn't sign {PcUser} in to TapQueue: {Error}", pcUser, error);
+            return new ServiceSignInReply(false, error, Refused: response.StatusCode == System.Net.HttpStatusCode.Forbidden);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException)
+        {
+            return new ServiceSignInReply(false, $"Can't reach the TapQueue server: {ex.Message}");
         }
     }
 

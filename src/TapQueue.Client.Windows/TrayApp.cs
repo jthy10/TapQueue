@@ -14,6 +14,9 @@ public sealed class TrayApp : ApplicationContext
 {
     private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(15);
 
+    /// <summary>After the server said this PC user can't print with TapQueue: only an admin can change that, so there's no hurry to ask again.</summary>
+    private static readonly TimeSpan RefusedRetryDelay = TimeSpan.FromMinutes(5);
+
     private readonly string[] _args;
     private readonly TapQueueApi _api;
     private readonly TapNotices _notices;
@@ -44,7 +47,7 @@ public sealed class TrayApp : ApplicationContext
     public TrayApp(ClientConfig config, RestartArgs start)
     {
         _args = start.AppArgs;
-        _api = new TapQueueApi(config) { VerifySession = UpdateCheckPipe.VerifySessionAsync };
+        _api = new TapQueueApi(config) { VerifySession = UpdateCheckPipe.VerifySessionAsync, ServiceSignIn = UpdateCheckPipe.SignInAsync };
         _notices = new TapNotices(_api.GetNoticesAsync);
         _tray = new NotifyIcon
         {
@@ -113,6 +116,7 @@ public sealed class TrayApp : ApplicationContext
         catch (Exception ex) when (ex is HttpRequestException or TapQueueApiException or TaskCanceledException)
         {
             SetConnected(false, ex.Message);
+            _retryTimer.Interval = (int)(ex is TapQueueApiException { Status: System.Net.HttpStatusCode.Conflict } ? RefusedRetryDelay : RetryDelay).TotalMilliseconds;
             _retryTimer.Start();
         }
     }
@@ -446,7 +450,7 @@ public sealed class TrayApp : ApplicationContext
         if (!_connected && !_needsSignIn)
             menu.Items.Add(_signedOut ? "Sign in again" : "Retry connection", null, async (_, _) => await ConnectAsync());
         menu.Items.Add(new ToolStripSeparator());
-        // Only when the server asks for a domain account; otherwise TapQueue signs in as the PC's user.
+        // Only when the server asks for a name and password; otherwise TapQueue signs in as the PC's user.
         var domain = _api.SignInMode == ClientSignIn.Domain;
         menu.Items.Add(new ToolStripMenuItem("Sign in as…", null, (_, _) => ShowSignInForm())
         {

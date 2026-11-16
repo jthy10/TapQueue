@@ -27,6 +27,9 @@ public sealed class TrayApp : Application
 
     private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(15);
 
+    /// <summary>After the server said this PC user can't print with TapQueue: only an admin can change that, so there's no hurry to ask again.</summary>
+    private static readonly TimeSpan RefusedRetryDelay = TimeSpan.FromMinutes(5);
+
     private TapQueueApi _api = null!;
     private TapNotices _notices = null!;
     private TrayIcon _tray = null!;
@@ -76,7 +79,7 @@ public sealed class TrayApp : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
-        _api = new TapQueueApi(Start.Config) { VerifySession = UpdateCheckSocket.VerifySessionAsync };
+        _api = new TapQueueApi(Start.Config) { VerifySession = UpdateCheckSocket.VerifySessionAsync, ServiceSignIn = UpdateCheckSocket.SignInAsync };
         _notices = new TapNotices(_api.GetNoticesAsync);
         _connectedIcon = TrayIconImage.Create(connected: true);
         _disconnectedIcon = TrayIconImage.Create(connected: false);
@@ -127,6 +130,7 @@ public sealed class TrayApp : Application
         catch (Exception ex) when (ex is HttpRequestException or TapQueueApiException or TaskCanceledException)
         {
             SetConnected(false, ex.Message);
+            _retryTimer.Interval = ex is TapQueueApiException { Status: System.Net.HttpStatusCode.Conflict } ? RefusedRetryDelay : RetryDelay;
             _retryTimer.Start();
         }
     }
@@ -478,7 +482,7 @@ public sealed class TrayApp : Application
         if (!_connected && !_needsSignIn)
             menu.Add(Item(_signedOut ? "Sign in again" : "Retry connection", () => _ = ConnectAsync()));
         menu.Add(new NativeMenuItemSeparator());
-        // Only when the server asks for a domain account; otherwise TapQueue signs in as the PC's user.
+        // Only when the server asks for a name and password; otherwise TapQueue signs in as the PC's user.
         var domain = _api.SignInMode == ClientSignIn.Domain;
         menu.Add(new NativeMenuItem("Sign in as…") { IsEnabled = domain }.WithClick(ShowSignInWindow));
         if (domain && _api.Remembered is not null)

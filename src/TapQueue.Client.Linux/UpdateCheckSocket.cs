@@ -14,7 +14,7 @@ public sealed class UpdateCheckSocket : IUpdateCheckListener
 {
     public const string SocketPath = "/run/tapqueue-client/update.sock";
 
-    public async Task ServeAsync(ChannelWriter<UpdateCheck.Request> requests, UpdateCheck.SessionVerifier verify, ILogger logger, CancellationToken ct)
+    public async Task ServeAsync(ChannelWriter<UpdateCheck.Request> requests, UpdateCheck.SessionVerifier verify, UpdateCheck.SessionSigner signIn, ILogger logger, CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
         {
@@ -54,7 +54,7 @@ public sealed class UpdateCheckSocket : IUpdateCheckListener
                         break;
                     }
                     var peer = connection;
-                    _ = UpdateCheck.HandleAsync(new NetworkStream(connection, ownsSocket: true), requests, logger, ct, () => PcUser(peer, logger), verify);
+                    _ = UpdateCheck.HandleAsync(new NetworkStream(connection, ownsSocket: true), requests, logger, ct, () => PcUser(peer, logger), verify, signIn);
                 }
             }
             try
@@ -135,6 +135,28 @@ public sealed class UpdateCheckSocket : IUpdateCheckListener
         if (uid != 0)
             return new SessionVerifyReply(false, "The TapQueue socket isn't the TapQueue service's.");
         return await UpdateCheck.AskVerifySessionAsync(stream, sessionToken, ct);
+    }
+
+    /// <summary>
+    /// Tray side: asks the service to sign this user in to TapQueue, and returns the session it got.
+    /// Throws <see cref="TimeoutException"/> if the service isn't running.
+    /// </summary>
+    public static async Task<ServiceSignInReply> SignInAsync(CancellationToken ct)
+    {
+        await using var stream = await ConnectAsync(ct);
+        uint? uid;
+        try
+        {
+            uid = PeerUid(stream.Socket);
+        }
+        catch (SocketException)
+        {
+            uid = null;
+        }
+        // A session is only taken from the service, which runs as root.
+        if (uid != 0)
+            return new ServiceSignInReply(false, "The TapQueue socket isn't the TapQueue service's.");
+        return await UpdateCheck.AskSignInAsync(stream, ct);
     }
 
     /// <summary>

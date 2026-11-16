@@ -22,6 +22,13 @@ public sealed class TapQueueApi(ClientConfig config) : IDisposable
     /// </summary>
     public Func<string, CancellationToken, Task<SessionVerifyReply>>? VerifySession { get; init; }
 
+    /// <summary>
+    /// Asks this PC's TapQueue service to sign this PC user in (<see cref="UpdateCheck.SignInCommand"/>),
+    /// for servers that sign people in as their PC's user (<see cref="ClientSignIn.Workstation"/>). Set
+    /// by the tray app.
+    /// </summary>
+    public Func<CancellationToken, Task<ServiceSignInReply>>? ServiceSignIn { get; init; }
+
     /// <summary>The session the service last vouched for. Until it's the current one, every heartbeat asks again.</summary>
     private string? _verifiedToken;
 
@@ -36,6 +43,8 @@ public sealed class TapQueueApi(ClientConfig config) : IDisposable
     public async Task<ClientSessionResponse> SignInAsync(CancellationToken ct = default)
     {
         SignInMode = await GetSignInModeAsync(ct);
+        if (SignInMode == ClientSignIn.Workstation)
+            return await SignInThroughServiceAsync(ct);
         if (SignInMode != ClientSignIn.Domain)
             return await CreateSessionAsync(new ClientSessionRequest(
                 config.EffectiveUsername,
@@ -46,7 +55,7 @@ public sealed class TapQueueApi(ClientConfig config) : IDisposable
                 ClientPlatform.Current), ct);
 
         if (Remembered is null)
-            throw new SignInRequiredException("Sign in with your domain account.");
+            throw new SignInRequiredException("Sign in with your username and password.");
         try
         {
             return await CreateSessionAsync(Request(Remembered.Username, rememberToken: Remembered.RememberToken), ct);
@@ -56,6 +65,36 @@ public sealed class TapQueueApi(ClientConfig config) : IDisposable
             Forget();
             throw new SignInRequiredException(ex.Message);
         }
+    }
+
+    /// <summary>
+    /// The server takes the PC's word for who is signed in to it, so the PC's TapQueue service does the
+    /// signing in: it knows who runs this tray app from the operating system, and holds the PC's key.
+    /// </summary>
+    private async Task<ClientSessionResponse> SignInThroughServiceAsync(CancellationToken ct)
+    {
+        if (ServiceSignIn is null)
+            throw new TapQueueApiException(HttpStatusCode.ServiceUnavailable, "This TapQueue can't ask the TapQueue service to sign in.");
+        ServiceSignInReply reply;
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromSeconds(30));
+            reply = await ServiceSignIn(timeout.Token);
+        }
+        catch (Exception ex) when (ex is IOException or TimeoutException or UnauthorizedAccessException or System.Text.Json.JsonException
+                                       or InvalidDataException or System.Net.Sockets.SocketException
+                                   || ex is OperationCanceledException && !ct.IsCancellationRequested)
+        {
+            throw new TapQueueApiException(HttpStatusCode.ServiceUnavailable,
+                "The TapQueue service isn't running on this PC, so it can't sign you in. Ask your IT team to start or reinstall TapQueue.");
+        }
+        if (!reply.Success || reply.Session is null)
+            throw new TapQueueApiException(reply.Refused ? HttpStatusCode.Conflict : HttpStatusCode.ServiceUnavailable, reply.Error ?? "The TapQueue service couldn't sign you in.");
+        Session = reply.Session;
+        // The service signed this session in itself, so the server already knows which PC user it belongs to.
+        _verifiedToken = Session.SessionToken;
+        return Session;
     }
 
     /// <summary>
