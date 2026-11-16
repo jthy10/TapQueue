@@ -52,6 +52,7 @@ public sealed class TrayApp : Application
     private bool _polling;
     private bool _checkingForUpdates;
     private bool _refreshing;
+    private bool _linkingBadge;
     private string? _lastError;
     private PrintersAndQueueWindow? _window;
     private SignInWindow? _signInWindow;
@@ -478,6 +479,14 @@ public sealed class TrayApp : Application
             releaseAll.Menu.Add(item);
         }
         menu.Add(releaseAll);
+        var linkBadge = new NativeMenuItem("Link my badge at") { IsEnabled = _connected && !_linkingBadge && Printers.Count > 0, Menu = [] };
+        foreach (var printer in Printers)
+        {
+            var item = new NativeMenuItem(printer.Name);
+            item.Click += async (_, _) => await LinkBadgeAsync(printer);
+            linkBadge.Menu.Add(item);
+        }
+        menu.Add(linkBadge);
         menu.Add(Item("View printers and queue…", () => ShowWindow(queue: false)));
         if (!_connected && !_needsSignIn)
             menu.Add(Item(_signedOut ? "Sign in again" : "Retry connection", () => _ = ConnectAsync()));
@@ -528,6 +537,40 @@ public sealed class TrayApp : Application
     }
 
     public void Notify(string title, string text, bool urgent = false) => _ = Notifications.ShowAsync(title, text, urgent);
+
+    /// <summary>
+    /// "Link my badge at": for the next minute a card nobody owns, tapped on that printer's reader,
+    /// becomes this person's. Says what to do, then how it went.
+    /// </summary>
+    private async Task LinkBadgeAsync(PrinterDto printer)
+    {
+        if (_linkingBadge) return;
+        _linkingBadge = true;
+        try
+        {
+            var status = await _api.StartBadgeEnrollmentAsync(printer.Id);
+            Notify("Link your badge", $"Tap your badge on the reader at {printer.Name} within {status.SecondsLeft} seconds.");
+            while (status.State == BadgeEnrollmentState.Waiting)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(2));
+                status = await _api.GetBadgeEnrollmentAsync();
+            }
+            if (status.State == BadgeEnrollmentState.Linked)
+                Notify("Badge linked", status.Message);
+            else
+                Notify("Badge not linked", status.Message.Length > 0 ? status.Message : "No card was linked.", urgent: true);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TapQueueApiException or TaskCanceledException)
+        {
+            Notify("Can't link a badge", ex is TapQueueApiException { Status: System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.MethodNotAllowed }
+                ? "Your TapQueue server is too old for this. Ask an admin to link your badge."
+                : ex.Message, urgent: true);
+        }
+        finally
+        {
+            _linkingBadge = false;
+        }
+    }
 
     private static string Shorten(string s, int max) => s.Length <= max ? s : s[..(max - 1)] + "…";
 

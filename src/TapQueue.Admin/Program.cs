@@ -902,6 +902,8 @@ async Task<int> ShowServer()
     Console.WriteLine($"printer-send     {server.PrinterSendSeconds,-6} seconds one job may take to send ({Changed("printerSendSeconds")})");
     Console.WriteLine($"sign-in-attempts {server.SignInAttempts,-6} wrong passwords for a name from one address ({Changed("signInAttempts")})");
     Console.WriteLine($"sign-in-lockout  {server.SignInLockoutMinutes,-6} minutes ({Changed("signInLockoutMinutes")})");
+    foreach (var option in server.Options ?? [])
+        Console.WriteLine($"{option.Name,-16} {option.Value,-6} {option.Label} ({(option.Changed ? "set here" : "default")}; {string.Join(" or ", option.Allowed)})");
     Console.WriteLine(server.TrustedProxies is { Count: > 0 } proxies
         ? $"trusted proxies  {string.Join(", ", proxies)} (server.toml; X-Forwarded-For is believed from these)"
         : "trusted proxies  none   (server.trusted_proxies in server.toml, if the server is behind a reverse proxy)");
@@ -945,8 +947,24 @@ async Task<int> SetServerSetting(string name, string value)
     };
     if (key is null)
     {
+        // The on-or-off kind, which the server lists itself.
+        var options = (await Get<ServerInfoDto>("server"))?.Options ?? [];
+        if (options.FirstOrDefault(o => o.Name == name) is { } option)
+        {
+            if (value != "default" && !option.Allowed.Contains(value))
+            {
+                Console.Error.WriteLine($"{name} takes {string.Join(" or ", option.Allowed)}, or \"default\".");
+                return 2;
+            }
+            var chosen = value == "default"
+                ? new UpdateServerSettingsRequest(Reset: [option.Key])
+                : new UpdateServerSettingsRequest(Options: new Dictionary<string, string> { [option.Key] = value });
+            if (await Send<ServerInfoDto>(HttpMethod.Patch, "server/settings", chosen) is null) return 1;
+            return await ShowServer();
+        }
         Console.Error.WriteLine("Settings are hold-hours, session-timeout, quota-overrun, address-matching, held-limit, job-history, activity-log, " +
-            "time-zone, tap-wait, printer-busy, printer-send, sign-in-attempts and sign-in-lockout.");
+            "time-zone, tap-wait, printer-busy, printer-send, sign-in-attempts, sign-in-lockout" +
+            string.Concat(options.Select(o => ", " + o.Name)) + ".");
         return 2;
     }
     if (key == "timeZone")

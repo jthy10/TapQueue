@@ -39,6 +39,7 @@ public sealed class TrayApp : ApplicationContext
     private bool _polling;
     private bool _checkingForUpdates;
     private bool _refreshing;
+    private bool _linkingBadge;
     private string? _lastError;
     private PrintersAndQueueForm? _window;
     private SignInForm? _signInForm;
@@ -282,6 +283,40 @@ public sealed class TrayApp : ApplicationContext
     }
 
     /// <summary>
+    /// "Link my badge at": for the next minute a card nobody owns, tapped on that printer's reader,
+    /// becomes this person's. Says what to do, then how it went.
+    /// </summary>
+    private async Task LinkBadgeAsync(PrinterDto printer)
+    {
+        if (_linkingBadge) return;
+        _linkingBadge = true;
+        try
+        {
+            var status = await _api.StartBadgeEnrollmentAsync(printer.Id);
+            Notify("Link your badge", $"Tap your badge on the reader at {printer.Name} within {status.SecondsLeft} seconds.");
+            while (status.State == BadgeEnrollmentState.Waiting)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(2));
+                status = await _api.GetBadgeEnrollmentAsync();
+            }
+            if (status.State == BadgeEnrollmentState.Linked)
+                Notify("Badge linked", status.Message);
+            else
+                Notify("Badge not linked", status.Message.Length > 0 ? status.Message : "No card was linked.", ToolTipIcon.Warning);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TapQueueApiException or TaskCanceledException)
+        {
+            Notify("Can't link a badge", ex is TapQueueApiException { Status: System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.MethodNotAllowed }
+                ? "Your TapQueue server is too old for this. Ask an admin to link your badge."
+                : ex.Message, ToolTipIcon.Warning);
+        }
+        finally
+        {
+            _linkingBadge = false;
+        }
+    }
+
+    /// <summary>
     /// Asks the TapQueue service to check the server for a new client and install it
     /// (<see cref="UpdateCheckPipe"/>); once it has, restarts into it.
     /// </summary>
@@ -446,6 +481,10 @@ public sealed class TrayApp : ApplicationContext
             releaseAll.DropDownItems.Add(label, null, async (_, _) => await ReleaseAsync(printer.Id, null));
         }
         menu.Items.Add(releaseAll);
+        var linkBadge = new ToolStripMenuItem("Link my badge at") { Enabled = _connected && !_linkingBadge && Printers.Count > 0 };
+        foreach (var printer in Printers)
+            linkBadge.DropDownItems.Add(printer.Name, null, async (_, _) => await LinkBadgeAsync(printer));
+        menu.Items.Add(linkBadge);
         menu.Items.Add("View printers and queue…", null, (_, _) => ShowWindow(queue: false));
         if (!_connected && !_needsSignIn)
             menu.Items.Add(_signedOut ? "Sign in again" : "Retry connection", null, async (_, _) => await ConnectAsync());

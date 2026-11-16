@@ -245,6 +245,17 @@ public sealed class TapQueueApi(ClientConfig config) : IDisposable
     public Task<CancelJobResponse?> CancelJobAsync(long jobId, CancellationToken ct = default) =>
         SendAsync<CancelJobResponse>(HttpMethod.Delete, $"api/v1/me/jobs/{jobId}", null, ct);
 
+    /// <summary>
+    /// "Link my badge": for the next minute, a card nobody owns that's tapped at <paramref name="printerId"/>'s
+    /// reader becomes this person's (servers from 0.19). Throws with the reason if it can't start.
+    /// </summary>
+    public async Task<BadgeEnrollmentDto> StartBadgeEnrollmentAsync(string printerId, CancellationToken ct = default) =>
+        (await SendAsync<BadgeEnrollmentDto>(HttpMethod.Post, "api/v1/me/badge-enrollment", new StartBadgeEnrollmentRequest(printerId), ct))!;
+
+    /// <summary>Whether the card has been tapped yet.</summary>
+    public async Task<BadgeEnrollmentDto> GetBadgeEnrollmentAsync(CancellationToken ct = default) =>
+        (await SendAsync<BadgeEnrollmentDto>(HttpMethod.Get, "api/v1/me/badge-enrollment", null, ct))!;
+
     private async Task<T?> SendAsync<T>(HttpMethod method, string path, object? body, CancellationToken ct)
     {
         for (var attempt = 0; ; attempt++)
