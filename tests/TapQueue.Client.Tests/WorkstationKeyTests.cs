@@ -9,6 +9,9 @@ public sealed class WorkstationKeyTests : IDisposable
     [Fact]
     public void KeepsTheKeyForItsServerOnly()
     {
+        // On Windows only SYSTEM and administrators may touch the file, the test's own user included.
+        if (OperatingSystem.IsWindows() && !Environment.IsPrivilegedProcess)
+            return;
         new WorkstationKey("http://tapqueue:8631/", "the-key").Save(KeyPath);
 
         Assert.Equal("the-key", WorkstationKey.Load("http://TAPQUEUE:8631", KeyPath));

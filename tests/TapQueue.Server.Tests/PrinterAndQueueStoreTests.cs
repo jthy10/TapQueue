@@ -69,5 +69,5 @@ public sealed class PrinterAndQueueStoreTests : IDisposable
     [InlineData("slash/y", false)]
     public void ChecksIds(string id, bool valid) => Assert.Equal(valid, Ids.IsValid(id));
 
-    public void Dispose() => Directory.Delete(_dir, recursive: true);
+    public void Dispose() => TestFiles.DeleteDirectory(_dir);
 }

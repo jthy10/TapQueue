@@ -44,7 +44,7 @@ public sealed class BackupApiTests : IAsyncLifetime
         finally
         {
             Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-            Directory.Delete(dir, recursive: true);
+            TestFiles.DeleteDirectory(dir);
         }
 
         Assert.Equal(HttpStatusCode.NoContent, (await _server.Admin.DeleteAsync($"/api/v1/admin/server/backups/{made.Name}")).StatusCode);

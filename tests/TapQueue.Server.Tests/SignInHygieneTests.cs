@@ -8,7 +8,7 @@ public sealed class SignInHygieneTests : IDisposable
 {
     private readonly string _dir = Directory.CreateTempSubdirectory("tapqueue-signin").FullName;
 
-    public void Dispose() => Directory.Delete(_dir, recursive: true);
+    public void Dispose() => TestFiles.DeleteDirectory(_dir);
 
     [Fact]
     public void RememberedSignInsNobodyUsesAreForgotten()

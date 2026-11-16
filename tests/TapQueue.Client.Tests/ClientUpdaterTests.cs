@@ -18,7 +18,7 @@ public sealed class ClientUpdaterTests
         }
     }
 
-    [Fact]
+    [LinuxFact]
     public async Task ABuildForAnotherPlatformIsNeverInstalled()
     {
         // What a server older than 0.5 sends: no platform, which reads as Windows.
@@ -61,7 +61,7 @@ public sealed class ClientUpdaterTests
         return (new ClientUpdater(new HttpClient(server) { BaseAddress = new Uri("http://server/") }, NullLogger.Instance, new HttpClient(releases)), server);
     }
 
-    [Fact]
+    [LinuxFact]
     public async Task ABuildThatIsNotInItsReleaseIsNeverDownloaded()
     {
         var releases = new Releases($"{new string('b', 64)}  tapqueue-client\n{Sha}  TapQueueClient.exe\n");
@@ -77,7 +77,7 @@ public sealed class ClientUpdaterTests
         Assert.Single(releases.Asked);
     }
 
-    [Fact]
+    [LinuxFact]
     public async Task ABuildThatIsInItsReleaseIsDownloadedFromTheServer()
     {
         var (updater, server) = Updater(new Releases($"{Sha}  tapqueue-client\n"));
@@ -87,7 +87,7 @@ public sealed class ClientUpdaterTests
         Assert.Equal(1, server.Requests);
     }
 
-    [Fact]
+    [LinuxFact]
     public async Task WithoutAWayToTheReleasesNothingIsInstalledAndItIsTriedAgainLater()
     {
         var releases = new Releases(null);
@@ -105,7 +105,7 @@ public sealed class ClientUpdaterTests
         Assert.Equal(2, releases.Asked.Count);
     }
 
-    [Theory]
+    [LinuxTheory]
     [InlineData("0.18.0/../../other")]
     [InlineData("latest")]
     [InlineData("")]
@@ -120,7 +120,7 @@ public sealed class ClientUpdaterTests
         Assert.Equal(0, server.Requests);
     }
 
-    [Fact]
+    [LinuxFact]
     public async Task AReleaseWithoutAListOfProgramsCannotBeInstalledFrom()
     {
         var (updater, server) = Updater(new Releases("Not Found", System.Net.HttpStatusCode.NotFound));
@@ -130,7 +130,7 @@ public sealed class ClientUpdaterTests
         Assert.Equal(0, server.Requests);
     }
 
-    [Fact]
+    [LinuxFact]
     public async Task ASiteThatBuildsItsOwnChecksItsOwnReleases()
     {
         var releases = new Releases($"{Sha}  tapqueue-client\n");

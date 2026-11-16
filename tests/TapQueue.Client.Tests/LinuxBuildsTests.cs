@@ -21,7 +21,7 @@ public sealed class LinuxBuildsTests : IDisposable
         return path;
     }
 
-    [Fact]
+    [LinuxFact]
     public void BuildsAreFoundThroughTheirLauncher()
     {
         var build = AddBuild(new string('a', 64));
@@ -32,7 +32,7 @@ public sealed class LinuxBuildsTests : IDisposable
         Assert.Null(LinuxBuilds.LauncherFor(Path.Combine(_root, "somewhere-else")));
     }
 
-    [Fact]
+    [LinuxFact]
     public void RepointingSwitchesTheLauncherAndKeepsTheOldBuild()
     {
         var old = AddBuild(new string('a', 64));
@@ -46,7 +46,7 @@ public sealed class LinuxBuildsTests : IDisposable
         Assert.True(File.Exists(old));
     }
 
-    [Fact]
+    [LinuxFact]
     public void UnusedBuildsAreDeletedButNotTheCurrentOne()
     {
         var old = AddBuild(new string('a', 64));

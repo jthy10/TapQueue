@@ -43,5 +43,5 @@ public sealed class DatabaseTests : IDisposable
         Assert.Equal(0, jobs.RecoverInterruptedReleases());
     }
 
-    public void Dispose() => Directory.Delete(_dir, recursive: true);
+    public void Dispose() => TestFiles.DeleteDirectory(_dir);
 }

@@ -13,7 +13,7 @@ public sealed class TlsTests : IDisposable
 {
     private readonly string _dir = Directory.CreateTempSubdirectory("tapqueue-tls").FullName;
 
-    public void Dispose() => Directory.Delete(_dir, recursive: true);
+    public void Dispose() => TestFiles.DeleteDirectory(_dir);
 
     [Fact]
     public async Task TheAdminApiShowsTheCertificateItServes()
@@ -163,7 +163,8 @@ public sealed class TlsTests : IDisposable
         Assert.Equal(first.Fingerprint, again.Fingerprint);
         Assert.Equal(["print.example.org"], again.Missing);
         Assert.Empty(first.Missing);
-        Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(Path.Combine(_dir, "tls", "server.key")));
+        if (!OperatingSystem.IsWindows())
+            Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(Path.Combine(_dir, "tls", "server.key")));
         var basic = first.Current.Extensions.OfType<System.Security.Cryptography.X509Certificates.X509BasicConstraintsExtension>().Single();
         Assert.False(basic.CertificateAuthority);
     }

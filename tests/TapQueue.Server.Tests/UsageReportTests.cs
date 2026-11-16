@@ -28,7 +28,7 @@ public sealed class UsageReportTests : IDisposable
     public void Dispose()
     {
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        Directory.Delete(_dir, recursive: true);
+        TestFiles.DeleteDirectory(_dir);
     }
 
     /// <param name="at">When it was released, UTC.</param>

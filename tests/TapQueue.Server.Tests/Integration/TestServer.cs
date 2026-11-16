@@ -129,6 +129,6 @@ public sealed class TestServer : IAsyncDisposable
         await _app.StopAsync();
         await _app.DisposeAsync();
         await Printer.DisposeAsync();
-        Directory.Delete(_dataDir, recursive: true);
+        TestFiles.DeleteDirectory(_dataDir);
     }
 }

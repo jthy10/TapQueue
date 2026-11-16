@@ -49,7 +49,7 @@ public sealed class ServerUpdateTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _server.DisposeAsync();
-        Directory.Delete(_dir, recursive: true);
+        TestFiles.DeleteDirectory(_dir);
     }
 
     private async Task<ServerUpdateDto> Check() =>

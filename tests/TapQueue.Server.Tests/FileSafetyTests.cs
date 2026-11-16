@@ -9,7 +9,7 @@ public sealed class FileSafetyTests : IDisposable
 {
     private readonly string _dir = Directory.CreateTempSubdirectory("tapqueue-files").FullName;
 
-    public void Dispose() => Directory.Delete(_dir, recursive: true);
+    public void Dispose() => TestFiles.DeleteDirectory(_dir);
 
     private static X509Certificate2 Fixture(string name) =>
         X509Certificate2.CreateFromPem(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", name)));

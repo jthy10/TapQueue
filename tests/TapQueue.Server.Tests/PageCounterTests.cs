@@ -8,7 +8,7 @@ public sealed class PageCounterTests : IDisposable
 {
     private readonly string _dir = Directory.CreateTempSubdirectory("tapqueue-pages-").FullName;
 
-    public void Dispose() => Directory.Delete(_dir, recursive: true);
+    public void Dispose() => TestFiles.DeleteDirectory(_dir);
 
     // Made with Ghostscript: a three-page PDF, the same with object streams, and rendered to PWG raster and URF.
     [Theory]

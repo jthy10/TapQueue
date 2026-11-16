@@ -16,7 +16,7 @@ public sealed class BackupTests : IDisposable
     public void Dispose()
     {
         SqliteConnection.ClearAllPools();
-        Directory.Delete(_dir, recursive: true);
+        TestFiles.DeleteDirectory(_dir);
     }
 
     private string DataDir(string name) => Directory.CreateDirectory(Path.Combine(_dir, name)).FullName;

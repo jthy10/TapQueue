@@ -106,5 +106,5 @@ public sealed class BadgeStoreTests : IDisposable
         Assert.Equal(bob.Id, _badges.Use("04a1b2c3")?.UserId);
     }
 
-    public void Dispose() => Directory.Delete(_dir, recursive: true);
+    public void Dispose() => TestFiles.DeleteDirectory(_dir);
 }

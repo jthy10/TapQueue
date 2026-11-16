@@ -12,6 +12,9 @@ public sealed class StartupSettingsTests : IAsyncLifetime
 {
     private TestServer _server = null!;
 
+    /// <summary>A full path on whatever the tests run on, as backup.copy_to has to be.</summary>
+    private static readonly string Nas = OperatingSystem.IsWindows() ? @"C:\mnt\nas\tapqueue" : "/mnt/nas/tapqueue";
+
     // A real port, as in a real server.toml: what's saved is checked the way the file is at startup, and that refuses port 0.
     private static Task<TestServer> StartAsync(string authMode = "token") =>
         TestServer.StartAsync(authMode, configure: config => config.Server.Listen = $"127.0.0.1:{FreePort()}");
@@ -72,7 +75,7 @@ public sealed class StartupSettingsTests : IAsyncLifetime
     [Fact]
     public async Task AValueTheSameAsTheFilesFollowsTheFileAgain()
     {
-        await TestServer.ReadAsync<StartupSettingsDto>(await Patch(new(DiscoveryPort: 9000, BackupCopyTo: "/mnt/nas/tapqueue")));
+        await TestServer.ReadAsync<StartupSettingsDto>(await Patch(new(DiscoveryPort: 9000, BackupCopyTo: Nas)));
 
         var back = await TestServer.ReadAsync<StartupSettingsDto>(await Patch(new(DiscoveryPort: 0)));
         Assert.Equal(["backupCopyTo"], back.SetHere);
@@ -158,7 +161,7 @@ public sealed class StartupSettingsTests : IAsyncLifetime
     [Fact]
     public async Task ForgettingThemGoesBackToTheFile()
     {
-        await TestServer.ReadAsync<StartupSettingsDto>(await Patch(new(DiscoveryPort: 9000, BackupCopyTo: "/mnt/nas/tapqueue")));
+        await TestServer.ReadAsync<StartupSettingsDto>(await Patch(new(DiscoveryPort: 9000, BackupCopyTo: Nas)));
         var dataDir = _server.Service<ServerConfig>().Server.DataDir;
 
         Assert.Equal(["discoveryPort", "backupCopyTo"], StartupSettings.Forget(dataDir));
@@ -180,7 +183,7 @@ public sealed class StartupSettingsTests : IAsyncLifetime
         }
         finally
         {
-            Directory.Delete(dir, recursive: true);
+            TestFiles.DeleteDirectory(dir);
         }
     }
 }

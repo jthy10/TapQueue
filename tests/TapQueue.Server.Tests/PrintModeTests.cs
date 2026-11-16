@@ -9,7 +9,7 @@ public sealed class PrintModeTests : IDisposable
 {
     private readonly string _dir = Directory.CreateTempSubdirectory("tapqueue-test").FullName;
 
-    public void Dispose() => Directory.Delete(_dir, recursive: true);
+    public void Dispose() => TestFiles.DeleteDirectory(_dir);
 
     private string Document(byte[] content)
     {
