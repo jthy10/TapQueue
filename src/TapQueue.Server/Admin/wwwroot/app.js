@@ -18,6 +18,7 @@ const nav = [
     { id: "users", label: "Users", icon: "users", area: "people" },
     { id: "groups", label: "Groups", icon: "groups", area: "people" },
     { id: "cards", label: "Cards", icon: "cards", area: "people" },
+    { id: "balances", label: "Balances", icon: "balances", area: "people" },
     { id: "directory", label: "Active Directory", icon: "directory", area: "directory" },
   ] },
   { group: "Fleet", items: [

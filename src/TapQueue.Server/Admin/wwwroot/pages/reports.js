@@ -1,5 +1,5 @@
 import { api, enc } from "../api.js";
-import { h, pageHead, panel, table, empty, loading, input, select, plural } from "../ui.js";
+import { h, pageHead, panel, table, empty, loading, input, select, plural, money } from "../ui.js";
 
 const groupings = [["user", "People"], ["group", "Groups"], ["printer", "Printers"], ["queue", "Queues"], ["day", "Days"], ["month", "Months"]];
 const headings = { user: "Person", group: "Group", printer: "Printer", queue: "Queue", day: "Day", month: "Month" };
@@ -66,12 +66,13 @@ export async function render(root, ctx) {
     const most = Math.max(1, ...report.rows.map((r) => r.pages));
     const byTime = by === "day" || by === "month";
     const people = new Set(report.rows.filter((r) => r.key).map((r) => r.key)).size;
-    summary.replaceChildren(
+    summary.replaceChildren(...[
       stat("Pages", number(report.pages), `${number(report.colorPages)} colour, ${number(report.monoPages)} black and white, ${number(report.duplexPages)} two-sided`),
       stat("Jobs", number(report.jobs), report.jobs ? `${number(Math.round(report.pages / report.jobs))} pages a job on average` : "Nothing released in this period"),
+      report.currency && stat("Cost", money(report.cost, report.currency), report.pages ? `${money(Math.round(report.cost / report.pages), report.currency)} a page on average` : "Nothing printed"),
       stat(byTime ? (by === "day" ? "Busiest day" : "Busiest month") : `${groupings.find(([v]) => v === by)[1]} that printed`,
         byTime ? (report.pages ? report.rows.reduce((a, r) => (r.pages > a.pages ? r : a)).key : "None") : number(people),
-        `Days are the server's (${report.timeZone})`));
+        `Days are the server's (${report.timeZone})`)].filter(Boolean));
     body.replaceChildren(
       report.uncountedJobs ? h("div", { class: "callout info", style: "margin:12px 16px 0" },
         `${plural(report.uncountedJobs, "job")} couldn't be counted and ${report.uncountedJobs === 1 ? "counts" : "count"} as 1 page a copy.`) : "",
@@ -92,6 +93,7 @@ export async function render(root, ctx) {
           { label: "Colour", class: "num", value: (r) => number(r.colorPages) },
           { label: "Black and white", class: "num", value: (r) => number(r.monoPages) },
           { label: "Two-sided", class: "num", value: (r) => number(r.duplexPages) },
+          report.currency && { label: "Cost", class: "num", value: (r) => money(r.cost, report.currency) },
           { label: "", value: (r) => h("div", { class: "report-bar", title: report.pages ? `${Math.round(100 * r.pages / report.pages)}% of all pages` : "" },
             h("span", { style: `width:${(100 * r.pages / most).toFixed(1)}%` })) },
         ],

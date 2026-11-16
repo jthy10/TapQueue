@@ -60,6 +60,24 @@ export function bytes(n) {
 
 export const plural = (n, noun) => `${n} ${noun}${n === 1 ? "" : "s"}`;
 
+/**
+ * Money is kept in mills, thousandths of the currency's unit: 12500 is "$12.50", 35 is "€0.035".
+ * A currency made of letters (kr, EUR) goes after the amount; a symbol goes before it.
+ */
+export function money(mills, currency = "") {
+  const amount = Math.abs(mills) / 1000;
+  const text = amount.toFixed(Math.abs(mills) % 10 ? 3 : 2);
+  const sign = mills < 0 ? "-" : "";
+  if (!currency) return sign + text;
+  return /^\p{L}+$/u.test(currency) ? `${sign}${text} ${currency}` : `${sign}${currency}${text}`;
+}
+
+/** "2.50" -> 2500 mills; null for anything that isn't an amount (or is finer than a thousandth). */
+export function parseMoney(text) {
+  if (!/^-?(\d+(\.\d{0,3})?|\.\d{1,3})$/.test(String(text).trim())) return null;
+  return Math.round(Number(text) * 1000);
+}
+
 export function duration(from) {
   const seconds = Math.max(0, Math.round((Date.now() - new Date(from)) / 1000));
   const d = Math.floor(seconds / 86400), hr = Math.floor((seconds % 86400) / 3600), m = Math.floor((seconds % 3600) / 60);
@@ -114,6 +132,7 @@ export const loading = () => h("div", { class: "loading" }, "Loading…");
  * Pass `selectable: { key: row => id, onChange: Set => … }` for a checkbox column (for bulk actions).
  */
 export function table({ columns, rows, onRowClick, empty: emptyNode, search, toolbar, selected, selectable }) {
+  columns = columns.filter(Boolean); // so a page can write `condition && { label, value }`
   const tbody = h("tbody");
   const filter = search && h("input", { class: "search", type: "search", placeholder: "Filter…", oninput: () => fill() });
   const picked = new Set();

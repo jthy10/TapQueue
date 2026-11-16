@@ -1,7 +1,7 @@
 import { api, enc } from "../api.js";
 import { activityList } from "./activity.js";
 import { h, pageHead, panel, button, pill, time, table, empty, drawer, props, sectionTitle, field, input, checkbox, checkField,
-  formDialog, confirm, attempt, loading } from "../ui.js";
+  formDialog, confirm, attempt, loading, money, parseMoney } from "../ui.js";
 
 const tones = { ok: "ok", warning: "warn", error: "bad", offline: "bad" };
 
@@ -32,6 +32,8 @@ export function supplyMeters(supplies, { compact } = {}) {
 
 export async function render(root, ctx) {
   let printers = [], stations = [];
+  // What a page costs unless a printer says otherwise; "off" when printing isn't charged for.
+  let accounting = { mode: "off" };
   const list = h("div", null, loading());
   root.append(pageHead("Printers", "The physical printers that held jobs are released to. TapQueue talks to them over IPP.",
     button("Check all", { iconName: "refresh", onclick: () => load(true) }),
@@ -39,7 +41,8 @@ export async function render(root, ctx) {
   panel({ flush: true, body: list }));
 
   async function load(refresh) {
-    [printers, stations] = await Promise.all([api.get(`printers${refresh ? "?refresh=true" : ""}`), api.get("stations")]);
+    [printers, stations, accounting] = await Promise.all([api.get(`printers${refresh ? "?refresh=true" : ""}`), api.get("stations"),
+      api.maybe("accounting", { mode: "off" })]);
     if (!ctx.current) return;
     list.replaceChildren(table({
       rows: printers,
@@ -81,6 +84,9 @@ export async function render(root, ctx) {
           ["Address", h("code", null, p.uri)],
           ["Certificate", p.tlsSkipVerify ? pill("Not verified", "warn") : "Verified (ipps/https only)"],
           ["Last checked", time(p.checkedAt)],
+          accounting.mode !== "off" && ["A page costs", [
+            `${money(p.priceMono ?? accounting.priceMono, accounting.currency)} in black and white, ${money(p.priceColor ?? accounting.priceColor, accounting.currency)} in colour`,
+            h("span", { class: "sub" }, p.priceMono == null && p.priceColor == null ? "The prices on the Balances page." : "This printer's own price.")]],
         ]),
         sectionTitle("Supplies"),
         supplyMeters(p.health?.supplies),
@@ -103,6 +109,8 @@ export async function render(root, ctx) {
     });
   }
 
+  const price = (mills) => mills === null || mills === undefined ? "" : (mills / 1000).toFixed(mills % 10 ? 3 : 2);
+
   function edit(p) {
     const adding = !p;
     formDialog({
@@ -117,8 +125,19 @@ export async function render(root, ctx) {
           "The printer's IPP address. Most network printers use ipp://<ip>/ipp/print, or ipps:// for encrypted."),
         checkField("Don't verify its certificate", checkbox("tlsSkipVerify", p?.tlsSkipVerify ?? false),
           "For ipps:// printers with the self-signed certificate most printers ship with."),
+        accounting.mode !== "off" && field(`Its own price for a page (${accounting.currency})`, h("div", { class: "field-row" },
+          input("priceMono", { inputmode: "decimal", value: price(p?.priceMono), placeholder: `B&W: ${money(accounting.priceMono ?? 0)}`, "aria-label": "Black and white" }),
+          input("priceColor", { inputmode: "decimal", value: price(p?.priceColor), placeholder: `Colour: ${money(accounting.priceColor ?? 0)}`, "aria-label": "Colour" })),
+          "Black and white, then colour. Leave empty to charge what Balances says a page costs."),
       ],
       onSubmit: async (values) => {
+        if (accounting.mode !== "off") {
+          for (const key of ["priceMono", "priceColor"]) {
+            const amount = values[key] === "" ? (adding ? null : -1) : parseMoney(values[key]);
+            if (amount === null && values[key] !== "") throw new Error("A price looks like 0.05.");
+            if (amount === null) delete values[key]; else values[key] = amount;
+          }
+        }
         const saved = adding ? await api.post("printers", values) : await api.patch(`printers/${enc(p.printer.id)}`, values);
         await load();
         open(saved.printer.id);
