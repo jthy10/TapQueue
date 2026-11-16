@@ -634,11 +634,16 @@ public sealed record ClientSignOutRequest(string? RememberToken);
 /// The client build every PC of a <see cref="Platform"/> should be running. A PC whose own program
 /// has a different SHA-256 downloads <see cref="DownloadPath"/> and installs it.
 /// </summary>
+/// <param name="ReleasePrograms">The release's list of its programs' SHA-256s (SHA256SUMS.programs), as the server got it with the build (servers from 0.19).</param>
+/// <param name="ReleaseSignature">The signature of that list, which the PC checks itself (<see cref="Shared.ReleaseSignature"/>); null for a release that isn't signed.</param>
+/// <param name="Signed">The signature is one made with TapQueue's release key, so PCs install this build without asking GitHub.</param>
 public sealed record ClientBuildDto(string Version, string Sha256, long SizeBytes, DateTimeOffset PublishedAt, string DownloadPath,
-    string Platform = ClientPlatform.Windows);
+    string Platform = ClientPlatform.Windows, string? ReleasePrograms = null, string? ReleaseSignature = null, bool Signed = false);
 
 /// <summary>The release station build every station should be running. Downloaded with the station token.</summary>
-public sealed record StationBuildDto(string Version, string Sha256, long SizeBytes, DateTimeOffset PublishedAt, string DownloadPath);
+/// <param name="ReleasePrograms">As for <see cref="ClientBuildDto"/>.</param>
+public sealed record StationBuildDto(string Version, string Sha256, long SizeBytes, DateTimeOffset PublishedAt, string DownloadPath,
+    string? ReleasePrograms = null, string? ReleaseSignature = null, bool Signed = false);
 
 public sealed record ClientHeartbeatResponse(ClientBuildDto? ClientBuild);
 

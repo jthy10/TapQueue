@@ -91,11 +91,45 @@ public sealed class BuildUpdater(IBuildFeed feed, ClientBuildStore clientBuilds,
     private async Task PublishStationOfAsync(string version, string dir, CancellationToken ct) =>
         await HandOutStationAsync(await FetchStationAsync(version, dir, ct), ct);
 
+    /// <summary>A release's list of its programs and the list's signature, to hand out with its builds; nulls for a release without them.</summary>
+    private sealed record Signed(string? Programs, string? Signature);
+
+    /// <summary>
+    /// Gets the signed list of programs a release was published with. A release that has none is fine
+    /// (PCs and stations then check its builds against GitHub themselves); one whose signature isn't
+    /// TapQueue's is not, and isn't published.
+    /// </summary>
+    private async Task<Signed> SignedListAsync(string tag, string dir, CancellationToken ct)
+    {
+        async Task<string?> TryGetAsync(string asset)
+        {
+            var path = Path.Combine(dir, asset);
+            try
+            {
+                await feed.DownloadAsync(tag, asset, path, ct);
+            }
+            catch (HttpRequestException)
+            {
+                return null; // an older release, or one that wasn't signed
+            }
+            return new FileInfo(path).Length <= 64 * 1024 ? await File.ReadAllTextAsync(path, ct) : null;
+        }
+
+        var programs = await TryGetAsync(ReleaseCheck.ProgramsFile);
+        var signature = programs is null ? null : (await TryGetAsync(ReleaseSignature.SignatureFile))?.Trim();
+        if (programs is null || string.IsNullOrEmpty(signature))
+            return new Signed(programs, null);
+        if (ReleaseSignature.ReleaseKeys.Count > 0 && !ReleaseSignature.IsValid(programs, signature, ReleaseSignature.ReleaseKeys))
+            throw new InvalidDataException($"Release {tag}'s list of programs isn't signed with TapQueue's release key; nothing was published.");
+        return new Signed(programs, signature);
+    }
+
     /// <summary>Downloads and checks both clients of a release. Nothing is published yet, so PCs don't end up on different versions.</summary>
-    private async Task<List<(string Platform, string Path, string Label)>> FetchClientsAsync(string version, string dir, CancellationToken ct)
+    private async Task<(List<(string Platform, string Path, string Label)> Programs, Signed Signed)> FetchClientsAsync(string version, string dir, CancellationToken ct)
     {
         var tag = $"client-v{version}";
         var sums = await ChecksumsAsync(tag, Directory.CreateDirectory(Path.Combine(dir, "client")).FullName, ct);
+        var signed = await SignedListAsync(tag, Path.Combine(dir, "client"), ct);
         var programs = new List<(string Platform, string Path, string Label)>();
         foreach (var platform in ClientPlatform.All)
         {
@@ -105,40 +139,43 @@ public sealed class BuildUpdater(IBuildFeed feed, ClientBuildStore clientBuilds,
                         ?? await LabelAsync(tag, version, ct);
             programs.Add((platform, program, label));
         }
-        return programs;
+        return (programs, signed);
     }
 
-    private async Task HandOutAsync(List<(string Platform, string Path, string Label)> programs, string then, CancellationToken ct)
+    private async Task HandOutAsync((List<(string Platform, string Path, string Label)> Programs, Signed Signed) clients, string then, CancellationToken ct)
     {
-        foreach (var (platform, path, label) in programs)
+        var signed = clients.Signed;
+        foreach (var (platform, path, label) in clients.Programs)
         {
-            // A platform that already hands out that exact program is left alone.
-            if (clientBuilds.Latest(platform) is { } current && current.Sha256 == Sha256(path))
+            // A platform that already hands out that exact program is left alone, unless it can now go out signed.
+            if (clientBuilds.Latest(platform) is { } current && current.Sha256 == Sha256(path) && (current.ReleaseSignature is not null || signed.Signature is null))
                 continue;
             await using var program = File.OpenRead(path);
-            var build = await clientBuilds.PublishAsync(platform, label, program, ct);
-            logger.LogInformation("Published {Platform} client {Version} from GitHub (sha256 {Sha256})", ClientPlatform.DisplayName(platform), build.Version, build.Sha256);
-            events.Admin(null, $"Published {ClientPlatform.DisplayName(platform)} client {build.Version} from the GitHub release; {then}.");
+            var build = await clientBuilds.PublishAsync(platform, label, program, ct, signed.Programs, signed.Signature);
+            logger.LogInformation("Published {Platform} client {Version} from GitHub (sha256 {Sha256}, {Signed})",
+                ClientPlatform.DisplayName(platform), build.Version, build.Sha256, build.Signed ? "signed" : "not signed");
+            events.Admin(null, $"Published {ClientPlatform.DisplayName(platform)} client {build.Version} from the GitHub release{(build.Signed ? " (signed)" : "")}; {then}.");
         }
     }
 
-    private async Task<(string Path, string Label)> FetchStationAsync(string version, string dir, CancellationToken ct)
+    private async Task<(string Path, string Label, Signed Signed)> FetchStationAsync(string version, string dir, CancellationToken ct)
     {
         var tag = $"server-v{version}";
         var sums = await ChecksumsAsync(tag, Directory.CreateDirectory(Path.Combine(dir, "server")).FullName, ct);
+        var signed = await SignedListAsync(tag, Path.Combine(dir, "server"), ct);
         var archive = await FetchAsync(tag, GitHubReleaseFeed.StationArchive(version), sums, dir, ct);
         var path = Path.Combine(dir, "station");
-        return (path, Extract(archive, "tapqueue-station", path) ?? await LabelAsync(tag, version, ct));
+        return (path, Extract(archive, "tapqueue-station", path) ?? await LabelAsync(tag, version, ct), signed);
     }
 
-    private async Task HandOutStationAsync((string Path, string Label) station, CancellationToken ct)
+    private async Task HandOutStationAsync((string Path, string Label, Signed Signed) station, CancellationToken ct)
     {
-        if (stationBuilds.Latest() is { } current && current.Sha256 == Sha256(station.Path))
+        if (stationBuilds.Latest() is { } current && current.Sha256 == Sha256(station.Path) && (current.ReleaseSignature is not null || station.Signed.Signature is null))
             return;
         await using var program = File.OpenRead(station.Path);
-        var build = await stationBuilds.PublishAsync(station.Label, program, ct);
-        logger.LogInformation("Published station build {Version} from GitHub (sha256 {Sha256})", build.Version, build.Sha256);
-        events.Admin(null, $"Published station build {build.Version} from the GitHub release; stations install it within seconds.");
+        var build = await stationBuilds.PublishAsync(station.Label, program, ct, station.Signed.Programs, station.Signed.Signature);
+        logger.LogInformation("Published station build {Version} from GitHub (sha256 {Sha256}, {Signed})", build.Version, build.Sha256, build.Signed ? "signed" : "not signed");
+        events.Admin(null, $"Published station build {build.Version} from the GitHub release{(build.Signed ? " (signed)" : "")}; stations install it within seconds.");
     }
 
     private async Task<BuildReleaseDto> CheckAsync(Checked state, Func<CancellationToken, Task<ServerReleaseDto?>> latest, string none,

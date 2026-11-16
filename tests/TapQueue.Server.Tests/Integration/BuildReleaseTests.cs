@@ -132,6 +132,37 @@ public sealed class BuildReleaseTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AReleasesSignedListOfProgramsIsHandedOutWithItsBuilds()
+    {
+        // Nothing with it yet: PCs check such a build against GitHub themselves.
+        await Check("client");
+        await TestServer.ReadAsync<BuildReleaseDto>(await Publish("client", "0.9.7"));
+        Assert.All(await ClientBuilds(), b => Assert.Null(b.ReleaseSignature));
+
+        // The release gets its list and the list's signature (a re-release; the programs are the same).
+        var list = $"{Convert.ToHexStringLower(SHA256.HashData(WindowsClient))}  TapQueueClient.exe\n{Convert.ToHexStringLower(SHA256.HashData(LinuxClient))}  tapqueue-client\n";
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var signature = Convert.ToBase64String(key.SignData(Encoding.UTF8.GetBytes(list), HashAlgorithmName.SHA256, DSASignatureFormat.Rfc3279DerSequence));
+        _feed.Files["client-v0.9.7/SHA256SUMS.programs"] = Encoding.UTF8.GetBytes(list);
+        _feed.Files["client-v0.9.7/SHA256SUMS.programs.sig"] = Encoding.ASCII.GetBytes(signature + "\n");
+        _feed.Sum("client-v0.9.7");
+        await TestServer.ReadAsync<BuildReleaseDto>(await Publish("client", "0.9.7"));
+
+        // Published again so it goes out signed, and a PC is handed the list and signature to check for itself.
+        Assert.Equal(4, (await ClientBuilds()).Count);
+        using var alice = await _server.SignInAsync("alice");
+        var offered = (await TestServer.ReadAsync<ClientHeartbeatResponse>(await alice.PostAsync("/api/v1/client/heartbeat", null))).ClientBuild!;
+        Assert.Equal(list, offered.ReleasePrograms);
+        Assert.Equal(signature, offered.ReleaseSignature);
+        Assert.True(TapQueue.Shared.ReleaseSignature.IsValid(offered.ReleasePrograms, offered.ReleaseSignature, [Convert.ToBase64String(key.ExportSubjectPublicKeyInfo())]));
+        // This server was built without a release key, so it can't say the signature is TapQueue's.
+        Assert.False(offered.Signed);
+
+        await TestServer.ReadAsync<BuildReleaseDto>(await Publish("client", "0.9.7"));
+        Assert.Equal(4, (await ClientBuilds()).Count);
+    }
+
+    [Fact]
     public async Task AnOlderBuildOnOnePlatformStillCountsAsAnUpdate()
     {
         await _server.PublishClientAsync("0.9.7+be5698f", LinuxClient, ClientPlatform.Linux);

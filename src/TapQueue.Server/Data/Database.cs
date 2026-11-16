@@ -464,6 +464,15 @@ public sealed class Database
         """
             ALTER TABLE stations ADD COLUMN screen_key_hash TEXT;
         """,
+
+        // 21: signed releases. A build is kept with its release's list of programs and that list's
+        // signature, which PCs and stations check themselves; both NULL for a release that isn't signed.
+        """
+            ALTER TABLE client_builds ADD COLUMN release_programs TEXT;
+            ALTER TABLE client_builds ADD COLUMN release_signature TEXT;
+            ALTER TABLE station_builds ADD COLUMN release_programs TEXT;
+            ALTER TABLE station_builds ADD COLUMN release_signature TEXT;
+        """,
     ];
 
     /// <summary>
@@ -480,6 +489,13 @@ public sealed class Database
     /// </summary>
     private static readonly string[] Downgrades =
     [
+        // 21 -> 20
+        """
+            ALTER TABLE client_builds DROP COLUMN release_programs;
+            ALTER TABLE client_builds DROP COLUMN release_signature;
+            ALTER TABLE station_builds DROP COLUMN release_programs;
+            ALTER TABLE station_builds DROP COLUMN release_signature;
+        """,
     ];
 
     /// <summary>

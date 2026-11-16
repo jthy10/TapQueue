@@ -7,11 +7,16 @@ namespace TapQueue.Server.Data;
 
 /// <param name="DownloadPath">Where the program that runs this build downloads it from.</param>
 /// <param name="Platform">For client builds, which <see cref="ClientPlatform"/> runs it; null for station builds.</param>
-public sealed record BuildRecord(long Id, string Version, string Sha256, long SizeBytes, DateTimeOffset PublishedAt, string DownloadPath, string? Platform)
+/// <param name="ReleasePrograms">The release's list of programs it came with, and <paramref name="ReleaseSignature"/> that list's signature (<see cref="Shared.ReleaseSignature"/>).</param>
+public sealed record BuildRecord(long Id, string Version, string Sha256, long SizeBytes, DateTimeOffset PublishedAt, string DownloadPath, string? Platform,
+    string? ReleasePrograms = null, string? ReleaseSignature = null)
 {
-    public ClientBuildDto ToDto() => new(Version, Sha256, SizeBytes, PublishedAt, DownloadPath, Platform ?? ClientPlatform.Windows);
+    /// <summary>Signed with one of TapQueue's release keys, so PCs and stations install it without asking GitHub.</summary>
+    public bool Signed => Shared.ReleaseSignature.IsValid(ReleasePrograms, ReleaseSignature, Shared.ReleaseSignature.ReleaseKeys);
 
-    public StationBuildDto ToStationDto() => new(Version, Sha256, SizeBytes, PublishedAt, DownloadPath);
+    public ClientBuildDto ToDto() => new(Version, Sha256, SizeBytes, PublishedAt, DownloadPath, Platform ?? ClientPlatform.Windows, ReleasePrograms, ReleaseSignature, Signed);
+
+    public StationBuildDto ToStationDto() => new(Version, Sha256, SizeBytes, PublishedAt, DownloadPath, ReleasePrograms, ReleaseSignature, Signed);
 }
 
 /// <summary>
@@ -28,8 +33,9 @@ public sealed class ClientBuildStore(Database database, string dataDir)
     public List<BuildRecord> LatestPerPlatform() =>
         ClientPlatform.All.Select(Latest).OfType<BuildRecord>().ToList();
 
-    public Task<BuildRecord> PublishAsync(string platform, string version, Stream program, CancellationToken ct) =>
-        PublishAsync(version, program, platform, ct);
+    public Task<BuildRecord> PublishAsync(string platform, string version, Stream program, CancellationToken ct,
+        string? releasePrograms = null, string? releaseSignature = null) =>
+        PublishAsync(version, program, platform, releasePrograms, releaseSignature, ct);
 }
 
 /// <summary>Release station builds (the tapqueue-station program). Stations install the newest one the same way.</summary>
@@ -38,8 +44,9 @@ public sealed class StationBuildStore(Database database, string dataDir)
 {
     public BuildRecord? Latest() => LatestFor(null);
 
-    public Task<BuildRecord> PublishAsync(string version, Stream program, CancellationToken ct) =>
-        PublishAsync(version, program, null, ct);
+    public Task<BuildRecord> PublishAsync(string version, Stream program, CancellationToken ct,
+        string? releasePrograms = null, string? releaseSignature = null) =>
+        PublishAsync(version, program, null, releasePrograms, releaseSignature, ct);
 }
 
 /// <summary>
@@ -65,7 +72,7 @@ public abstract class BuildStore
         _extension = extension;
         _downloadPrefix = downloadPrefix;
         _hasPlatform = hasPlatform;
-        _columns = "id, version, sha256, size_bytes, published_at" + (hasPlatform ? ", platform" : "");
+        _columns = "id, version, sha256, size_bytes, published_at, release_programs, release_signature" + (hasPlatform ? ", platform" : "");
         Directory.CreateDirectory(_directory);
     }
 
@@ -83,7 +90,8 @@ public abstract class BuildStore
         _database.Query($"SELECT {_columns} FROM {_table} ORDER BY id DESC", Map);
 
     /// <summary>Stores a program and makes it the build everything (of that platform) should run.</summary>
-    protected async Task<BuildRecord> PublishAsync(string version, Stream exe, string? platform, CancellationToken ct)
+    protected async Task<BuildRecord> PublishAsync(string version, Stream exe, string? platform, string? releasePrograms, string? releaseSignature,
+        CancellationToken ct)
     {
         var temp = Path.Combine(_directory, $"upload-{Guid.NewGuid():N}.tmp");
         try
@@ -109,15 +117,17 @@ public abstract class BuildStore
 
             return _hasPlatform
                 ? _database.QueryOne($"""
-                    INSERT INTO {_table} (version, sha256, size_bytes, published_at, platform)
-                    VALUES ($version, $sha, $size, $now, $platform)
+                    INSERT INTO {_table} (version, sha256, size_bytes, published_at, platform, release_programs, release_signature)
+                    VALUES ($version, $sha, $size, $now, $platform, $programs, $signature)
                     RETURNING {_columns}
-                    """, Map, ("$version", version), ("$sha", sha256), ("$size", size), ("$now", DateTimeOffset.UtcNow), ("$platform", platform))!
+                    """, Map, ("$version", version), ("$sha", sha256), ("$size", size), ("$now", DateTimeOffset.UtcNow), ("$platform", platform),
+                    ("$programs", releasePrograms), ("$signature", releaseSignature))!
                 : _database.QueryOne($"""
-                    INSERT INTO {_table} (version, sha256, size_bytes, published_at)
-                    VALUES ($version, $sha, $size, $now)
+                    INSERT INTO {_table} (version, sha256, size_bytes, published_at, release_programs, release_signature)
+                    VALUES ($version, $sha, $size, $now, $programs, $signature)
                     RETURNING {_columns}
-                    """, Map, ("$version", version), ("$sha", sha256), ("$size", size), ("$now", DateTimeOffset.UtcNow))!;
+                    """, Map, ("$version", version), ("$sha", sha256), ("$size", size), ("$now", DateTimeOffset.UtcNow),
+                    ("$programs", releasePrograms), ("$signature", releaseSignature))!;
         }
         finally
         {
@@ -138,5 +148,5 @@ public abstract class BuildStore
 
     private BuildRecord Map(SqliteDataReader r) =>
         new(r.GetInt64(0), r.GetString(1), r.GetString(2), r.GetInt64(3), r.GetTime(4), _downloadPrefix + r.GetString(2),
-            _hasPlatform ? r.GetString(5) : null);
+            _hasPlatform ? r.GetString(7) : null, r.GetStringOrNull(5), r.GetStringOrNull(6));
 }
