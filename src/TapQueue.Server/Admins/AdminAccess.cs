@@ -84,6 +84,9 @@ public static class AdminAccess
         // How people sign in, the backup passphrase and where the server's private key comes from.
         if (parts is ["server", "startup", ..])
             return AdminRequirement.FullAdminOnly;
+        // Whoever has the setup code can make themselves the first full admin.
+        if (parts is ["server", "setup-code"])
+            return AdminRequirement.FullAdminOnly;
         // Cards are stored hashed, but a card nobody owns yet is listed whole so it can be enrolled:
         // only for those who may enroll it.
         if (read && parts is ["badges", "unknown"])

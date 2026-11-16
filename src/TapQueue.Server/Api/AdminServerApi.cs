@@ -43,6 +43,8 @@ public static class AdminServerApi
             await downgrade.ApplyAsync(request.Version ?? "", ct) is { } error
                 ? Results.Conflict(new ErrorResponse(error))
                 : Results.Ok(downgrade.Status()));
+        // For whoever is setting the server up, to create the first admin in the console (FirstRunSetup).
+        admin.MapGet("/server/setup-code", (FirstRunSetup setup) => new SetupCodeResponse(setup.Code));
         // New PCs then need this code in client.toml to register. Shown once; making another replaces it.
         admin.MapPost("/server/enrollment-code", (ServerSettings settings, EventLog events) =>
         {

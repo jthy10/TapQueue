@@ -1113,6 +1113,15 @@ public sealed record AdminsDto(IReadOnlyList<AdminGrantDto> Grants, IReadOnlyLis
 
 public sealed record AdminSignInRequest(string Username, string Password);
 
+/// <summary>Whether the console should offer to create the first admin instead of a sign-in (<c>GET /api/v1/admin-auth/setup</c>).</summary>
+public sealed record FirstRunSetupDto(bool Needed);
+
+/// <summary>Creating the first admin on a new server, with the setup code from its log or <c>tapqueue-admin server setup-code</c>.</summary>
+public sealed record FirstRunSetupRequest(string Code, string Username, string? DisplayName, string Password);
+
+/// <summary>The setup code, while a server has no admin who can sign in; null once it has.</summary>
+public sealed record SetupCodeResponse(string? Code);
+
 /// <summary>Who is using the console, and what they may do.</summary>
 /// <param name="Username">Null when nobody is signed in: dev mode's open console, or the admin token.</param>
 /// <param name="Roles">Area to role for every area they have one in.</param>

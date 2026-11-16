@@ -86,6 +86,7 @@ public static class ServerApp
         builder.Services.AddSingleton<ClientLoginStore>();
         builder.Services.AddSingleton<AdminStore>();
         builder.Services.AddSingleton<AdminRoster>();
+        builder.Services.AddSingleton<FirstRunSetup>();
         builder.Services.AddSingleton<SignInThrottle>();
         builder.Services.AddSingleton(new BadgeKey(config));
         builder.Services.AddSingleton<BadgeStore>();

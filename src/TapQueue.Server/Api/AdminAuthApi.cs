@@ -3,6 +3,7 @@ using TapQueue.Server.ActiveDirectory;
 using TapQueue.Server.Admins;
 using TapQueue.Server.Config;
 using TapQueue.Server.Data;
+using TapQueue.Server.Users;
 using TapQueue.Shared.Api;
 
 namespace TapQueue.Server.Api;
@@ -21,6 +22,62 @@ public static class AdminAuthApi
         auth.MapPost("/sign-out", SignOut);
         auth.MapGet("/me", Me);
         auth.MapPost("/password", ChangePassword);
+        auth.MapGet("/setup", (FirstRunSetup setup) => new FirstRunSetupDto(setup.Needed));
+        auth.MapPost("/setup", SetUp);
+    }
+
+    /// <summary>
+    /// Creates the first full admin on a server nobody can sign in to yet (<see cref="FirstRunSetup"/>),
+    /// and signs them in. Needs the setup code; guessing at it is slowed down like guessing a password.
+    /// </summary>
+    private static IResult SetUp(FirstRunSetupRequest request, HttpContext http, FirstRunSetup setup, UserStore users, UserLifecycle lifecycle,
+        AdminStore admins, SignInThrottle throttle, EventLog events, ILogger<AdminStore> logger)
+    {
+        const string Guessing = "setup code";
+        if (!http.Request.Headers.ContainsKey(AdminAccess.ConsoleHeader))
+            return AdminAccess.Forbidden($"Set up from the admin console (the {AdminAccess.ConsoleHeader} header is missing).");
+        if (!setup.Needed)
+            return Results.Conflict(new ErrorResponse("This server already has an admin. Sign in instead."));
+        var ip = http.ClientIp();
+        if (throttle.IsLocked(Guessing, ip))
+            return Results.Json(new ErrorResponse("Too many wrong setup codes. Wait a while and try again."), statusCode: StatusCodes.Status429TooManyRequests);
+        if (!setup.Check(request.Code))
+        {
+            throttle.Failed(Guessing, ip);
+            logger.LogWarning("Wrong setup code from {Ip}", ip);
+            return AdminAccess.Unauthorized("That isn't the setup code. It's in the server's log, or run `sudo tapqueue-admin server setup-code` on the server.");
+        }
+
+        var username = request.Username?.Trim() ?? "";
+        if (username.Length is 0 or > 255 || username.Any(char.IsControl) || username.Contains('\\') || username.Contains('/'))
+            return Results.BadRequest(new ErrorResponse("Choose a username (no slashes)."));
+        if (PasswordHasher.Problem(request.Password) is { } problem)
+            return Results.BadRequest(new ErrorResponse(problem));
+        var user = users.FindByUsername(username);
+        if (user is { FromDirectory: true })
+            return Results.BadRequest(new ErrorResponse($"{user.Username} comes from Active Directory. Choose another name for the first admin."));
+        if (user is { Disabled: true })
+            return Results.BadRequest(new ErrorResponse($"{user.Username}'s account is disabled. Choose another name for the first admin."));
+
+        using (EventLog.ActingAs(username))
+        {
+            user ??= lifecycle.Create(username, string.IsNullOrWhiteSpace(request.DisplayName) ? null : request.DisplayName.Trim()).User;
+            users.SetPasswordHash(user.Id, PasswordHasher.Hash(request.Password));
+            admins.Set(user.Id, null, AdminArea.All, AdminRole.Admin);
+            events.Admin(EventLog.User(user.Username), $"{user.Username} set up this server from {ip} with the setup code and is its first full admin.");
+        }
+        logger.LogWarning("{User} set up this server from {Ip} with the setup code and is its first full admin", user.Username, ip);
+
+        var token = Tokens.New();
+        admins.StartSession(Tokens.Hash(token), user.Id, ip, http.Request.Headers.UserAgent.ToString());
+        http.Response.Cookies.Append(AdminAccess.CookieName, token, new CookieOptions
+        {
+            HttpOnly = true,
+            SameSite = SameSiteMode.Strict,
+            Secure = http.Request.IsHttps,
+            Path = "/",
+        });
+        return Results.Ok(MeFor(users.FindById(user.Id)!, admins.PermissionsFor(user.Id), http));
     }
 
     private static async Task<IResult> SignIn(AdminSignInRequest request, HttpContext http, UserStore users, AdminStore admins,

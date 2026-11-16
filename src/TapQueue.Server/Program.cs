@@ -115,6 +115,11 @@ if (config.Auth.Mode == "dev")
     app.Logger.LogWarning("auth.mode = \"dev\": anyone can sign in as any username. Use \"token\" outside of testing.");
 if (fromConsole.Count > 0)
     app.Logger.LogInformation("Set in the console, over {Path}: {Settings}", configPath, string.Join(", ", fromConsole));
+if (app.Services.GetRequiredService<TapQueue.Server.Admins.FirstRunSetup>().Code is { } setupCode)
+    app.Logger.LogWarning("Nobody can sign in to the admin console yet. Open {Url} and create the first admin with setup code {Code} " +
+        "(`sudo tapqueue-admin server setup-code` shows it again; it changes when the server restarts).",
+        config.Tls.Enabled ? $"https://<this-host>:{ServerApp.ParseEndpoint(config.Tls.Listen).Port}/admin" : $"http://<this-host>:{ServerApp.ParseEndpoint(config.Server.Listen).Port}/admin",
+        setupCode);
 
 try
 {
