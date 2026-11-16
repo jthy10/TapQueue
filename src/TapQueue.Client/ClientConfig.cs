@@ -36,6 +36,12 @@ public sealed class ClientConfig
     /// </summary>
     public string ReleasesUrl { get; set; } = "";
 
+    /// <summary>
+    /// Another public key (base64) whose signed releases this PC installs, besides TapQueue's own
+    /// (<see cref="ReleaseSignature"/>). Only for a site that builds TapQueue itself and signs its builds.
+    /// </summary>
+    public string UpdateKey { get; set; } = "";
+
     /// <summary>Let the TapQueue service add the server's print queues to this PC as printers.</summary>
     public bool InstallPrinters { get; set; } = true;
 

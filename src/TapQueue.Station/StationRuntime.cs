@@ -73,7 +73,7 @@ internal sealed class StationRuntime(HttpClient http, StationConfig local, Actio
                 && DateTimeOffset.UtcNow - _lastUpdateAttempt > UpdateRetry)
             {
                 _lastUpdateAttempt = DateTimeOffset.UtcNow;
-                if (await SelfUpdate.InstallAsync(http, local.ServerUrl, local.ReleasesUrl, build, log, ct))
+                if (await SelfUpdate.InstallAsync(http, local.ServerUrl, local.ReleasesUrl, build, log, ct, local.UpdateKey))
                     Restart($"installed station build {build.Version}");
             }
         }
@@ -123,9 +123,19 @@ internal sealed class StationRuntime(HttpClient http, StationConfig local, Actio
 /// </summary>
 internal static class SelfUpdate
 {
-    public static async Task<bool> InstallAsync(HttpClient http, string serverUrl, string releasesUrl, StationBuildDto build, Action<string> log, CancellationToken ct)
+    public static async Task<bool> InstallAsync(HttpClient http, string serverUrl, string releasesUrl, StationBuildDto build, Action<string> log, CancellationToken ct,
+        string? updateKey = null)
     {
-        // The server passes builds on; this station asks TapQueue's releases itself whether this is one of theirs.
+        // The server passes builds on. A release signed with a key this station trusts is checked right here;
+        // otherwise the station asks TapQueue's releases itself whether this is one of theirs.
+        var (signed, problem) = ReleaseSignature.Check("station build", build.Version, "tapqueue-station", build.Sha256, build.ReleasePrograms, build.ReleaseSignature,
+            ReleaseSignature.TrustedKeys(updateKey));
+        if (signed == ReleaseSignature.Verdict.Refused)
+        {
+            log(problem!);
+            return false;
+        }
+        if (signed == ReleaseSignature.Verdict.Unsigned)
         using (var releases = ReleaseCheck.CreateHttpClient())
         {
             var check = await ReleaseCheck.VerifyAsync(releases, releasesUrl, ReleaseCheck.StationTag, build.Version, "tapqueue-station", build.Sha256, ct);

@@ -18,6 +18,12 @@ public sealed class StationConfig
     /// </summary>
     public string ReleasesUrl { get; set; } = "";
 
+    /// <summary>
+    /// Another public key (base64) whose signed releases this station installs, besides TapQueue's
+    /// own. Only for a site that builds TapQueue itself and signs its builds.
+    /// </summary>
+    public string UpdateKey { get; set; } = "";
+
     /// <summary>From `tapqueue-admin stations add`.</summary>
     public string Token { get; set; } = "";
 

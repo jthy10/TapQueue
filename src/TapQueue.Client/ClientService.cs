@@ -52,7 +52,7 @@ public sealed class ClientService(
         using var http = config.CreateHttpClient(pin, TimeSpan.FromMinutes(10));
         var printers = new PrinterSync(installer, logger);
         using var releases = ReleaseCheck.CreateHttpClient();
-        var updater = new ClientUpdater(http, logger, releases, config.ReleasesUrl);
+        var updater = new ClientUpdater(http, logger, releases, config.ReleasesUrl, config.UpdateKey);
 
         var checks = Channel.CreateUnbounded<UpdateCheck.Request>();
         using var stopListening = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);

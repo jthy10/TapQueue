@@ -20,6 +20,11 @@ enrollment_code = ""
 # publish your releases elsewhere: then the address their files are under, <url>/client-vX.Y.Z/.
 releases_url = ""
 
+# TapQueue's own releases are signed, and this PC installs a signed build without asking GitHub.
+# Leave empty unless you build TapQueue yourself and sign your releases (scripts/sign-release.sh):
+# then your public key, as scripts/new-release-key.sh prints it.
+update_key = ""
+
 # Your TapQueue username. Leave empty to use the name you sign in to the PC with.
 username = ""
 

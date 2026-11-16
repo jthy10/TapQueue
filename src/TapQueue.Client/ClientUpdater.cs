@@ -19,8 +19,13 @@ namespace TapQueue.Client;
 /// <param name="http">For the TapQueue server.</param>
 /// <param name="releases">For asking where TapQueue's releases are published.</param>
 /// <param name="releasesUrl">client.toml's releases_url; empty for TapQueue's own releases.</param>
-public sealed class ClientUpdater(HttpClient http, ILogger logger, HttpClient releases, string? releasesUrl = null)
+/// <param name="updateKey">client.toml's update_key; empty to trust only TapQueue's own release keys.</param>
+/// <param name="trustedKeys">For tests: the keys to trust instead of the ones this program was built with.</param>
+public sealed class ClientUpdater(HttpClient http, ILogger logger, HttpClient releases, string? releasesUrl = null, string? updateKey = null,
+    IReadOnlyList<string>? trustedKeys = null)
 {
+    private readonly IReadOnlyList<string> _keys = trustedKeys ?? ReleaseSignature.TrustedKeys(updateKey);
+
     /// <summary>A build that couldn't be checked because the releases couldn't be reached is tried again after this long.</summary>
     private static readonly TimeSpan RecheckAfter = TimeSpan.FromMinutes(10);
 
@@ -69,9 +74,20 @@ public sealed class ClientUpdater(HttpClient http, ILogger logger, HttpClient re
             return UpdateOutcome.UpToDate;
         }
 
-        if (_unchecked is { } waiting && waiting.Sha256 == build.Sha256 && DateTimeOffset.UtcNow - waiting.At < RecheckAfter)
+        // A release signed with a key this PC trusts needs nobody asked; anything else is checked against the release itself.
+        var (signed, problem) = ReleaseSignature.Check("client", build.Version, ProgramName, build.Sha256, build.ReleasePrograms, build.ReleaseSignature, _keys);
+        if (signed == ReleaseSignature.Verdict.Refused)
+        {
+            _failedSha256 = build.Sha256;
+            LastError = problem;
+            logger.LogError("Not installing client {Version}: {Error}", build.Version, problem);
             return UpdateOutcome.Failed;
-        var check = await ReleaseCheck.VerifyAsync(releases, releasesUrl, ReleaseCheck.ClientTag, build.Version, ProgramName, build.Sha256, ct);
+        }
+        if (signed == ReleaseSignature.Verdict.Unsigned && _unchecked is { } waiting && waiting.Sha256 == build.Sha256 && DateTimeOffset.UtcNow - waiting.At < RecheckAfter)
+            return UpdateOutcome.Failed;
+        var check = signed == ReleaseSignature.Verdict.Good
+            ? new ReleaseCheck.Result(true)
+            : await ReleaseCheck.VerifyAsync(releases, releasesUrl, ReleaseCheck.ClientTag, build.Version, ProgramName, build.Sha256, ct);
         if (!check.Ok)
         {
             // Not being able to ask is tried again in a while; not being in the release is final for this build.
