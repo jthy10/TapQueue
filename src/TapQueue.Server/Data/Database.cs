@@ -500,6 +500,15 @@ public sealed class Database
             CREATE INDEX ix_balance_transactions_user ON balance_transactions(user_id, id);
             CREATE INDEX ix_balance_transactions_job ON balance_transactions(job_id) WHERE job_id IS NOT NULL;
         """,
+
+        // 23: rules on a queue. sides_policy is one of SidesPolicy; max_pages is the most pages (times
+        // copies) one job may have, 0 for no limit; direct_printer_id is the printer a queue prints
+        // straight to instead of holding its jobs, NULL for a hold queue.
+        """
+            ALTER TABLE queues ADD COLUMN sides_policy TEXT NOT NULL DEFAULT 'any';
+            ALTER TABLE queues ADD COLUMN max_pages INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE queues ADD COLUMN direct_printer_id TEXT;
+        """,
     ];
 
     /// <summary>
@@ -536,6 +545,13 @@ public sealed class Database
             ALTER TABLE users DROP COLUMN unrestricted;
             ALTER TABLE users DROP COLUMN balance;
             DELETE FROM settings WHERE key IN ('accounting', 'initialBalance');
+        """,
+
+        // 23 -> 22
+        """
+            ALTER TABLE queues DROP COLUMN direct_printer_id;
+            ALTER TABLE queues DROP COLUMN max_pages;
+            ALTER TABLE queues DROP COLUMN sides_policy;
         """,
     ];
 

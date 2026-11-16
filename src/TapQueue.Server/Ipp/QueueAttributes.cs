@@ -101,12 +101,15 @@ public static class QueueAttributes
 
         // Job template
         var colorModes = can.Color ? new[] { "auto", "color", "monochrome" } : ["monochrome"];
-        var sides = can.Duplex ? new[] { "one-sided", "two-sided-long-edge", "two-sided-short-edge" } : ["one-sided"];
+        // A queue that only prints two-sided doesn't offer one side; one that prefers it says so and lets people choose.
+        var sides = !can.Duplex ? ["one-sided"]
+            : queue.ForcesTwoSided ? new[] { "two-sided-long-edge", "two-sided-short-edge" }
+            : ["one-sided", "two-sided-long-edge", "two-sided-short-edge"];
         var resolution = can.Resolutions.Contains(600) ? 600 : can.Resolutions[0];
         all.Add("color-supported", IppValue.Boolean(can.Color))
             .Add("print-color-mode-default", IppValue.Keyword(can.Color ? "auto" : "monochrome"))
             .Add("print-color-mode-supported", keywords(colorModes))
-            .Add("sides-default", IppValue.Keyword("one-sided"))
+            .Add("sides-default", IppValue.Keyword(can.Duplex && queue.DefaultsToTwoSided ? "two-sided-long-edge" : "one-sided"))
             .Add("sides-supported", keywords(sides))
             .Add("copies-default", IppValue.Integer(1))
             .Add("copies-supported", IppValue.Range(1, 999))

@@ -339,8 +339,12 @@ public static class AdminApi
         return Results.Ok(printers.ToAdminDto(printer));
     }
 
-    private static IResult DeletePrinter(string id, PrinterStore store, PrinterRegistry printers, EventLog events)
+    private static IResult DeletePrinter(string id, PrinterStore store, PrinterRegistry printers, QueueStore queues, EventLog events)
     {
+        if (queues.PrintingDirectlyTo(id) is { Count: > 0 } direct)
+            return Results.Conflict(new ErrorResponse(
+                $"{(direct.Count == 1 ? "Queue" : "Queues")} {string.Join(", ", direct.Select(q => q.Id))} {(direct.Count == 1 ? "prints" : "print")} straight to printer \"{id}\". " +
+                "Point them at another printer, or make them hold queues, first."));
         var stations = store.StationsUsing(id);
         if (stations.Count > 0)
             return Results.Conflict(new ErrorResponse(
@@ -353,7 +357,24 @@ public static class AdminApi
         return Results.NoContent();
     }
 
-    private static IResult CreateQueue(CreateQueueRequest request, QueueStore queues, EventLog events)
+    /// <summary>Why a queue's rules can't be what was asked, or null. Also gives the printer a direct queue names, as it's stored.</summary>
+    private static IResult? QueueRulesProblem(string? sidesPolicy, int? maxPages, string? directPrinterId, PrinterStore printers, out string? directPrinter)
+    {
+        directPrinter = null;
+        if (sidesPolicy is not null && !SidesPolicy.All.Contains(sidesPolicy))
+            return Results.BadRequest(new ErrorResponse($"sidesPolicy must be one of: {string.Join(", ", SidesPolicy.All)}."));
+        if (maxPages is < 0 or > 1_000_000)
+            return Results.BadRequest(new ErrorResponse("maxPages must be 0 (no limit) to 1000000."));
+        if (Clean(directPrinterId) is { } wanted)
+        {
+            if (printers.Get(wanted) is not { } printer)
+                return Results.BadRequest(new ErrorResponse($"No printer \"{wanted}\" for the queue to print straight to. Add it first."));
+            directPrinter = printer.Id;
+        }
+        return null;
+    }
+
+    private static IResult CreateQueue(CreateQueueRequest request, QueueStore queues, PrinterStore printerStore, EventLog events)
     {
         var id = request.Id?.Trim();
         if (!Ids.IsValid(id))
@@ -365,18 +386,25 @@ public static class AdminApi
         if (queues.Get(id!) is not null)
             return Results.Conflict(new ErrorResponse($"Queue \"{id}\" already exists."));
 
+        if (QueueRulesProblem(request.SidesPolicy, request.MaxPages, request.DirectPrinterId, printerStore, out var direct) is { } rules)
+            return rules;
+
         var queue = queues.Create(new QueueRecord(id!, name, Clean(request.Description) ?? QueueRecord.DefaultDescription,
-            Clean(request.Location) ?? "", request.Color ?? false, request.Duplex ?? false, Clean(request.DefaultMedia) ?? QueueRecord.Letter));
-        events.Admin(EventLog.Queue(queue.Id), $"Added queue \"{queue.Name}\" ({queue.Id}).");
+            Clean(request.Location) ?? "", request.Color ?? false, request.Duplex ?? false, Clean(request.DefaultMedia) ?? QueueRecord.Letter,
+            request.SidesPolicy ?? SidesPolicy.Any, request.MaxPages ?? 0, direct));
+        events.Admin(EventLog.Queue(queue.Id), $"Added queue \"{queue.Name}\" ({queue.Id}){(direct is null ? "" : $", printing straight to {direct}")}.");
         return Results.Ok(ToAdminDto(queue));
     }
 
-    private static IResult UpdateQueue(string id, UpdateQueueRequest request, QueueStore queues, EventLog events)
+    private static IResult UpdateQueue(string id, UpdateQueueRequest request, QueueStore queues, PrinterStore printerStore, EventLog events)
     {
         if (queues.Get(id) is not { } queue)
             return Results.NotFound(new ErrorResponse($"No queue \"{id}\"."));
         if (Clean(request.Name) is { } newName && newName != queue.Name && QueueNameProblem(newName, queue.Id, queues) is { } problem)
             return problem;
+        if (QueueRulesProblem(request.SidesPolicy, request.MaxPages, request.DirectPrinterId, printerStore, out var direct) is { } rules)
+            return rules;
+        var before = queue;
         queue = queues.Update(queue with
         {
             Name = Clean(request.Name) ?? queue.Name,
@@ -385,8 +413,24 @@ public static class AdminApi
             Color = request.Color ?? queue.Color,
             Duplex = request.Duplex ?? queue.Duplex,
             DefaultMedia = Clean(request.DefaultMedia) ?? queue.DefaultMedia,
+            SidesPolicy = request.SidesPolicy ?? queue.SidesPolicy,
+            MaxPages = request.MaxPages ?? queue.MaxPages,
+            // Null leaves it; empty makes it a hold queue again.
+            DirectPrinterId = request.DirectPrinterId is null ? queue.DirectPrinterId : direct,
         })!;
-        events.Admin(EventLog.Queue(queue.Id), $"Changed queue \"{queue.Name}\" ({queue.Id}).");
+        var changes = new List<string>();
+        if (queue.SidesPolicy != before.SidesPolicy)
+            changes.Add(queue.SidesPolicy switch
+            {
+                SidesPolicy.ForceTwoSided => "always prints on both sides",
+                SidesPolicy.DefaultTwoSided => "prints on both sides unless someone chooses one",
+                _ => "prints on one side unless someone chooses two",
+            });
+        if (queue.MaxPages != before.MaxPages)
+            changes.Add(queue.MaxPages == 0 ? "no limit on a job's pages" : $"at most {queue.MaxPages} pages a job");
+        if (!string.Equals(queue.DirectPrinterId, before.DirectPrinterId, StringComparison.OrdinalIgnoreCase))
+            changes.Add(queue.DirectPrinterId is null ? "holds its jobs for release" : $"prints straight to {queue.DirectPrinterId}");
+        events.Admin(EventLog.Queue(queue.Id), $"Changed queue \"{queue.Name}\" ({queue.Id}){(changes.Count > 0 ? ": " + string.Join("; ", changes) : "")}.");
         return Results.Ok(ToAdminDto(queue));
     }
 
@@ -411,7 +455,7 @@ public static class AdminApi
     }
 
     private static QueueAdminDto ToAdminDto(QueueRecord q) =>
-        new(q.Id, q.Name, q.Description, q.Location, q.Color, q.Duplex, q.DefaultMedia, $"/ipp/{q.Id}");
+        new(q.Id, q.Name, q.Description, q.Location, q.Color, q.Duplex, q.DefaultMedia, $"/ipp/{q.Id}", q.SidesPolicy, q.MaxPages, q.DirectPrinterId);
 
     internal static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 

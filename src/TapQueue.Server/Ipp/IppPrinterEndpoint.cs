@@ -18,6 +18,8 @@ public sealed class IppPrinterEndpoint(
     AccessPolicy access,
     EventLog events,
     Printers.PrinterRegistry printers,
+    ReleaseService release,
+    Api.UserNotices notices,
     ILogger<IppPrinterEndpoint> logger)
 {
     private readonly RecentSources _unownedRefusals = new(TimeSpan.FromMinutes(1));
@@ -333,13 +335,49 @@ public sealed class IppPrinterEndpoint(
                 RefuseForHeldLimit(c, job.Username ?? "?");
                 return IppMessage.CreateResponse(c.Request, IppStatus.ClientErrorNotPossible, TooMuchWaiting);
             }
-            await HoldAsync(jobId, size, c.Queue.Color, c.Http.RequestAborted);
-            return null;
+            if (await HoldAsync(jobId, size, c.Queue, c.Http.RequestAborted) is { } tooLong)
+            {
+                logger.LogInformation("Refused job {JobId} from {Source}: {Why}", jobId, c.Source, tooLong);
+                return IppMessage.CreateResponse(c.Request, IppStatus.ClientErrorNotPossible, tooLong);
+            }
         }
         finally
         {
             _holding.Release();
         }
+        PrintDirectly(c.Queue, jobId);
+        return null;
+    }
+
+    /// <summary>
+    /// A queue that prints straight to a printer: the job is released there now, as its owner would
+    /// have, so it's counted, limited and charged like any other. Not waited for (the PC has delivered
+    /// its job and shouldn't hang on a busy printer). If it can't print there, it stays held, and the
+    /// person is told so they can release it somewhere else.
+    /// </summary>
+    private void PrintDirectly(QueueRecord queue, long jobId)
+    {
+        if (queue.DirectPrinterId is not { } printerId || jobs.Get(jobId) is not { Status: JobStatus.Held, UserId: { } userId } job
+            || users.FindById(userId) is not { } user)
+            return;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                if (printers.Find(printerId) is not { } printer)
+                {
+                    notices.Add(user.Id, $"\"{job.Name}\" is waiting: the printer {queue.Name} prints to has been removed. Release it at another printer.");
+                    return;
+                }
+                var result = await release.ReleaseAsync(user, printer, [job.Id], user.Username, $"directly, through {queue.Name}", CancellationToken.None);
+                if (result.Results.FirstOrDefault(r => !r.Success) is { } failed)
+                    notices.Add(user.Id, $"\"{job.Name}\" didn't print at {printer.Name}: {failed.Error} It's waiting; you can release it at another printer.");
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Couldn't print job {JobId} directly to {Printer}", jobId, printerId);
+            }
+        });
     }
 
     private void RefuseForHeldLimit(RequestContext c, string username)
@@ -351,8 +389,11 @@ public sealed class IppPrinterEndpoint(
                 $"Refused a job from {username}: it would take them past the {settings.HeldMegabytesPerUser} MB one person may have waiting.");
     }
 
-    /// <summary>The whole document is here: count its pages, note how it's to print, and hold it for its owner.</summary>
-    private async Task HoldAsync(long jobId, long size, bool queueColor, CancellationToken ct)
+    /// <summary>
+    /// The whole document is here: count its pages, note how it's to print, and hold it for its owner.
+    /// Unless it's longer than the queue takes: then it's canceled, and what to tell the PC comes back.
+    /// </summary>
+    private async Task<string?> HoldAsync(long jobId, long size, QueueRecord queue, CancellationToken ct)
     {
         var pages = PageCounter.Count(spool.PathFor(jobId));
         var template = jobs.GetJobAttributes(jobId) is { } attributes ? await JobTemplate.DecodeAsync(attributes, ct) : null;
@@ -362,9 +403,24 @@ public sealed class IppPrinterEndpoint(
                 .FirstOrDefault(a => a.Name == "page-ranges")?.Values.Select(v => v.Value).OfType<IppRange>().ToList();
             pages = PageCounter.ApplyPageRanges(pages.Value, ranges);
         }
-        var (color, duplex) = PrintMode.Of(template, spool.PathFor(jobId), queueColor);
-        jobs.MarkReceived(jobId, size, pages, color, duplex);
+        if (queue.MaxPages > 0 && pages is { } counted && jobs.Get(jobId) is { } arriving && (long)counted * arriving.Copies > queue.MaxPages)
+        {
+            var total = counted * arriving.Copies;
+            if (jobs.TryTransition(jobId, JobStatus.Receiving, JobStatus.Canceled, $"It has {total} pages; {queue.Name} takes at most {queue.MaxPages} a job."))
+                spool.Delete(jobId);
+            var who = arriving.Username ?? arriving.OwnerHint ?? arriving.SourceIp;
+            events.Record(EventCategory.Job, who, arriving.Username is null ? EventLog.Job(jobId) : EventLog.User(arriving.Username),
+                $"Refused \"{arriving.Name}\" from {who}: it has {total} pages, and {queue.Name} takes at most {queue.MaxPages} a job.");
+            var message = $"\"{arriving.Name}\" has {total} pages, and {queue.Name} takes at most {queue.MaxPages} in one job. Print it in parts, or fewer copies.";
+            if (arriving.UserId is { } owner)
+                notices.Add(owner, message);
+            return message;
+        }
+        var (color, duplex) = PrintMode.Of(template, spool.PathFor(jobId), queue.Color, queue.DefaultsToTwoSided);
+        // The queue's rules win over what the job asked for; ReleaseService sends the printer the same.
+        jobs.MarkReceived(jobId, size, pages, queue.Color ? color : false, duplex || queue.ForcesTwoSided);
         LogHeld(jobId);
+        return null;
     }
 
     private void LogHeld(long jobId)

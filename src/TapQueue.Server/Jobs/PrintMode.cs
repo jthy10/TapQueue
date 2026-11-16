@@ -15,7 +15,8 @@ public static class PrintMode
 
     /// <param name="attributes">The job's IPP job attributes, if it sent any.</param>
     /// <param name="queueColor">Whether the queue it was sent to offers colour at all.</param>
-    public static (bool? Color, bool Duplex) Of(IppGroup? attributes, string documentPath, bool queueColor)
+    /// <param name="queueTwoSided">Whether a job that doesn't say prints on both sides there.</param>
+    public static (bool? Color, bool Duplex) Of(IppGroup? attributes, string documentPath, bool queueColor, bool queueTwoSided = false)
     {
         var asked = attributes?.Find("print-color-mode")?.First?.AsString() ?? attributes?.Find("output-mode")?.First?.AsString();
         var sides = attributes?.Find("sides")?.First?.AsString();
@@ -30,8 +31,8 @@ public static class PrintMode
         {
             var raster = Raster(documentPath);
             color ??= raster?.Color ?? (queueColor ? null : false);
-            // Nothing said: the queue's default is one side.
-            duplex ??= raster?.Duplex ?? false;
+            // Nothing said: the queue's default.
+            duplex ??= raster?.Duplex ?? queueTwoSided;
         }
         return (color, duplex.Value);
     }

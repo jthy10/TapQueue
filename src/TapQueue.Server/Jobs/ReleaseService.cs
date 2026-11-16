@@ -7,7 +7,7 @@ namespace TapQueue.Server.Jobs;
 
 /// <summary>Sends a user's held jobs to a physical printer.</summary>
 public sealed class ReleaseService(JobStore jobs, Spool spool, PrinterRegistry printers, AccessPolicy access, QuotaPolicy quotas, EventLog events,
-    ServerSettings settings, Accounts accounts, ILogger<ReleaseService> logger)
+    ServerSettings settings, Accounts accounts, QueueStore queues, ILogger<ReleaseService> logger)
 {
     private static readonly TimeSpan BusyRetryDelay = TimeSpan.FromSeconds(3);
 
@@ -113,6 +113,25 @@ public sealed class ReleaseService(JobStore jobs, Spool spool, PrinterRegistry p
     }
 
     /// <summary>
+    /// What the job's queue insists on, whatever the PC asked for: black and white for a queue that
+    /// doesn't offer colour, and both sides of the paper for one that only prints that way.
+    /// </summary>
+    internal static void ApplyQueueRules(IppGroup asked, QueueRecord? queue, PrinterCapabilities? capabilities)
+    {
+        if (queue is null)
+            return;
+        void Set(string name, string keyword)
+        {
+            asked.Attributes.RemoveAll(a => a.Name == name);
+            asked.Add(name, IppValue.Keyword(keyword));
+        }
+        if (!queue.Color && asked.Find("print-color-mode")?.First?.AsString() is not ("monochrome" or "bi-level" or "process-monochrome"))
+            Set("print-color-mode", "monochrome");
+        if (queue.ForcesTwoSided && capabilities?.Duplex != false && asked.Find("sides")?.First?.AsString()?.StartsWith("two-sided", StringComparison.Ordinal) != true)
+            Set("sides", "two-sided-long-edge");
+    }
+
+    /// <summary>
     /// Jobs sent to a stopped or unreachable printer would be lost to it, so they stay held instead.
     /// A printer last seen down is checked again first, in case someone just fixed it.
     /// </summary>
@@ -151,15 +170,14 @@ public sealed class ReleaseService(JobStore jobs, Spool spool, PrinterRegistry p
                 .Add("document-format", IppValue.MimeType(job.DocumentFormat));
             // Replay what the user picked in the print dialog (copies, page ranges, orientation…).
             // Without ipp-attribute-fidelity the printer ignores anything it can't do rather than failing.
-            if (jobs.GetJobAttributes(job.Id) is { } template)
-            {
-                var asked = await JobTemplate.DecodeAsync(template, ct);
-                // The wrong paper is the one thing a printer doesn't quietly make do with: it scales the
-                // page, or stops and asks for paper nobody has. Better to print it somewhere that has it.
-                if (capabilities is not null && PaperSize(asked) is { } paper && !capabilities.Takes(paper.X, paper.Y))
-                    throw new InvalidOperationException($"{printer.Name} doesn't take {paper.Label} paper. Release this job at a printer that does.");
+            var asked = jobs.GetJobAttributes(job.Id) is { } template ? await JobTemplate.DecodeAsync(template, ct) : new IppGroup(IppTag.JobAttributes);
+            // The wrong paper is the one thing a printer doesn't quietly make do with: it scales the
+            // page, or stops and asks for paper nobody has. Better to print it somewhere that has it.
+            if (capabilities is not null && PaperSize(asked) is { } paper && !capabilities.Takes(paper.X, paper.Y))
+                throw new InvalidOperationException($"{printer.Name} doesn't take {paper.Label} paper. Release this job at a printer that does.");
+            ApplyQueueRules(asked, queues.Get(job.QueueId), capabilities);
+            if (asked.Attributes.Count > 0)
                 request.Groups.Add(asked);
-            }
 
             using var client = new IppClient(printer.TlsSkipVerify, settings.PrinterSendTimeout);
             var busyUntil = DateTimeOffset.UtcNow + settings.PrinterBusyTimeout;

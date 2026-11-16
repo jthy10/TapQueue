@@ -79,6 +79,8 @@ public sealed class AccountingTests : IAsyncLifetime
         _server.Printer.Sides = ["one-sided", "two-sided-long-edge"];
         var printers = _server.Service<Printers.PrinterRegistry>();
         await printers.ProbeAsync(printers.Find(TestServer.PrinterId)!, CancellationToken.None);
+        // And a queue that offers both: one that doesn't prints everything in black and white, on one side.
+        (await _server.Admin.PatchAsJsonAsync($"/api/v1/admin/queues/{TestServer.QueueId}", new UpdateQueueRequest(Color: true, Duplex: true), TapQueueJson.Options)).EnsureSuccessStatusCode();
 
         await _server.PrintAsync("brochure", ThreePages, jobAttributes: a => a
             .Add("print-color-mode", IppValue.Keyword("color")).Add("sides", IppValue.Keyword("two-sided-long-edge")));

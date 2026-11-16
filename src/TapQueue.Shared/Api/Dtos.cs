@@ -580,6 +580,25 @@ public sealed record CreatePrinterRequest(string Id, string Uri, string? Name = 
 public sealed record UpdatePrinterRequest(string? Uri = null, string? Name = null, string? Location = null, bool? TlsSkipVerify = null,
     long? PriceMono = null, long? PriceColor = null);
 
+/// <summary>What a queue does about printing on both sides of the paper (servers from 0.19).</summary>
+public static class SidesPolicy
+{
+    /// <summary>One side unless the person chooses two. The default.</summary>
+    public const string Any = "any";
+    /// <summary>Two sides unless the person chooses one.</summary>
+    public const string DefaultTwoSided = "default-two-sided";
+    /// <summary>Two sides, always: the print dialog offers nothing else, and a job that asks for one side is printed on two anyway.</summary>
+    public const string ForceTwoSided = "force-two-sided";
+
+    public static readonly string[] All = [Any, DefaultTwoSided, ForceTwoSided];
+}
+
+/// <param name="SidesPolicy">One of <see cref="Api.SidesPolicy"/>. Only means something while <paramref name="Duplex"/> is on.</param>
+/// <param name="MaxPages">The most pages (times copies) one job may have; bigger ones are refused. 0 for no limit.</param>
+/// <param name="DirectPrinterId">
+/// A printer this queue prints straight to: its jobs aren't held for release, but are still matched to a person,
+/// counted and charged. Null for an ordinary hold queue.
+/// </param>
 public sealed record QueueAdminDto(
     string Id,
     string Name,
@@ -588,7 +607,10 @@ public sealed record QueueAdminDto(
     bool Color,
     bool Duplex,
     string DefaultMedia,
-    string IppPath);
+    string IppPath,
+    string SidesPolicy = Api.SidesPolicy.Any,
+    int MaxPages = 0,
+    string? DirectPrinterId = null);
 
 public sealed record CreateQueueRequest(
     string Id,
@@ -597,16 +619,22 @@ public sealed record CreateQueueRequest(
     string? Location = null,
     bool? Color = null,
     bool? Duplex = null,
-    string? DefaultMedia = null);
+    string? DefaultMedia = null,
+    string? SidesPolicy = null,
+    int? MaxPages = null,
+    string? DirectPrinterId = null);
 
-/// <summary>Fields left null are unchanged.</summary>
+/// <summary>Fields left null are unchanged. An empty <paramref name="DirectPrinterId"/> makes it a hold queue again.</summary>
 public sealed record UpdateQueueRequest(
     string? Name = null,
     string? Description = null,
     string? Location = null,
     bool? Color = null,
     bool? Duplex = null,
-    string? DefaultMedia = null);
+    string? DefaultMedia = null,
+    string? SidesPolicy = null,
+    int? MaxPages = null,
+    string? DirectPrinterId = null);
 
 /// <param name="Owner">The TapQueue user the job belongs to, or null if nobody has been matched to it yet.</param>
 /// <param name="ClaimedUser">The username the print client sent. Unverified; only shown to help an admin sort out unowned jobs.</param>
