@@ -22,6 +22,20 @@ const string Usage = """
                                                      Limit a group's members (the most generous group counts)
       tapqueue-admin groups quota <group-id> none    Remove a group's limit
       tapqueue-admin quotas                          Everyone with a page limit and how much of it they've used
+      tapqueue-admin accounting                      What printing costs, and whether people pay from a balance
+      tapqueue-admin accounting set mode off|track|enforce
+                                                     off: free. track: each job's cost is recorded. enforce: it comes
+                                                     off the person's balance, and a job they can't pay for stays held
+      tapqueue-admin accounting set currency|price-mono|price-color|duplex-discount|initial-balance <value>
+                                                     Prices are for one page, like 0.05; the discount is a percentage
+      tapqueue-admin balances                        Everyone's balance
+      tapqueue-admin users balance <username>        Their balance and what changed it
+      tapqueue-admin users balance <username> +5.00|-2.50|=10.00 [--note "..."]
+                                                     Add to it, take from it, or set it
+      tapqueue-admin users unrestricted <username> on|off
+                                                     Let someone print with nothing on their balance
+      tapqueue-admin groups balance <group-id> +5.00 [--note "..."]
+                                                     Add the same amount to every member's balance
       tapqueue-admin jobs [--status held|released|expired|canceled]
                                                      List recent jobs
       tapqueue-admin report [--by user|group|printer|queue|day|month] [--from 2026-10-01] [--to 2026-10-31] [--csv]
@@ -30,8 +44,10 @@ const string Usage = """
                                                      it for a spreadsheet: tapqueue-admin report --csv > pages.csv
       tapqueue-admin printers [--refresh]            List printers with their health and toner levels
       tapqueue-admin printers add <printer-id> <uri> [--name "Office printer"] [--location ...] [--tls-skip-verify]
+                                [--price-mono 0.04] [--price-color 0.15]
                                                      Add a printer, e.g. uri ipp://192.0.2.10/ipp/print
       tapqueue-admin printers edit <printer-id> [--uri ...] [--name ...] [--location ...] [--tls-skip-verify on|off]
+                                [--price-mono 0.04|default] [--price-color 0.15|default]
       tapqueue-admin printers remove <printer-id>
       tapqueue-admin release <username> <printer-id> [job-id ...]
                                                      Send a user's held jobs (all, or just these) to a printer
@@ -174,7 +190,7 @@ for (var i = 0; i < args.Length; i++)
     }
     if (args[i].StartsWith("--"))
     {
-        var takesValue = args[i] is "--server" or "--token" or "--fingerprint" or "--name" or "--status" or "--uri" or "--location" or "--description" or "--media" or "--area" or "--station" or "--by" or "--from" or "--to";
+        var takesValue = args[i] is "--server" or "--token" or "--fingerprint" or "--name" or "--status" or "--uri" or "--location" or "--description" or "--media" or "--area" or "--station" or "--by" or "--from" or "--to" or "--note" or "--price-mono" or "--price-color";
         var switchWithValue = args[i] is "--tls-skip-verify" or "--color" or "--duplex" && i + 1 < args.Length && ParseSwitch(args[i + 1]) is not null;
         options[args[i]] = (takesValue || switchWithValue) && i + 1 < args.Length ? args[++i] : null;
     }
@@ -228,6 +244,13 @@ try
         ("admins", "grant") when positional.Count == 4 => await GrantAdmin(positional[2], positional[3], options.GetValueOrDefault("--area")),
         ("admins", "revoke") when positional.Count == 3 && long.TryParse(positional[2], out var grantId) =>
             await Delete($"admins/grants/{grantId}", $"Removed grant {grantId}."),
+        ("accounting", null) => await ShowAccounting(),
+        ("accounting", "set") when positional.Count == 4 => await SetAccounting(positional[2], positional[3]),
+        ("balances", null) => await ListBalances(),
+        ("users", "balance") when positional.Count == 3 => await ShowBalance(positional[2]),
+        ("users", "balance") when positional.Count == 4 => await AdjustBalance($"users/{Uri.EscapeDataString(positional[2])}/balance", positional[3], options.GetValueOrDefault("--note"), group: false),
+        ("users", "unrestricted") when positional.Count == 4 && positional[3] is "on" or "off" => await SetUnrestricted(positional[2], positional[3] == "on"),
+        ("groups", "balance") when positional.Count == 4 => await AdjustBalance($"groups/{Uri.EscapeDataString(positional[2])}/balance", positional[3], options.GetValueOrDefault("--note"), group: true),
         ("users", "quota") when positional.Count == 3 => await ShowUserQuota(positional[2]),
         ("users", "quota") when positional.Count is 4 or 5 => await SetQuota("users", positional[2], positional.Skip(3).ToList()),
         ("groups", "quota") when positional.Count is 4 or 5 => await SetQuota("groups", positional[2], positional.Skip(3).ToList()),
@@ -523,6 +546,110 @@ async Task<int> AddDirectoryScope(string dn)
     return 0;
 }
 
+async Task<int> ShowAccounting()
+{
+    var a = await Get<AccountingSettingsDto>("accounting");
+    if (a is null) return 1;
+    string M(long mills) => Money.Format(mills, a.Currency);
+    Console.WriteLine(a.Mode switch
+    {
+        AccountingMode.Enforce => "mode             enforce  people pay for printing from their balance; a job they can't pay for stays held",
+        AccountingMode.Track => "mode             track    each job's cost is recorded for reports; nobody is refused",
+        _ => "mode             off      printing costs nothing (`tapqueue-admin accounting set mode track` or `enforce`)",
+    });
+    Console.WriteLine($"currency         {a.Currency}");
+    Console.WriteLine($"price-mono       {M(a.PriceMono)} a page in black and white");
+    Console.WriteLine($"price-color      {M(a.PriceColor)} a page in colour");
+    Console.WriteLine($"duplex-discount  {a.DuplexDiscountPercent}% less for pages printed on both sides");
+    Console.WriteLine($"initial-balance  {M(a.InitialBalance)} for each new user");
+    Console.WriteLine("A printer can have its own prices: tapqueue-admin printers edit <printer-id> --price-mono 0.04 --price-color 0.15 (or `default`).");
+    return 0;
+}
+
+async Task<int> SetAccounting(string name, string value)
+{
+    UpdateAccountingRequest? request = name switch
+    {
+        "mode" => new(Mode: value),
+        "currency" => new(Currency: value),
+        "price-mono" when Money.TryParse(value, out var mills) => new(PriceMono: mills),
+        "price-color" when Money.TryParse(value, out var mills) => new(PriceColor: mills),
+        "initial-balance" when Money.TryParse(value, out var mills) => new(InitialBalance: mills),
+        "duplex-discount" when int.TryParse(value, out var percent) => new(DuplexDiscountPercent: percent),
+        _ => null,
+    };
+    if (request is null)
+    {
+        Console.Error.WriteLine("Use: accounting set mode off|track|enforce, currency <symbol>, price-mono 0.05, price-color 0.20, duplex-discount 25 or initial-balance 5.00.");
+        return 2;
+    }
+    if (await Send<AccountingSettingsDto>(HttpMethod.Patch, "accounting", request) is null) return 1;
+    return await ShowAccounting();
+}
+
+async Task<int> ListBalances()
+{
+    var currency = (await Get<AccountingSettingsDto>("accounting"))?.Currency;
+    var accounts = await Get<List<UserAccountDto>>("accounts");
+    if (accounts is null) return 1;
+    Table(["USERNAME", "NAME", "BALANCE", ""], accounts.Select(a => new[]
+    {
+        a.Username, a.DisplayName, Money.Format(a.Balance, currency), a.Unrestricted ? "unrestricted" : "",
+    }));
+    return 0;
+}
+
+async Task<int> ShowBalance(string username)
+{
+    var currency = (await Get<AccountingSettingsDto>("accounting"))?.Currency;
+    var account = await Get<UserAccountDto>($"users/{Uri.EscapeDataString(username)}/account");
+    if (account is null) return 1;
+    Console.WriteLine($"{account.Username} has {Money.Format(account.Balance, currency)}{(account.Unrestricted ? " and may print with nothing on their balance" : "")}.");
+    if (account.Transactions.Count == 0)
+        return 0;
+    Console.WriteLine();
+    Table(["WHEN", "WHAT", "AMOUNT", "BALANCE", "BY", "NOTE"], account.Transactions.Select(t => new[]
+    {
+        t.At.ToLocalTime().ToString("yyyy-MM-dd HH:mm"), t.Kind, (t.Amount > 0 ? "+" : "") + Money.Format(t.Amount, currency),
+        Money.Format(t.BalanceAfter, currency), t.Actor, Truncate(t.Note, 50),
+    }));
+    return 0;
+}
+
+// "+5", "-2.50" or "=10": add, take or set.
+async Task<int> AdjustBalance(string path, string change, string? note, bool group)
+{
+    var set = change.StartsWith('=');
+    if (!Money.TryParse(set ? change[1..] : change, out var amount) || !set && amount == 0 || set && group)
+    {
+        Console.Error.WriteLine(group
+            ? "Give an amount to add to each member's balance, like +5.00 (or -5.00 to take it away)."
+            : "Give +5.00 to add, -2.50 to take away, or =10.00 to set the balance.");
+        return 2;
+    }
+    var request = new AdjustBalanceRequest(amount, note, set);
+    if (group)
+    {
+        if (await Send<GroupBalanceResponse>(HttpMethod.Post, path, request) is not { } reached) return 1;
+        Console.WriteLine($"Changed {reached.Users} {(reached.Users == 1 ? "balance" : "balances")}.");
+        return 0;
+    }
+    if (await Send<UserAccountDto>(HttpMethod.Post, path, request) is not { } account) return 1;
+    var currency = (await Get<AccountingSettingsDto>("accounting"))?.Currency;
+    Console.WriteLine($"{account.Username} now has {Money.Format(account.Balance, currency)}.");
+    return 0;
+}
+
+async Task<int> SetUnrestricted(string username, bool unrestricted)
+{
+    if (await Send<UserAccountDto>(HttpMethod.Put, $"users/{Uri.EscapeDataString(username)}/unrestricted", new SetUnrestrictedRequest(unrestricted)) is null)
+        return 1;
+    Console.WriteLine(unrestricted
+        ? $"{username} may print with nothing on their balance; it just goes negative."
+        : $"{username} can only print what their balance covers.");
+    return 0;
+}
+
 async Task<int> ShowUserQuota(string username)
 {
     var quota = await Get<UserQuotaDto>($"users/{Uri.EscapeDataString(username)}/quota");
@@ -604,8 +731,11 @@ static string Supplies(IReadOnlyList<PrinterSupplyDto> supplies) =>
 
 async Task<int> AddPrinter(string id, string uri)
 {
+    if (!Price("--price-mono", out var mono) || !Price("--price-color", out var color))
+        return 2;
     var printer = await Send<PrinterAdminDto>(HttpMethod.Post, "printers", new CreatePrinterRequest(
-        id, uri, options.GetValueOrDefault("--name"), options.GetValueOrDefault("--location"), Switch("--tls-skip-verify")));
+        id, uri, options.GetValueOrDefault("--name"), options.GetValueOrDefault("--location"), Switch("--tls-skip-verify"),
+        mono < 0 ? null : mono, color < 0 ? null : color));
     if (printer is null) return 1;
     PrintPrinter("Added", printer);
     return 0;
@@ -613,11 +743,32 @@ async Task<int> AddPrinter(string id, string uri)
 
 async Task<int> EditPrinter(string id)
 {
+    if (!Price("--price-mono", out var mono) || !Price("--price-color", out var color))
+        return 2;
     var printer = await Send<PrinterAdminDto>(HttpMethod.Patch, $"printers/{Uri.EscapeDataString(id)}", new UpdatePrinterRequest(
-        options.GetValueOrDefault("--uri"), options.GetValueOrDefault("--name"), options.GetValueOrDefault("--location"), Switch("--tls-skip-verify")));
+        options.GetValueOrDefault("--uri"), options.GetValueOrDefault("--name"), options.GetValueOrDefault("--location"), Switch("--tls-skip-verify"),
+        mono, color));
     if (printer is null) return 1;
     PrintPrinter("Updated", printer);
     return 0;
+}
+
+// --price-mono 0.04, or "default" for the server's price (-1 on the wire). Null when the option wasn't given.
+bool Price(string option, out long? mills)
+{
+    mills = null;
+    if (!options.TryGetValue(option, out var text) || text is null)
+        return true;
+    if (text == "default")
+        mills = -1;
+    else if (Money.TryParse(text, out var parsed) && parsed >= 0)
+        mills = parsed;
+    else
+    {
+        Console.Error.WriteLine($"{option} takes a price for one page, like 0.05, or \"default\" for the server's price.");
+        return false;
+    }
+    return true;
 }
 
 static void PrintPrinter(string verb, PrinterAdminDto p) =>
@@ -1070,12 +1221,16 @@ async Task<int> Report(string? by, string? from, string? to, bool csv)
     Console.WriteLine($"Pages printed {report.From} to {report.To} ({report.TimeZone}), by {report.By}");
     Console.WriteLine();
     var byTime = report.By is ReportGrouping.Day or ReportGrouping.Month;
-    string[] counts = ["JOBS", "PAGES", "COLOUR", "B&W", "2-SIDED"];
+    // Where costs are kept, what each row cost.
+    var costs = report.Currency.Length > 0;
+    string[] counts = ["JOBS", "PAGES", "COLOUR", "B&W", "2-SIDED", .. costs ? new[] { "COST" } : []];
     Table(byTime ? [report.By.ToUpperInvariant(), .. counts] : [report.By.ToUpperInvariant(), "NAME", .. counts],
         report.Rows.Select(r => (string[])[.. byTime ? new[] { r.Key } : [r.Key.Length > 0 ? r.Key : "-", r.Name],
-            r.Jobs.ToString(), r.Pages.ToString(), r.ColorPages.ToString(), r.MonoPages.ToString(), r.DuplexPages.ToString()]));
+            r.Jobs.ToString(), r.Pages.ToString(), r.ColorPages.ToString(), r.MonoPages.ToString(), r.DuplexPages.ToString(),
+            .. costs ? new[] { Money.Format(r.Cost, report.Currency) } : []]));
     Console.WriteLine();
     Console.WriteLine($"Total: {report.Pages} pages in {report.Jobs} jobs, {report.ColorPages} colour, {report.MonoPages} black and white, {report.DuplexPages} two-sided" +
+        (costs ? $", {Money.Format(report.Cost, report.Currency)}" : "") +
         (report.UncountedJobs > 0 ? $" ({report.UncountedJobs} jobs couldn't be counted and count as 1 page a copy)" : "") +
         (report.By == ReportGrouping.Group ? ". Someone in two groups counts in both." : "."));
     return 0;
