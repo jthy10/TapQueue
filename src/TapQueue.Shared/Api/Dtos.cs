@@ -37,7 +37,17 @@ public sealed record ServerInfoDto(
     string TimeZone = "",
     int SignInAttempts = 0,
     int SignInLockoutMinutes = 0,
-    IReadOnlyList<string>? TrustedProxies = null);
+    IReadOnlyList<string>? TrustedProxies = null,
+    IReadOnlyList<ServerOptionDto>? Options = null);
+
+/// <summary>
+/// A setting that's a choice between a few words (on or off, mostly), described well enough for the
+/// console and <c>tapqueue-admin server set</c> to show and change it without knowing it beforehand.
+/// </summary>
+/// <param name="Key">Its name in <see cref="UpdateServerSettingsRequest.Options"/> and <see cref="UpdateServerSettingsRequest.Reset"/>.</param>
+/// <param name="Name">Its name on the command line, like <c>badge-self-enroll</c>.</param>
+/// <param name="Changed">Set here rather than left at its default.</param>
+public sealed record ServerOptionDto(string Key, string Name, string Label, string Value, string Default, IReadOnlyList<string> Allowed, string Help, bool Changed);
 
 /// <summary>A new enrollment code for PCs, shown once: the server keeps only its hash.</summary>
 public sealed record EnrollmentCodeResponse(string Code);
@@ -165,7 +175,8 @@ public sealed record UpdateServerSettingsRequest(
     int? ActivityDays = null,
     string? TimeZone = null,
     int? SignInAttempts = null,
-    int? SignInLockoutMinutes = null);
+    int? SignInLockoutMinutes = null,
+    IReadOnlyDictionary<string, string>? Options = null);
 
 /// <summary>
 /// The server.toml settings that are read when the server starts and can be changed from the console
@@ -739,6 +750,30 @@ public sealed record CreateBadgeRequest(string Username, string Card, string? La
 /// <summary>Moves a card to another user and/or changes its label. Fields left null are unchanged.</summary>
 public sealed record UpdateBadgeRequest(string? Username = null, string? Label = null);
 
+/// <summary>Where someone's own badge enrollment stands (<c>/api/v1/me/badge-enrollment</c>, servers from 0.19).</summary>
+public static class BadgeEnrollmentState
+{
+    /// <summary>They haven't asked to link a card lately.</summary>
+    public const string None = "none";
+    /// <summary>The next card nobody owns that's tapped at the printer they chose becomes theirs.</summary>
+    public const string Waiting = "waiting";
+    public const string Linked = "linked";
+    /// <summary>Nothing new was tapped there in time.</summary>
+    public const string Expired = "expired";
+}
+
+/// <summary>Someone asking to link their own badge: the printer whose reader they're about to tap it at.</summary>
+public sealed record StartBadgeEnrollmentRequest(string PrinterId);
+
+/// <param name="State">One of <see cref="BadgeEnrollmentState"/>.</param>
+/// <param name="Message">What to tell the person.</param>
+/// <param name="SecondsLeft">While waiting: how long they have to tap.</param>
+public sealed record BadgeEnrollmentDto(string State, string Message, int SecondsLeft = 0, string? CardHint = null, string? PrinterName = null);
+
+/// <summary>One of someone's own cards, as they see it.</summary>
+/// <param name="CanRemove">False for a card that comes from Active Directory, which would only put it back.</param>
+public sealed record MyBadgeDto(long Id, string CardHint, string Label, DateTimeOffset CreatedAt, DateTimeOffset? LastUsedAt, bool CanRemove);
+
 /// <summary>A card that was tapped at a station but isn't linked to anyone yet.</summary>
 public sealed record UnknownTapDto(string Card, string StationId, DateTimeOffset At);
 
@@ -854,6 +889,8 @@ public static class TapOutcome
     public const string NoJobs = "no-jobs";
     /// <summary>Nobody has this badge.</summary>
     public const string UnknownBadge = "unknown-badge";
+    /// <summary>Nobody had this badge, and it was linked to the person who had just asked to link theirs here (servers from 0.19).</summary>
+    public const string Enrolled = "enrolled";
     /// <summary>The badge's owner isn't allowed to release at this station's printer (their groups).</summary>
     public const string NotAllowed = "not-allowed";
     /// <summary>The station is disabled (out of service).</summary>

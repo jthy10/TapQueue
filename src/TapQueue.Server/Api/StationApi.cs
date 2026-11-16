@@ -34,7 +34,7 @@ public static class StationApi
 
     private static async Task<IResult> Tap(StationTapRequest request, HttpContext http, BadgeStore badges, UserStore users,
         PrinterRegistry printers, ReleaseService release, UnknownTaps unknownTaps, AccessPolicy access, EventLog events, ServerSettings settings,
-        StationScreens screens, UserNotices notices, ILoggerFactory loggers)
+        StationScreens screens, UserNotices notices, BadgeEnrollments enrollments, ILoggerFactory loggers)
     {
         // Whatever the tap comes to is also what the station's screen shows, if it has one.
         IResult Answer(StationTapResponse response)
@@ -64,6 +64,17 @@ public static class StationApi
 
         var badge = badges.Use(card);
         var user = badge is null ? null : users.FindById(badge.UserId);
+        // Someone signed in said they'd tap their new card here about now: it's theirs.
+        if (user is null && settings.BadgeSelfEnroll && enrollments.Claim(station.Id) is { } waitingId && users.FindById(waitingId) is { Disabled: false } owner)
+        {
+            badges.Add(owner.Id, card);
+            unknownTaps.Remove(card);
+            enrollments.Linked(owner.Id, BadgeStore.Hint(card));
+            logger.LogInformation("{User} linked card {Hint} to their account at station {Station}", owner.Username, BadgeStore.Hint(card), station.Id);
+            events.Record(EventCategory.Tap, owner.Username, EventLog.User(owner.Username),
+                $"{owner.Username} linked card {BadgeStore.Hint(card)} to their own account by tapping it at station {station.Id}.");
+            return Answer(new StationTapResponse(TapOutcome.Enrolled, $"Hi {owner.DisplayName}, this card is now yours. Tap it again to print.", owner.ToDto(), []));
+        }
         if (user is null)
         {
             unknownTaps.Add(card, station.Id);

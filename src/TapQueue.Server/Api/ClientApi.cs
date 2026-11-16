@@ -45,6 +45,17 @@ public static class ClientApi
             queues.List().Where(q => access.CanPrintTo(CurrentUser(http).Id, q.Id)).Select(q => ToDto(q)));
         // What happened at a printer while they weren't at their PC, for the tray to show.
         me.MapGet("/me/notices", (HttpContext http, UserNotices notices, long? after) => notices.For(CurrentUser(http).Id, after ?? 0));
+        // Their own cards, and linking a new one by tapping it at a printer they choose (BadgeEnrollments).
+        me.MapGet("/me/badges", (HttpContext http, BadgeStore badges) => badges.List(CurrentUser(http).Id)
+            .Select(b => new MyBadgeDto(b.Id, b.CardHint, b.Label, b.CreatedAt, b.LastUsedAt, b.Source == UserSource.Local)));
+        me.MapDelete("/me/badges/{id:long}", RemoveBadge);
+        me.MapGet("/me/badge-enrollment", (HttpContext http, BadgeEnrollments enrollments) => enrollments.Status(CurrentUser(http).Id));
+        me.MapPost("/me/badge-enrollment", StartBadgeEnrollment);
+        me.MapDelete("/me/badge-enrollment", (HttpContext http, BadgeEnrollments enrollments) =>
+        {
+            enrollments.Cancel(CurrentUser(http).Id);
+            return Results.NoContent();
+        });
         me.MapPost("/client/sign-out", SignOut);
         me.MapDelete("/me/jobs/{id:long}", CancelJob);
         me.MapPost("/me/release", Release);
@@ -254,6 +265,39 @@ public static class ClientApi
         logger.LogInformation("{User} signed in from {Host} ({Ip}) as {System} user {PcUser}, signed in by the PC's TapQueue service",
             user.Username, computer, http.ClientIp(), system, pcUser);
         return Results.Ok(SessionResponse(token, user, request.Platform, null, queues, access, printers, builds));
+    }
+
+    private static IResult StartBadgeEnrollment(StartBadgeEnrollmentRequest request, HttpContext http, PrinterRegistry printers, StationStore stations,
+        BadgeStore badges, BadgeEnrollments enrollments, AccessPolicy access, ServerSettings settings)
+    {
+        var user = CurrentUser(http);
+        if (!settings.BadgeSelfEnroll)
+            return Results.Json(new ErrorResponse("Ask an admin to link your badge: linking your own is turned off here."), statusCode: StatusCodes.Status403Forbidden);
+        if (printers.Find(request.PrinterId ?? "") is not { } printer || !access.CanReleaseAt(user.Id, printer.Id))
+            return Results.NotFound(new ErrorResponse($"Unknown printer \"{request.PrinterId}\"."));
+        var readers = stations.ForPrinter(printer.Id).Where(s => s.Settings.Enabled).ToList();
+        if (readers.Count == 0)
+            return Results.Conflict(new ErrorResponse($"There's no badge reader at {printer.Name}. Choose a printer that has one."));
+        if (!readers.Any(s => s.Online))
+            return Results.Conflict(new ErrorResponse($"The badge reader at {printer.Name} isn't answering right now. Try another printer."));
+        if (badges.List(user.Id).Count >= BadgeEnrollments.MaxCardsPerPerson)
+            return Results.Conflict(new ErrorResponse($"You already have {BadgeEnrollments.MaxCardsPerPerson} cards linked. Remove one first, or ask an admin."));
+        return enrollments.Start(user.Id, readers.Select(s => s.Id).ToList(), printer.Name) is { } waiting
+            ? Results.Ok(waiting)
+            : Results.Conflict(new ErrorResponse($"Someone else is linking a card at {printer.Name} right now. Try again in a minute."));
+    }
+
+    /// <summary>Someone removing one of their own cards, say a lost one. Cards from Active Directory would only come back, so they stay.</summary>
+    private static IResult RemoveBadge(long id, HttpContext http, BadgeStore badges, EventLog events)
+    {
+        var user = CurrentUser(http);
+        if (badges.Get(id) is not { } badge || badge.UserId != user.Id)
+            return Results.NotFound(new ErrorResponse("No such card."));
+        if (badge.Source != UserSource.Local)
+            return Results.Conflict(new ErrorResponse("This card comes from your organisation's directory. Ask an admin to remove it."));
+        badges.Delete(id);
+        events.Record(EventCategory.Tap, user.Username, EventLog.User(user.Username), $"{user.Username} removed their own card {badge.CardHint}.");
+        return Results.NoContent();
     }
 
     /// <summary>"Sign out" in the tray: ends the session, and forgets the remembered domain sign-in so it needs the password again.</summary>

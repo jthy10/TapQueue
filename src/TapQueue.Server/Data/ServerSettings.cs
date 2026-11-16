@@ -26,11 +26,46 @@ public sealed class ServerSettings(Database database, ServerConfig config)
     public const string SignInAttemptsKey = "signInAttempts";
     public const string SignInLockoutKey = "signInLockoutMinutes";
 
+    public const string BadgeSelfEnrollKey = "badgeSelfEnroll";
+
+    public const string On = "on";
+    public const string Off = "off";
+
+    /// <summary>
+    /// A setting that's a choice between a few words. Everything about it is here, so the admin API,
+    /// the console and <c>tapqueue-admin server set</c> show and change it without more code for each one.
+    /// </summary>
+    /// <param name="Name">What it's called on the command line.</param>
+    /// <param name="Label">What it's called in the console, and in the activity log when it changes.</param>
+    public sealed record Choice(string Key, string Name, string Label, string Default, string[] Allowed, string Help);
+
+    public static readonly Choice[] Choices =
+    [
+        new(BadgeSelfEnrollKey, "badge-self-enroll", "People link their own badge", On, [On, Off],
+            "From the tray app or the web page, someone picks the printer they're standing at and taps a card nobody owns yet; it becomes theirs. " +
+            "Off: only admins link cards."),
+    ];
+
     public static readonly string[] Keys =
     [
         HoldHoursKey, SessionTimeoutKey, QuotaOverrunKey, AddressMatchingKey, HeldMegabytesKey,
         TapWaitKey, PrinterBusyKey, PrinterSendKey, JobHistoryDaysKey, ActivityDaysKey, TimeZoneKey, SignInAttemptsKey, SignInLockoutKey,
+        .. Choices.Select(c => c.Key),
     ];
+
+    /// <summary>The saved value of one of <see cref="Choices"/>, or its default.</summary>
+    public string Option(string key)
+    {
+        var choice = Choices.First(c => c.Key == key);
+        return Saved().TryGetValue(key, out var value) && choice.Allowed.Contains(value) ? value : choice.Default;
+    }
+
+    /// <summary>Every one of <see cref="Choices"/> as it is now, for the admin API.</summary>
+    public List<ServerOptionDto> Options() =>
+        Choices.Select(c => new ServerOptionDto(c.Key, c.Name, c.Label, Option(c.Key), c.Default, c.Allowed, c.Help, IsSaved(c.Key))).ToList();
+
+    /// <summary>Whether people may link a card nobody owns to themselves (<see cref="Jobs.BadgeEnrollments"/>).</summary>
+    public bool BadgeSelfEnroll => Option(BadgeSelfEnrollKey) == On;
 
     /// <summary>A whole-number setting that isn't in server.toml: what it's called in sentences, its default and what it may be.</summary>
     public sealed record Number(string Key, string Name, string Unit, int Default, int Min, int Max, string Allowed);

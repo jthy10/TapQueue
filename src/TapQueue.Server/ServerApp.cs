@@ -98,6 +98,7 @@ public static class ServerApp
         builder.Services.AddSingleton<PrinterStore>();
         builder.Services.AddSingleton<QueueStore>();
         builder.Services.AddSingleton<UnknownTaps>();
+        builder.Services.AddSingleton<BadgeEnrollments>();
         builder.Services.AddSingleton<JobStore>();
         builder.Services.AddSingleton<UsageReport>();
         builder.Services.AddSingleton<JobOwnerResolver>();

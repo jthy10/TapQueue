@@ -34,7 +34,7 @@
   const key = new URLSearchParams(location.search).get("key") ?? "";
   // [colour, mark] for each outcome the server sends; the mark says the same as the colour, for people who can't tell them apart.
   const looks = {
-    "released": ["ok", "✓"], "releasing": ["ok", "✓"],
+    "released": ["ok", "✓"], "releasing": ["ok", "✓"], "enrolled": ["ok", "✓"],
     "no-jobs": ["wait", "–"],
     "unknown-badge": ["bad", "?"], "not-allowed": ["bad", "✕"], "disabled": ["bad", "✕"], "failed": ["bad", "!"],
     "station-disabled": ["wait", "!"],

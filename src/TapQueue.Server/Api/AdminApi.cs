@@ -119,7 +119,7 @@ public static class AdminApi
         TlsInfo(config, services), settings.AddressMatching, settings.EnrollmentCodeHash is not null, settings.HeldMegabytesPerUser,
         settings.Get(ServerSettings.TapWaitKey), settings.Get(ServerSettings.PrinterBusyKey), settings.Get(ServerSettings.PrinterSendKey),
         settings.JobHistoryDays, settings.ActivityDays, settings.TimeZone.Id, settings.SignInAttempts, settings.Get(ServerSettings.SignInLockoutKey),
-        config.Server.TrustedProxies);
+        config.Server.TrustedProxies, settings.Options());
 
     private static ServerTlsDto? TlsInfo(ServerConfig config, IServiceProvider services)
     {
@@ -161,6 +161,13 @@ public static class AdminApi
         foreach (var key in request.Reset ?? [])
             if (!ServerSettings.Keys.Contains(key))
                 return Results.BadRequest(new ErrorResponse($"Can't reset \"{key}\"; only {string.Join(", ", ServerSettings.Keys)}."));
+        foreach (var (key, value) in request.Options ?? new Dictionary<string, string>())
+        {
+            if (ServerSettings.Choices.FirstOrDefault(c => c.Key == key) is not { } choice)
+                return Results.BadRequest(new ErrorResponse($"There's no option \"{key}\"; only {string.Join(", ", ServerSettings.Choices.Select(c => c.Key))}."));
+            if (!choice.Allowed.Contains(value))
+                return Results.BadRequest(new ErrorResponse($"{key} must be {string.Join(" or ", choice.Allowed)}."));
+        }
 
         var changes = new List<string>();
         void Apply(string key, int? value, Func<int> current, string name, string unit)
@@ -226,6 +233,20 @@ public static class AdminApi
             {
                 settings.Set(number.Key, v);
                 changes.Add(Describe(v));
+            }
+        }
+
+        foreach (var choice in ServerSettings.Choices)
+        {
+            if (request.Reset?.Contains(choice.Key) == true)
+            {
+                settings.Reset(choice.Key);
+                changes.Add($"{choice.Label}: {choice.Default} again (the default)");
+            }
+            else if (request.Options?.GetValueOrDefault(choice.Key) is { } chosen && (chosen != settings.Option(choice.Key) || !settings.IsSaved(choice.Key)))
+            {
+                settings.Set(choice.Key, chosen);
+                changes.Add($"{choice.Label}: {chosen}");
             }
         }
 

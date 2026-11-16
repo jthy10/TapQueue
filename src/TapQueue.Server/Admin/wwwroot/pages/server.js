@@ -81,6 +81,9 @@ export async function render(root, ctx) {
         h("span", { class: "sub" }, `Then the station reads the next card while the job is still being sent. A busy printer is retried for ${plural(s.printerBusySeconds, "second")}; one job may take ${plural(s.printerSendSeconds, "second")} to send.`)]],
       ["Wrong passwords", [`${s.signInAttempts} tries, then ${plural(s.signInLockoutMinutes, "minute")} locked`,
         h("span", { class: "sub" }, "Counted for each name from each address, so guessing from one machine doesn't lock the person out everywhere.")]],
+      // Choices the server describes itself (ServerSettings.Choices), so new ones show up here without more code.
+      ...(s.options ?? []).map((o) => [o.label, [optionWord(o.value),
+        h("span", { class: "sub" }, o.help), h("span", { class: "sub" }, o.changed ? "Set here." : "The default.")]]),
       ["Reverse proxies", s.trustedProxies?.length
         ? [h("code", null, s.trustedProxies.join(", ")), h("span", { class: "sub" }, "Callers' addresses are taken from X-Forwarded-For when a request comes from these.")]
         : ["None", h("span", { class: "sub" }, "If the server is behind one, name it under Startup settings, or everyone shares the proxy's address.")]],
@@ -492,6 +495,7 @@ export async function render(root, ctx) {
           input("signInAttempts", { type: "number", min: 3, max: 100, required: true, value: s.signInAttempts }),
           input("signInLockoutMinutes", { type: "number", min: 1, max: 1440, required: true, value: s.signInLockoutMinutes, "aria-label": "Minutes locked" })),
           "Tries (3 to 100), then minutes locked (1 to 1440), for one name from one address."),
+        ...(s.options ?? []).map((o) => field(o.label, select(`option:${o.key}`, o.allowed.map((a) => [a, optionWord(a)]), o.value), o.help)),
       ],
       onSubmit: async (v) => {
         const body = { reset: [] };
@@ -502,6 +506,8 @@ export async function render(root, ctx) {
         if (Number(v.heldMegabytesPerUser) !== s.heldMegabytesPerUser) body.heldMegabytesPerUser = Number(v.heldMegabytesPerUser);
         for (const key of ["jobHistoryDays", "activityDays", "tapWaitSeconds", "printerBusySeconds", "printerSendSeconds", "signInAttempts", "signInLockoutMinutes"])
           if (Number(v[key]) !== s[key]) body[key] = Number(v[key]);
+        for (const o of s.options ?? [])
+          if (v[`option:${o.key}`] !== o.value) (body.options ??= {})[o.key] = v[`option:${o.key}`];
         if (v.timeZoneSource === "machine") body.reset.push("timeZone");
         else if (v.timeZone.trim() !== s.timeZone || !changed("timeZone")) body.timeZone = v.timeZone.trim();
         s = await api.patch("server/settings", body);
@@ -509,6 +515,10 @@ export async function render(root, ctx) {
         toast("Settings saved");
       },
     });
+  }
+
+  function optionWord(value) {
+    return value === "on" ? "On" : value === "off" ? "Off" : value;
   }
 
   /** The code is shown once, here: the server only keeps its hash. */

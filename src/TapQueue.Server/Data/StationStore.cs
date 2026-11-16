@@ -65,6 +65,10 @@ public sealed class StationStore(Database database)
     public StationRecord? Get(string id) =>
         database.QueryOne($"SELECT {Columns} FROM stations WHERE id = $id", Map, ("$id", id));
 
+    /// <summary>The stations that release to <paramref name="printerId"/>: where its badge readers are.</summary>
+    public List<StationRecord> ForPrinter(string printerId) =>
+        List().Where(s => string.Equals(s.PrinterId, printerId, StringComparison.OrdinalIgnoreCase)).ToList();
+
     public List<StationRecord> List() =>
         database.Query($"SELECT {Columns} FROM stations ORDER BY id", Map);
 
