@@ -17,7 +17,7 @@ public sealed class UsageReport(Database database)
     public const int MaxDays = 3660;
 
     private sealed record Job(DateTimeOffset ReleasedAt, long? UserId, string? FormerOwner, string? PrinterId, string QueueId, long Pages, bool Uncounted,
-        bool? Color, bool? Duplex)
+        bool? Color, bool? Duplex, long Cost)
     {
         public long ColorPages => Color == true ? Pages : 0;
         public long MonoPages => Color == false ? Pages : 0;
@@ -31,10 +31,10 @@ public sealed class UsageReport(Database database)
     {
         var jobs = database.Query("""
             SELECT released_at, user_id, former_owner, released_printer_id, queue_id, COALESCE(pages, 1) * copies - refunded_pages, pages IS NULL,
-                   color, duplex
+                   color, duplex, COALESCE(cost, 0) - refunded_cost
             FROM jobs WHERE status = $released AND released_at >= $from AND released_at < $to
             """, r => new Job(r.GetTime(0), r.GetInt64OrNull(1), r.GetStringOrNull(2), r.GetStringOrNull(3), r.GetString(4), r.GetInt64(5), r.GetBoolean(6),
-                r.IsDBNull(7) ? null : r.GetBoolean(7), r.IsDBNull(8) ? null : r.GetBoolean(8)),
+                r.IsDBNull(7) ? null : r.GetBoolean(7), r.IsDBNull(8) ? null : r.GetBoolean(8), r.GetInt64(9)),
             ("$released", JobStatus.Released), ("$from", StartOf(from, zone)), ("$to", StartOf(to.AddDays(1), zone)));
 
         var rows = by switch
@@ -48,7 +48,9 @@ public sealed class UsageReport(Database database)
             _ => throw new ArgumentException($"Unknown grouping \"{by}\".", nameof(by)),
         };
         return new UsageReportDto(Format(from), Format(to), by, zone.Id, jobs.Count, jobs.Sum(j => j.Pages), jobs.Count(j => j.Uncounted), rows,
-            jobs.Sum(j => j.ColorPages), jobs.Sum(j => j.MonoPages), jobs.Sum(j => j.DuplexPages));
+            jobs.Sum(j => j.ColorPages), jobs.Sum(j => j.MonoPages), jobs.Sum(j => j.DuplexPages), jobs.Sum(j => j.Cost),
+            // Only where costs are kept, so a site that never turned them on sees no empty column.
+            new Accounts(database).Settings() is { Mode: not AccountingMode.Off } accounting ? accounting.Currency : "");
     }
 
     /// <summary>The report as a spreadsheet would want it, with a total line.</summary>
@@ -64,11 +66,18 @@ public sealed class UsageReport(Database database)
             _ => "Month",
         };
         static string N(long n) => n.ToString(CultureInfo.InvariantCulture);
-        var lines = new List<string[]> { new[] { heading, "Name", "Jobs", "Pages", "Jobs counted as 1 page", "Colour pages", "Black and white pages", "Two-sided pages" } };
-        lines.AddRange(report.Rows.Select(r => new[] { r.Key, r.Name, N(r.Jobs), N(r.Pages), N(r.UncountedJobs), N(r.ColorPages), N(r.MonoPages), N(r.DuplexPages) }));
+        // As a plain number a spreadsheet can add up; the heading says what it's in.
+        var costs = report.Currency.Length > 0 || report.Cost != 0;
+        string[] Cost(long mills) => costs ? [(mills / (decimal)TapQueue.Shared.Money.PerUnit).ToString("0.000", CultureInfo.InvariantCulture)] : [];
+        string[] costHeading = costs ? [report.Currency.Length > 0 ? $"Cost ({report.Currency})" : "Cost"] : [];
+        var lines = new List<string[]>
+        {
+            (string[])[heading, "Name", "Jobs", "Pages", "Jobs counted as 1 page", "Colour pages", "Black and white pages", "Two-sided pages", .. costHeading],
+        };
+        lines.AddRange(report.Rows.Select(r => (string[])[r.Key, r.Name, N(r.Jobs), N(r.Pages), N(r.UncountedJobs), N(r.ColorPages), N(r.MonoPages), N(r.DuplexPages), .. Cost(r.Cost)]));
         // A group report adds people in two groups twice, so its rows don't add up to this.
         lines.Add(["Total", $"{report.From} to {report.To}", N(report.Jobs), N(report.Pages), N(report.UncountedJobs),
-            N(report.ColorPages), N(report.MonoPages), N(report.DuplexPages)]);
+            N(report.ColorPages), N(report.MonoPages), N(report.DuplexPages), .. Cost(report.Cost)]);
         return Csv.Write(lines, guardFormulas: true);
     }
 
@@ -127,7 +136,7 @@ public sealed class UsageReport(Database database)
 
     private static UsageRowDto Row(string key, string name, List<Job> jobs) =>
         new(key, name, jobs.Count, jobs.Sum(j => j.Pages), jobs.Count(j => j.Uncounted),
-            jobs.Sum(j => j.ColorPages), jobs.Sum(j => j.MonoPages), jobs.Sum(j => j.DuplexPages));
+            jobs.Sum(j => j.ColorPages), jobs.Sum(j => j.MonoPages), jobs.Sum(j => j.DuplexPages), jobs.Sum(j => j.Cost));
 
     private static DateTimeOffset StartOf(DateOnly day, TimeZoneInfo zone)
     {

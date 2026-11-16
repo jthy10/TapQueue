@@ -104,6 +104,7 @@ public static class AdminApi
 
         admin.MapGroupsApi();
         admin.MapQuotasApi();
+        admin.MapAccountingApi();
         admin.MapUsersBulkApi();
         admin.MapDirectoryApi();
         admin.MapAdminsApi();
@@ -303,8 +304,10 @@ public static class AdminApi
         if (store.Get(id!) is not null)
             return Results.Conflict(new ErrorResponse($"Printer \"{id}\" already exists."));
 
+        if ((AdminAccountingApi.PriceProblem(request.PriceMono, allowDefault: false) ?? AdminAccountingApi.PriceProblem(request.PriceColor, allowDefault: false)) is { } price)
+            return Results.BadRequest(new ErrorResponse(price));
         var printer = store.Create(new PrinterRecord(id!, Clean(request.Name) ?? id!, Clean(request.Location) ?? "",
-            request.Uri.Trim(), request.TlsSkipVerify ?? false));
+            request.Uri.Trim(), request.TlsSkipVerify ?? false, request.PriceMono, request.PriceColor));
         events.Admin(EventLog.Printer(printer.Id), $"Added printer {printer.Name} ({printer.Id}) at {printer.Uri}.");
         await printers.ProbeAsync(printer, ct);
         return Results.Ok(printers.ToAdminDto(printer));
@@ -317,12 +320,18 @@ public static class AdminApi
         if (request.Uri is not null && !PrinterRecord.IsValidUri(request.Uri))
             return Results.BadRequest(new ErrorResponse("Printer uri must be ipp://, ipps://, http:// or https://, e.g. ipp://192.0.2.10/ipp/print."));
 
+        if ((AdminAccountingApi.PriceProblem(request.PriceMono, allowDefault: true) ?? AdminAccountingApi.PriceProblem(request.PriceColor, allowDefault: true)) is { } price)
+            return Results.BadRequest(new ErrorResponse(price));
+
         printer = store.Update(printer with
         {
             Uri = request.Uri?.Trim() ?? printer.Uri,
             Name = Clean(request.Name) ?? printer.Name,
             Location = request.Location?.Trim() ?? printer.Location,
             TlsSkipVerify = request.TlsSkipVerify ?? printer.TlsSkipVerify,
+            // -1 hands the price back to the server's.
+            PriceMono = request.PriceMono is null ? printer.PriceMono : request.PriceMono < 0 ? null : request.PriceMono,
+            PriceColor = request.PriceColor is null ? printer.PriceColor : request.PriceColor < 0 ? null : request.PriceColor,
         })!;
         printers.Forget(printer.Id);
         events.Admin(EventLog.Printer(printer.Id), $"Changed printer {printer.Name} ({printer.Id}).");

@@ -13,7 +13,8 @@ namespace TapQueue.Server.Jobs;
 /// started and doesn't say gives nothing back, since a job stopped on its last page would
 /// otherwise print for free.
 /// </summary>
-public sealed class JobCanceler(JobStore jobs, Spool spool, PrinterRegistry printers, QuotaPolicy quotas, EventLog events, PrintTracker tracker, ILogger<JobCanceler> logger)
+public sealed class JobCanceler(JobStore jobs, Spool spool, PrinterRegistry printers, QuotaPolicy quotas, EventLog events, PrintTracker tracker, Accounts accounts,
+    ILogger<JobCanceler> logger)
 {
     private static readonly TimeSpan PrinterTimeout = TimeSpan.FromSeconds(15);
     /// <summary>How long a printer gets to say the job it was told to stop has stopped.</summary>
@@ -105,6 +106,8 @@ public sealed class JobCanceler(JobStore jobs, Spool spool, PrinterRegistry prin
             spool.Delete(job.Id);
         }
 
+        // The money for the pages that didn't print goes back the same way the pages do.
+        var moneyBack = refund > 0 ? accounts.RefundPages(job, refund, charged) : 0;
         var limited = quotas.UsageFor(user.Id, DateTimeOffset.UtcNow).Count > 0;
         var message = $"Stopped \"{job.Name}\" at {printer.Name}" + (printed, refund) switch
         {
@@ -112,7 +115,7 @@ public sealed class JobCanceler(JobStore jobs, Spool spool, PrinterRegistry prin
             (0, _) => " before it printed." + (limited ? $" Its {Pages(refund)} no longer count against your page limit." : ""),
             (_, 0) => $" after {Pages(printed.Value)}.",
             _ => $" after {Pages(printed.Value)}." + (limited ? $" The other {Pages(refund)} no longer count against your page limit." : ""),
-        };
+        } + (moneyBack > 0 && accounts.Settings().Mode == AccountingMode.Enforce ? $" {accounts.Format(moneyBack)} is back on your balance." : "");
         logger.LogInformation("{User} stopped job {JobId} \"{Name}\" at {Printer}: {Printed} printed, {Refund} of {Charged} pages given back",
             user.Username, job.Id, job.Name, printer.Id, printed?.ToString() ?? "unknown", refund, charged);
         events.Record(EventCategory.Job, user.Username, EventLog.User(user.Username),

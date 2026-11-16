@@ -56,6 +56,16 @@ public static class ClientApi
             enrollments.Cancel(CurrentUser(http).Id);
             return Results.NoContent();
         });
+        // Their balance, what changed it lately and what a page costs where they can print (Accounts).
+        me.MapGet("/me/account", (HttpContext http, Accounts accounts, PrinterRegistry printers, AccessPolicy access) =>
+        {
+            var user = CurrentUser(http);
+            var settings = accounts.Settings();
+            return new MyAccountDto(settings.Mode, settings.Currency, accounts.Balance(user.Id), user.Unrestricted, settings.DuplexDiscountPercent,
+                settings.Mode == AccountingMode.Enforce ? accounts.Transactions(user.Id, 50) : [],
+                settings.Mode == AccountingMode.Off ? [] : printers.All.Where(p => access.CanReleaseAt(user.Id, p.Id))
+                    .Select(p => new PrinterPriceDto(p.Id, p.Name, accounts.PricesAt(p, settings).Mono, accounts.PricesAt(p, settings).Color)).ToList());
+        });
         me.MapPost("/client/sign-out", SignOut);
         me.MapDelete("/me/jobs/{id:long}", CancelJob);
         me.MapPost("/me/release", Release);

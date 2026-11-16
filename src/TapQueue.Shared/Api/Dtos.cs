@@ -84,13 +84,17 @@ public sealed record UsageReportDto(
     IReadOnlyList<UsageRowDto> Rows,
     long ColorPages = 0,
     long MonoPages = 0,
-    long DuplexPages = 0);
+    long DuplexPages = 0,
+    long Cost = 0,
+    string Currency = "");
 
 /// <param name="Key">The username, group, printer or queue id, or the day ("yyyy-MM-dd") or month ("yyyy-MM"). Empty for "nobody" rows.</param>
 /// <param name="ColorPages">Of <paramref name="Pages"/>, those sent to print in colour.</param>
 /// <param name="MonoPages">Those sent to print in black and white. The rest didn't say (or are from before 0.16).</param>
 /// <param name="DuplexPages">Those sent to print on both sides of the paper.</param>
-public sealed record UsageRowDto(string Key, string Name, int Jobs, long Pages, int UncountedJobs, long ColorPages = 0, long MonoPages = 0, long DuplexPages = 0);
+/// <param name="Cost">What those jobs cost, in mills, less what was given back; 0 for jobs printed while costs weren't kept.</param>
+public sealed record UsageRowDto(string Key, string Name, int Jobs, long Pages, int UncountedJobs, long ColorPages = 0, long MonoPages = 0, long DuplexPages = 0,
+    long Cost = 0);
 
 /// <summary>Why a backup was made.</summary>
 public static class BackupKind
@@ -361,7 +365,72 @@ public sealed record UserAdminDto(
     QuotaDto? Quota = null,
     string? DisabledBy = null,
     string? DirectoryState = null,
-    bool HasPassword = false);
+    bool HasPassword = false,
+    long Balance = 0,
+    bool Unrestricted = false);
+
+/// <summary>Whether printing costs anything here, and whether people pay for it from a balance (servers from 0.19).</summary>
+public static class AccountingMode
+{
+    /// <summary>Jobs have no cost. The default.</summary>
+    public const string Off = "off";
+    /// <summary>Each job's cost is recorded, for reports and charging departments back. Nobody is refused.</summary>
+    public const string Track = "track";
+    /// <summary>The cost also comes off the person's balance, and a job they can't pay for stays held.</summary>
+    public const string Enforce = "enforce";
+
+    public static readonly string[] All = [Off, Track, Enforce];
+}
+
+/// <summary>What printing costs. Amounts are in mills: thousandths of the currency's unit (<see cref="Shared.Money"/>).</summary>
+/// <param name="Mode">One of <see cref="AccountingMode"/>.</param>
+/// <param name="Currency">How amounts are written: a symbol ("$") or letters ("kr").</param>
+/// <param name="PriceMono">A page in black and white, on a printer that doesn't set its own price.</param>
+/// <param name="PriceColor">A page in colour, likewise.</param>
+/// <param name="DuplexDiscountPercent">How much less a page printed on both sides of the paper costs, 0 to 100.</param>
+/// <param name="InitialBalance">What a new user starts with.</param>
+public sealed record AccountingSettingsDto(string Mode, string Currency, long PriceMono, long PriceColor, int DuplexDiscountPercent, long InitialBalance);
+
+/// <summary>Fields left null are unchanged.</summary>
+public sealed record UpdateAccountingRequest(string? Mode = null, string? Currency = null, long? PriceMono = null, long? PriceColor = null,
+    int? DuplexDiscountPercent = null, long? InitialBalance = null);
+
+public static class TransactionKind
+{
+    /// <summary>A released job's cost.</summary>
+    public const string Charge = "charge";
+    /// <summary>Money back for pages that didn't print.</summary>
+    public const string Refund = "refund";
+    /// <summary>An admin adding to or taking from the balance.</summary>
+    public const string Adjust = "adjust";
+}
+
+/// <summary>One change to someone's balance.</summary>
+/// <param name="Amount">In mills; negative for money spent.</param>
+/// <param name="BalanceAfter">What it left them with.</param>
+/// <param name="JobId">The job a charge or refund was for.</param>
+/// <param name="Actor">Who did it: an admin's name, or "system" for charges and refunds.</param>
+public sealed record BalanceTransactionDto(long Id, DateTimeOffset At, string Kind, long Amount, long BalanceAfter, long? JobId, string Actor, string Note);
+
+/// <summary>Someone's balance and what changed it lately, for admins.</summary>
+/// <param name="Unrestricted">They may print with nothing on their balance (it goes negative): staff, typically.</param>
+public sealed record UserAccountDto(string Username, string DisplayName, long Balance, bool Unrestricted, IReadOnlyList<BalanceTransactionDto> Transactions);
+
+/// <summary>Adds <paramref name="Amount"/> (in mills, negative to take away) to a balance, or with <paramref name="Set"/> makes the balance exactly that.</summary>
+public sealed record AdjustBalanceRequest(long Amount, string? Note = null, bool Set = false);
+
+public sealed record SetUnrestrictedRequest(bool Unrestricted);
+
+/// <summary>How many people an adjustment to a whole group reached.</summary>
+public sealed record GroupBalanceResponse(int Users);
+
+/// <summary>What a page costs at one printer, for the person about to release there.</summary>
+public sealed record PrinterPriceDto(string PrinterId, string PrinterName, long PriceMono, long PriceColor);
+
+/// <summary>Someone's own balance, for the tray app and the web page (<c>GET /api/v1/me/account</c>, servers from 0.19).</summary>
+/// <param name="Mode">One of <see cref="AccountingMode"/>; the rest only means something when it's "enforce".</param>
+public sealed record MyAccountDto(string Mode, string Currency, long Balance, bool Unrestricted, int DuplexDiscountPercent,
+    IReadOnlyList<BalanceTransactionDto> Transactions, IReadOnlyList<PrinterPriceDto> Prices);
 
 /// <summary>A page limit: at most <paramref name="Pages"/> pages per <paramref name="Period"/> (one of <see cref="QuotaPeriod"/>).</summary>
 public sealed record QuotaDto(int Pages, string Period);
@@ -467,7 +536,10 @@ public sealed record PrinterDto(
     string? StateMessage);
 
 /// <summary>What admins see of a printer: the user-facing view plus where it is on the network and how it's doing.</summary>
-public sealed record PrinterAdminDto(PrinterDto Printer, string Uri, bool TlsSkipVerify, DateTimeOffset? CheckedAt, PrinterHealthDto? Health = null);
+/// <param name="PriceMono">This printer's own price for a page in black and white, in mills; null to use the server's.</param>
+/// <param name="PriceColor">Likewise for a page in colour.</param>
+public sealed record PrinterAdminDto(PrinterDto Printer, string Uri, bool TlsSkipVerify, DateTimeOffset? CheckedAt, PrinterHealthDto? Health = null,
+    long? PriceMono = null, long? PriceColor = null);
 
 public static class PrinterHealthLevel
 {
@@ -501,10 +573,12 @@ public sealed record PrinterHealthDto(
 public sealed record PrinterSupplyDto(string Name, string? Type, string? Color, int? Level, bool Low);
 
 /// <param name="Name">Defaults to the id.</param>
-public sealed record CreatePrinterRequest(string Id, string Uri, string? Name = null, string? Location = null, bool? TlsSkipVerify = null);
+public sealed record CreatePrinterRequest(string Id, string Uri, string? Name = null, string? Location = null, bool? TlsSkipVerify = null,
+    long? PriceMono = null, long? PriceColor = null);
 
-/// <summary>Fields left null are unchanged.</summary>
-public sealed record UpdatePrinterRequest(string? Uri = null, string? Name = null, string? Location = null, bool? TlsSkipVerify = null);
+/// <summary>Fields left null are unchanged. A price of -1 goes back to the server's price.</summary>
+public sealed record UpdatePrinterRequest(string? Uri = null, string? Name = null, string? Location = null, bool? TlsSkipVerify = null,
+    long? PriceMono = null, long? PriceColor = null);
 
 public sealed record QueueAdminDto(
     string Id,
@@ -567,7 +641,9 @@ public sealed record JobDto(
     bool? Color = null,
     bool? Duplex = null,
     string? PrintState = null,
-    int? PrintedPages = null);
+    int? PrintedPages = null,
+    long? Cost = null,
+    long RefundedCost = 0);
 
 /// <summary>What deleting one of your own jobs did (servers from 0.14; older ones answer with nothing).</summary>
 /// <param name="RefundedPages">Pages that had counted against a page limit and no longer do.</param>
@@ -733,7 +809,8 @@ public sealed record AdminReleaseRequest(string Username, string PrinterId, IRea
 /// For a job that was released but won't come out as it was sent: "Office printer can't print in
 /// colour, so this prints in black and white." (servers from 0.17).
 /// </param>
-public sealed record ReleaseResult(long JobId, string JobName, bool Success, string? Error, string? Note = null);
+/// <param name="Cost">What it cost, in mills (<see cref="Shared.Money"/>), when the server keeps costs (0.19 on).</param>
+public sealed record ReleaseResult(long JobId, string JobName, bool Success, string? Error, string? Note = null, long? Cost = null);
 
 public sealed record ReleaseResponse(IReadOnlyList<ReleaseResult> Results);
 

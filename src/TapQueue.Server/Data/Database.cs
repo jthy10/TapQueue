@@ -473,6 +473,33 @@ public sealed class Database
             ALTER TABLE station_builds ADD COLUMN release_programs TEXT;
             ALTER TABLE station_builds ADD COLUMN release_signature TEXT;
         """,
+
+        // 22: cost accounting (Accounts). Money is in mills, thousandths of the currency's unit. A
+        // printer's prices are per page, NULL to use the server's. A job's cost is set when it's
+        // released; refunded_cost is what was given back for pages that didn't print. A user's balance
+        // only changes through balance_transactions, each with the balance it left.
+        """
+            ALTER TABLE users ADD COLUMN balance INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE users ADD COLUMN unrestricted INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE printers ADD COLUMN price_mono INTEGER;
+            ALTER TABLE printers ADD COLUMN price_color INTEGER;
+            ALTER TABLE jobs ADD COLUMN cost INTEGER;
+            ALTER TABLE jobs ADD COLUMN refunded_cost INTEGER NOT NULL DEFAULT 0;
+
+            CREATE TABLE balance_transactions (
+                id             INTEGER PRIMARY KEY,
+                user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                at             TEXT NOT NULL,
+                kind           TEXT NOT NULL,
+                amount         INTEGER NOT NULL,
+                balance_after  INTEGER NOT NULL,
+                job_id         INTEGER,
+                actor          TEXT NOT NULL,
+                note           TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX ix_balance_transactions_user ON balance_transactions(user_id, id);
+            CREATE INDEX ix_balance_transactions_job ON balance_transactions(job_id) WHERE job_id IS NOT NULL;
+        """,
     ];
 
     /// <summary>
@@ -495,6 +522,20 @@ public sealed class Database
             ALTER TABLE client_builds DROP COLUMN release_signature;
             ALTER TABLE station_builds DROP COLUMN release_programs;
             ALTER TABLE station_builds DROP COLUMN release_signature;
+        """,
+
+        // 22 -> 21
+        """
+            DROP INDEX ix_balance_transactions_job;
+            DROP INDEX ix_balance_transactions_user;
+            DROP TABLE balance_transactions;
+            ALTER TABLE jobs DROP COLUMN refunded_cost;
+            ALTER TABLE jobs DROP COLUMN cost;
+            ALTER TABLE printers DROP COLUMN price_color;
+            ALTER TABLE printers DROP COLUMN price_mono;
+            ALTER TABLE users DROP COLUMN unrestricted;
+            ALTER TABLE users DROP COLUMN balance;
+            DELETE FROM settings WHERE key IN ('accounting', 'initialBalance');
         """,
     ];
 

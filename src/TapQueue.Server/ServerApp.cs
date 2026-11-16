@@ -80,6 +80,7 @@ public static class ServerApp
         builder.Services.AddSingleton<GroupStore>();
         builder.Services.AddSingleton<AccessPolicy>();
         builder.Services.AddSingleton<QuotaPolicy>();
+        builder.Services.AddSingleton<Accounts>();
         builder.Services.AddSingleton<UserLifecycle>();
         builder.Services.AddSingleton<UserImport>();
         builder.Services.AddSingleton<SessionStore>();

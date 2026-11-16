@@ -4,7 +4,9 @@ namespace TapQueue.Server.Data;
 
 /// <param name="Uri">The printer's own IPP endpoint, e.g. ipp://192.0.2.10/ipp/print.</param>
 /// <param name="TlsSkipVerify">Printers ship with self-signed certificates, so ipps:// usually needs this.</param>
-public sealed record PrinterRecord(string Id, string Name, string Location, string Uri, bool TlsSkipVerify)
+/// <param name="PriceMono">Its own price for a page in black and white, in mills (<see cref="Accounts"/>); null to use the server's.</param>
+/// <param name="PriceColor">Likewise for a page in colour.</param>
+public sealed record PrinterRecord(string Id, string Name, string Location, string Uri, bool TlsSkipVerify, long? PriceMono = null, long? PriceColor = null)
 {
     public static bool IsValidUri(string? uri) =>
         System.Uri.TryCreate(uri, UriKind.Absolute, out var parsed) && parsed.Scheme is "ipp" or "ipps" or "http" or "https";
@@ -13,7 +15,7 @@ public sealed record PrinterRecord(string Id, string Name, string Location, stri
 /// <summary>The physical printers that held jobs can be released to.</summary>
 public sealed class PrinterStore(Database database)
 {
-    private const string Columns = "id, name, location, uri, tls_skip_verify";
+    private const string Columns = "id, name, location, uri, tls_skip_verify, price_mono, price_color";
 
     public PrinterRecord? Get(string id) =>
         database.QueryOne($"SELECT {Columns} FROM printers WHERE id = $id", Map, ("$id", id));
@@ -23,14 +25,14 @@ public sealed class PrinterStore(Database database)
 
     public PrinterRecord Create(PrinterRecord printer) =>
         database.QueryOne($"""
-            INSERT INTO printers (id, name, location, uri, tls_skip_verify, created_at)
-            VALUES ($id, $name, $location, $uri, $tls, $now)
+            INSERT INTO printers (id, name, location, uri, tls_skip_verify, price_mono, price_color, created_at)
+            VALUES ($id, $name, $location, $uri, $tls, $mono, $color, $now)
             RETURNING {Columns}
             """, Map, Parameters(printer).Append(("$now", DateTimeOffset.UtcNow)).ToArray())!;
 
     public PrinterRecord? Update(PrinterRecord printer) =>
         database.QueryOne($"""
-            UPDATE printers SET name = $name, location = $location, uri = $uri, tls_skip_verify = $tls
+            UPDATE printers SET name = $name, location = $location, uri = $uri, tls_skip_verify = $tls, price_mono = $mono, price_color = $color
             WHERE id = $id
             RETURNING {Columns}
             """, Map, Parameters(printer));
@@ -43,8 +45,8 @@ public sealed class PrinterStore(Database database)
         database.Execute("DELETE FROM printers WHERE id = $id", ("$id", id)) == 1;
 
     private static (string, object?)[] Parameters(PrinterRecord p) =>
-        [("$id", p.Id), ("$name", p.Name), ("$location", p.Location), ("$uri", p.Uri), ("$tls", p.TlsSkipVerify)];
+        [("$id", p.Id), ("$name", p.Name), ("$location", p.Location), ("$uri", p.Uri), ("$tls", p.TlsSkipVerify), ("$mono", p.PriceMono), ("$color", p.PriceColor)];
 
     private static PrinterRecord Map(SqliteDataReader r) =>
-        new(r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3), r.GetBoolean(4));
+        new(r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3), r.GetBoolean(4), r.GetInt64OrNull(5), r.GetInt64OrNull(6));
 }

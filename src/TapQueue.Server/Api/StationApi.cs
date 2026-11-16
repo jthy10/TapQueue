@@ -34,7 +34,7 @@ public static class StationApi
 
     private static async Task<IResult> Tap(StationTapRequest request, HttpContext http, BadgeStore badges, UserStore users,
         PrinterRegistry printers, ReleaseService release, UnknownTaps unknownTaps, AccessPolicy access, EventLog events, ServerSettings settings,
-        StationScreens screens, UserNotices notices, BadgeEnrollments enrollments, ILoggerFactory loggers)
+        StationScreens screens, UserNotices notices, BadgeEnrollments enrollments, Accounts accounts, ILoggerFactory loggers)
     {
         // Whatever the tap comes to is also what the station's screen shows, if it has one.
         IResult Answer(StationTapResponse response)
@@ -132,10 +132,14 @@ public static class StationApi
         var (outcome, message) = (sent, failed) switch
         {
             (0, 0) => (TapOutcome.NoJobs, $"Hi {user.DisplayName}, you have nothing waiting to print."),
-            (_, 0) => (TapOutcome.Released, $"Hi {user.DisplayName}, printing {Plural(sent, "job")}."),
+            (_, 0) => (TapOutcome.Released, $"Hi {user.DisplayName}, printing {Plural(sent, "job")}.{Paid()}"),
             (0, _) => (TapOutcome.Failed, $"Couldn't print: {result.Results.First(r => !r.Success).Error}"),
             _ => (TapOutcome.Failed, $"Printing {Plural(sent, "job")}; {failed} couldn't be sent and are still held."),
         };
+        // Where people pay from a balance: what that tap cost, and what they have left.
+        string Paid() => accounts.Settings().Mode == AccountingMode.Enforce && result.Results.Sum(r => r.Success ? r.Cost ?? 0 : 0) is > 0 and var spent
+            ? $" That's {accounts.Format(spent)}; you have {accounts.Format(accounts.Balance(user.Id))} left."
+            : "";
         // They're standing at a printer with nothing coming out; their PC is where they'll look next.
         if (sent + failed == 0)
             notices.Add(user.Id, $"You tapped at {printer.Name}, but nothing was waiting to print.");

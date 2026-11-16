@@ -63,7 +63,7 @@ public static class AdminAccess
         var area = parts.FirstOrDefault() switch
         {
             "jobs" or "release" or "reports" => AdminArea.Jobs,
-            "users" or "groups" or "badges" or "quotas" => AdminArea.People,
+            "users" or "groups" or "badges" or "quotas" or "accounting" or "accounts" => AdminArea.People,
             "directory" => AdminArea.Directory,
             "printers" or "queues" or "stations" or "workstations" or "clients" => AdminArea.Fleet,
             "client-builds" or "station-builds" => AdminArea.Updates,
@@ -101,6 +101,8 @@ public static class AdminAccess
         ("DELETE", ["jobs", _]) => true,
         ("POST", ["release"]) => true,
         (_, ["badges", ..]) => true,
+        // Topping up at a help desk is day-to-day work; what things cost is not.
+        ("POST", ["users", _, "balance"]) => true,
         ("POST", ["directory", "sync"]) => true,
         ("POST", ["stations", _, "restart"]) => true,
         ("POST", ["workstations", _, "update"]) => true,

@@ -9,7 +9,8 @@ namespace TapQueue.Server.Data;
 /// <param name="ExternalId">Their id in the directory that syncs them (AD's objectGUID).</param>
 /// <param name="HasPassword">They have an admin console password (local users only; AD users use their domain password).</param>
 public sealed record UserRecord(long Id, string Username, string DisplayName, string? TokenHash, DateTimeOffset CreatedAt, DateTimeOffset? DisabledAt, string Source,
-    QuotaDto? Quota = null, string? DisabledBy = null, string? DirectoryState = null, string? ExternalId = null, bool HasPassword = false)
+    QuotaDto? Quota = null, string? DisabledBy = null, string? DirectoryState = null, string? ExternalId = null, bool HasPassword = false,
+    long Balance = 0, bool Unrestricted = false)
 {
     public bool Disabled => DisabledAt is not null;
 
@@ -19,7 +20,7 @@ public sealed record UserRecord(long Id, string Username, string DisplayName, st
     public UserDto ToDto() => new(Id, Username, DisplayName);
 
     public UserAdminDto ToAdminDto(IReadOnlyList<string> groups) =>
-        new(Id, Username, DisplayName, CreatedAt, DisabledAt, groups, Source, Quota, DisabledBy, DirectoryState, HasPassword);
+        new(Id, Username, DisplayName, CreatedAt, DisabledAt, groups, Source, Quota, DisabledBy, DirectoryState, HasPassword, Balance, Unrestricted);
 }
 
 public static class UserSource
@@ -31,7 +32,7 @@ public static class UserSource
 public sealed class UserStore(Database database)
 {
     private const string Columns =
-        "id, username, display_name, token_hash, created_at, disabled_at, source, quota_pages, quota_period, disabled_by, directory_state, external_id, password_hash IS NOT NULL";
+        "id, username, display_name, token_hash, created_at, disabled_at, source, quota_pages, quota_period, disabled_by, directory_state, external_id, password_hash IS NOT NULL, balance, unrestricted";
 
     public UserRecord? FindByUsername(string username) =>
         database.QueryOne($"SELECT {Columns} FROM users WHERE username = $u", Map, ("$u", username));
@@ -47,8 +48,8 @@ public sealed class UserStore(Database database)
 
     public UserRecord Create(string username, string displayName, string? tokenHash) =>
         database.QueryOne($"""
-            INSERT INTO users (username, display_name, token_hash, created_at)
-            VALUES ($u, $d, $t, $now)
+            INSERT INTO users (username, display_name, token_hash, created_at, balance)
+            VALUES ($u, $d, $t, $now, COALESCE((SELECT CAST(value AS INTEGER) FROM settings WHERE key = 'initialBalance'), 0))
             RETURNING {Columns}
             """, Map, ("$u", username), ("$d", displayName), ("$t", tokenHash), ("$now", DateTimeOffset.UtcNow))!;
 
@@ -124,7 +125,7 @@ public sealed class UserStore(Database database)
     private static UserRecord Map(SqliteDataReader r) =>
         new(r.GetInt64(0), r.GetString(1), r.GetString(2), r.GetStringOrNull(3), r.GetTime(4), r.GetTimeOrNull(5), r.GetString(6),
             r.IsDBNull(7) ? null : new QuotaDto(r.GetInt32(7), r.GetString(8)),
-            r.GetStringOrNull(9), r.GetStringOrNull(10), r.GetStringOrNull(11), r.GetBoolean(12));
+            r.GetStringOrNull(9), r.GetStringOrNull(10), r.GetStringOrNull(11), r.GetBoolean(12), r.GetInt64(13), r.GetBoolean(14));
 }
 
 public static class DisabledBy

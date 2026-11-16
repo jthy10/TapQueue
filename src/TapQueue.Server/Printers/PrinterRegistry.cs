@@ -57,7 +57,7 @@ public sealed class PrinterRegistry(PrinterStore store, EventLog events, ILogger
         var health = status is null ? null : new PrinterHealthDto(status.Level, status.Online ? status.Health?.State : null,
             status.CanPrint, status.Online ? status.Health?.Problems ?? [] : [status.StateMessage ?? "Unreachable"],
             status.Health?.Supplies ?? [], status.HealthSince);
-        return new(ToDto(printer), printer.Uri, printer.TlsSkipVerify, status?.CheckedAt, health);
+        return new(ToDto(printer), printer.Uri, printer.TlsSkipVerify, status?.CheckedAt, health, printer.PriceMono, printer.PriceColor);
     }
 
     public async Task<PrinterStatus> ProbeAsync(PrinterRecord printer, CancellationToken ct)

@@ -7,7 +7,7 @@ namespace TapQueue.Server.Jobs;
 
 /// <summary>Sends a user's held jobs to a physical printer.</summary>
 public sealed class ReleaseService(JobStore jobs, Spool spool, PrinterRegistry printers, AccessPolicy access, QuotaPolicy quotas, EventLog events,
-    ServerSettings settings, ILogger<ReleaseService> logger)
+    ServerSettings settings, Accounts accounts, ILogger<ReleaseService> logger)
 {
     private static readonly TimeSpan BusyRetryDelay = TimeSpan.FromSeconds(3);
 
@@ -130,6 +130,11 @@ public sealed class ReleaseService(JobStore jobs, Spool spool, PrinterRegistry p
         // Checked job by job, since each one released uses up some of the limit.
         if (quotas.Refusal(user.Id, job.ChargedPages, DateTimeOffset.UtcNow) is { } overLimit)
             return new ReleaseResult(job.Id, job.Name, false, overLimit);
+        // What it costs here, as it will come out here: a colour job at a printer without colour is priced as black and white.
+        var capabilities = printers.StatusOf(printer.Id)?.Capabilities;
+        var cost = accounts.CostOf(job.ChargedPages, job.Color == true && capabilities?.Color != false, job.Duplex == true && capabilities?.Duplex != false, printer);
+        if (accounts.Refusal(user, cost) is { } cantPay)
+            return new ReleaseResult(job.Id, job.Name, false, cantPay);
         if (!jobs.TryTransition(job.Id, JobStatus.Held, JobStatus.Releasing))
             return new ReleaseResult(job.Id, job.Name, false, "Job is no longer held.");
 
@@ -146,7 +151,6 @@ public sealed class ReleaseService(JobStore jobs, Spool spool, PrinterRegistry p
                 .Add("document-format", IppValue.MimeType(job.DocumentFormat));
             // Replay what the user picked in the print dialog (copies, page ranges, orientation…).
             // Without ipp-attribute-fidelity the printer ignores anything it can't do rather than failing.
-            var capabilities = printers.StatusOf(printer.Id)?.Capabilities;
             if (jobs.GetJobAttributes(job.Id) is { } template)
             {
                 var asked = await JobTemplate.DecodeAsync(template, ct);
@@ -186,12 +190,13 @@ public sealed class ReleaseService(JobStore jobs, Spool spool, PrinterRegistry p
             // The printer has only queued it. With a number for the job, PrintTracker keeps the document
             // and follows the job until the printer says how it ended; without one this is all we learn.
             jobs.MarkReleased(job.Id, printer.Id, printerJobId);
+            accounts.Charge(job, cost, printer.Name);
             if (printerJobId is null)
                 spool.Delete(job.Id);
             else if (done && jobs.FinishPrinting(job.Id, PrintState.Printed, null))
                 spool.Delete(job.Id);
             logger.LogInformation("Released job {JobId} \"{Name}\" for {User} to {Printer}", job.Id, job.Name, user.Username, printer.Id);
-            return new ReleaseResult(job.Id, job.Name, true, null, PrintedDifferently(job, printer, capabilities));
+            return new ReleaseResult(job.Id, job.Name, true, null, PrintedDifferently(job, printer, capabilities), cost);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

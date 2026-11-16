@@ -53,7 +53,9 @@ public sealed record JobRecord(
     bool? Color = null,
     bool? Duplex = null,
     string? PrintState = null,
-    int? PrintedPages = null)
+    int? PrintedPages = null,
+    long? Cost = null,
+    long RefundedCost = 0)
 {
     /// <summary>What the job counts against a quota: its pages times copies, and 1 page if it couldn't be counted.</summary>
     public int ChargedPages => (Pages ?? 1) * Copies;
@@ -61,7 +63,7 @@ public sealed record JobRecord(
     public JobDto ToDto() => new(
         Id, Name, QueueId, Status, SizeBytes, DocumentFormat, Copies, Username, OwnerHint,
         SubmittedAt, ExpiresAt, ReleasedAt, ReleasedPrinterId, Error, FormerOwner, Pages, RefundedPages, Color, Duplex,
-        Status == JobStatus.Released ? PrintState : null, PrintedPages);
+        Status == JobStatus.Released ? PrintState : null, PrintedPages, Cost, RefundedCost);
 }
 
 /// <param name="JobAttributes">The encoded IPP job-attributes group from the client (copies, media, page-ranges…).</param>
@@ -84,7 +86,7 @@ public sealed class JobStore(Database database)
         SELECT j.id, j.user_id, u.username, j.owner_hint, j.queue_id, j.name, j.document_format, j.copies,
                j.size_bytes, j.status, j.source_ip, j.submitted_at, j.expires_at, j.released_at,
                j.released_printer_id, j.error, j.former_owner, j.pages, j.workstation, j.printer_job_id, j.refunded_pages,
-               j.color, j.duplex, j.print_state, j.printed_pages
+               j.color, j.duplex, j.print_state, j.printed_pages, j.cost, j.refunded_cost
         FROM jobs j LEFT JOIN users u ON u.id = j.user_id
         """;
 
@@ -247,5 +249,7 @@ public sealed class JobStore(Database database)
         Color: r.IsDBNull(21) ? null : r.GetBoolean(21),
         Duplex: r.IsDBNull(22) ? null : r.GetBoolean(22),
         PrintState: r.GetStringOrNull(23),
-        PrintedPages: r.IsDBNull(24) ? null : r.GetInt32(24));
+        PrintedPages: r.IsDBNull(24) ? null : r.GetInt32(24),
+        Cost: r.GetInt64OrNull(25),
+        RefundedCost: r.GetInt64(26));
 }
