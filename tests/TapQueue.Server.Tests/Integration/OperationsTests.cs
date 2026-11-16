@@ -59,9 +59,15 @@ public sealed class OperationsTests
         for (var i = 0; i < 100 && server.Printer.Jobs.IsEmpty; i++)
             await Task.Delay(100);
         Assert.Equal("Big report", Assert.Single(server.Printer.Jobs).Name);
-        for (var i = 0; i < 50 && (await server.Admin.GetFromJsonAsync<List<JobDto>>("/api/v1/admin/jobs?status=released", TapQueueJson.Options))!.Count == 0; i++)
+        // The job is marked released a moment before that's written to the activity log, so wait for the log itself.
+        List<EventDto>? events = null;
+        for (var i = 0; i < 50; i++)
+        {
+            events = await server.Admin.GetFromJsonAsync<List<EventDto>>("/api/v1/admin/events?category=job", TapQueueJson.Options);
+            if (events!.Any(e => e.Message.Contains("released to Office printer at station lobby")))
+                break;
             await Task.Delay(100);
-        var events = await server.Admin.GetFromJsonAsync<List<EventDto>>("/api/v1/admin/events?category=job", TapQueueJson.Options);
+        }
         Assert.Contains(events!, e => e.Message.Contains("released to Office printer at station lobby"));
     }
 
