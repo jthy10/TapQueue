@@ -82,8 +82,10 @@ export async function render(root, ctx) {
 
     signIn.replaceChildren(props([
       ["Signs in as", c.clientSignIn === "domain"
-        ? [pill("Domain account", "accent"), h("span", { class: "sub" }, "People choose Sign in as… in the tray and enter their AD name and password. It's remembered on that PC until they sign out.")]
-        : [pill("The PC's user", "plain"), h("span", { class: "sub" }, "The person signed in to the PC, without asking. Sign in as… is greyed out.")]],
+        ? [pill("Name and password", "accent"), h("span", { class: "sub" }, "People choose Sign in as… in the tray and enter their domain name and password, or their TapQueue password if they're a local user. It's remembered on that PC until they sign out.")]
+        : c.clientSignIn === "workstation"
+        ? [pill("The PC's user, vouched for by the PC", "accent"), h("span", { class: "sub" }, "Each PC's TapQueue service says who is signed in to it, and they're the TapQueue user of the same name. Nothing to type; no tokens.")]
+        : [pill("The PC's user, by token", "plain"), h("span", { class: "sub" }, "The tray signs in with the username and token in the PC's client.toml (or just a name, with auth.mode = \"dev\"). Fine for one person per PC; choose \"vouched for by the PC\" for anything bigger.")]],
     ]));
 
     scope.replaceChildren(table({
@@ -163,8 +165,13 @@ export async function render(root, ctx) {
     formDialog({
       title: "Tray sign-in",
       body: [
-        field("Sign in as", select("clientSignIn", [["pc", "The person signed in to the PC"], ["domain", "A domain account, entered in the tray"]], s.config.clientSignIn),
-          "With a domain account, only users synced from AD can sign in, and jobs printed before someone signs in on a PC aren't anyone's. Passwords are checked against AD and never stored."),
+        field("Sign in as", select("clientSignIn", [
+          ["workstation", "The person signed in to the PC, vouched for by the PC (recommended)"],
+          ["domain", "A name and password, entered in the tray"],
+          ["pc", "The person signed in to the PC, with the token in client.toml"],
+        ], s.config.clientSignIn),
+          "Vouched for by the PC: the TapQueue service on each PC tells the server who is signed in there, and that person is the TapQueue user of the same name. Nothing to type and no tokens to hand out, and what someone prints is theirs even if their tray app isn't running. It needs an enrollment code (Server page), because every enrolled PC is trusted to say who its users are. " +
+          "With a name and password, AD users use their domain password (checked against AD, never stored) and local users their TapQueue password; jobs printed before someone signs in on a PC aren't anyone's."),
       ],
       onSubmit: async (v) => {
         s = await api.patch("directory/config", { clientSignIn: v.clientSignIn });

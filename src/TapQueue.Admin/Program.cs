@@ -439,8 +439,10 @@ async Task<int> SetClientSignIn(string mode)
     if (await Send<DirectoryStatusDto>(HttpMethod.Patch, "directory/config", new UpdateDirectoryConfigRequest(ClientSignIn: mode)) is null)
         return 1;
     Console.WriteLine(mode == ClientSignIn.Domain
-        ? "The tray now asks for a domain account: people choose Sign in as… and enter their AD name and password."
-        : "The tray now signs in as the PC's user.");
+        ? "The tray now asks for a name and password: people choose Sign in as… and enter their domain account's, or their TapQueue password if they're a local user."
+        : mode == ClientSignIn.Workstation
+        ? "People are now signed in as their PC's user, on the word of the TapQueue service on each PC. Nothing to type, and no tokens."
+        : "The tray now signs in as the PC's user, with the token in client.toml.");
     return 0;
 }
 
@@ -458,8 +460,10 @@ async Task<int> ShowDirectory()
         ? $"Daily sync at {c.SyncTime}{(d.NextRunAt is { } next ? $", next {next.ToLocalTime():yyyy-MM-dd HH:mm}" : "")}; stops before disabling more than {c.MaxDisablePercent}%."
         : "Daily sync is off.");
     Console.WriteLine(c.ClientSignIn == ClientSignIn.Domain
-        ? "The tray signs in with a domain account (Sign in as…), remembered until they sign out."
-        : "The tray signs in as the PC's user.");
+        ? "The tray signs in with a name and password (Sign in as…), remembered until they sign out."
+        : c.ClientSignIn == ClientSignIn.Workstation
+        ? "People are signed in as their PC's user, vouched for by the TapQueue service on each PC."
+        : "The tray signs in as the PC's user, with the token in client.toml.");
     Console.WriteLine();
     if (d.Scope.Count == 0)
         Console.WriteLine("Nothing in the scope yet: tapqueue-admin directory scope add <dn>");
