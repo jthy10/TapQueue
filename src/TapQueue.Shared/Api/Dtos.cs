@@ -566,12 +566,26 @@ public sealed record CancelJobResponse(int RefundedPages, string Message);
 /// <summary>How people sign in to the tray app, set with the Active Directory settings.</summary>
 public static class ClientSignIn
 {
-    /// <summary>As the person signed in to the PC, without asking. The default.</summary>
+    /// <summary>
+    /// As the person signed in to the PC, on the tray app's own word: with the token in client.toml, or
+    /// with nothing at all when the server's auth.mode is "dev". The default, for servers set up before 0.19.
+    /// </summary>
     public const string Pc = "pc";
-    /// <summary>With their domain account's name and password, from the tray's "Sign in as…". Remembered until they sign out.</summary>
+    /// <summary>
+    /// As the person signed in to the PC, on the word of the PC's TapQueue service (0.19 on): it asks the
+    /// operating system who runs the tray app and signs them in with the PC's key
+    /// (<see cref="WorkstationSignInRequest"/>). No token, no password and nothing to type, and jobs a PC
+    /// user prints are theirs whether or not their tray app is running. Needs an enrollment code, so that
+    /// only PCs an admin let in can say who their users are.
+    /// </summary>
+    public const string Workstation = "workstation";
+    /// <summary>
+    /// With a name and password, from the tray's "Sign in as…": a domain account's, checked against AD,
+    /// or (0.19 on) a local user's TapQueue password. Remembered until they sign out.
+    /// </summary>
     public const string Domain = "domain";
 
-    public static readonly string[] All = [Pc, Domain];
+    public static readonly string[] All = [Pc, Workstation, Domain];
 }
 
 /// <summary>What the tray app asks before signing in: whether it needs a domain account (<see cref="ClientSignIn"/>).</summary>
@@ -646,6 +660,14 @@ public sealed record ClientSetupRequest(string Computer, string? Version, string
 /// through this PC's keyed printers by that PC user then go to that session's TapQueue user.
 /// </summary>
 public sealed record WorkstationSessionRequest(string Computer, string WorkstationKey, string SessionToken, string PcUser);
+
+/// <summary>
+/// The TapQueue service signing in a tray app on its PC (<see cref="ClientSignIn.Workstation"/>): the
+/// PC user <paramref name="PcUser"/>, which the service checked from the operating system, is signed in
+/// as the TapQueue user of the same name. Answered with a <see cref="ClientSessionResponse"/> the
+/// service hands to the tray app.
+/// </summary>
+public sealed record WorkstationSignInRequest(string Computer, string WorkstationKey, string PcUser, string? ClientVersion = null, string? Platform = null);
 
 public static class WorkstationCommand
 {

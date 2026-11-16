@@ -51,8 +51,12 @@ public static class AdminServerApi
             events.Admin(null, "Made a new enrollment code for PCs. New PCs need it to register; PCs that already have a key aren't affected.");
             return new EnrollmentCodeResponse(code);
         });
-        admin.MapDelete("/server/enrollment-code", (ServerSettings settings, EventLog events) =>
+        admin.MapDelete("/server/enrollment-code", (ServerSettings settings, EventLog events, ActiveDirectory.DirectoryStore directory) =>
         {
+            // Without a code any machine could enroll as a PC and then say it's anyone.
+            if (settings.EnrollmentCodeHash is not null && directory.Config().WorkstationSignIn)
+                return Results.Conflict(new ErrorResponse(
+                    "People are signed in as their PC's user, which needs an enrollment code. Change tray sign-in first (Active Directory page, or `tapqueue-admin directory sign-in`)."));
             if (settings.EnrollmentCodeHash is not null)
             {
                 settings.SetEnrollmentCodeHash(null);

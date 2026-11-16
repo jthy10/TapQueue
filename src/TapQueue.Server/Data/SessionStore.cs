@@ -17,14 +17,15 @@ public sealed class SessionStore(Database database)
 {
     private const string Columns = "id, user_id, windows_user, hostname, remote_ip, login_id, workstation, pc_user";
 
+    /// <param name="workstation">The PC whose TapQueue service signed this person in, with <paramref name="pcUser"/> as it saw them; null for a tray app that signed in by itself.</param>
     public void Create(string tokenHash, long userId, string? windowsUser, string? hostname, string remoteIp, string? clientVersion = null,
-        long? loginId = null) =>
+        long? loginId = null, string? workstation = null, string? pcUser = null) =>
         database.Execute("""
-            INSERT INTO sessions (token_hash, user_id, windows_user, hostname, remote_ip, client_version, created_at, last_seen_at, login_id)
-            VALUES ($t, $u, $w, $h, $ip, $v, $now, $now, $login)
+            INSERT INTO sessions (token_hash, user_id, windows_user, hostname, remote_ip, client_version, created_at, last_seen_at, login_id, workstation, pc_user)
+            VALUES ($t, $u, $w, $h, $ip, $v, $now, $now, $login, $workstation, $pcUser)
             """,
             ("$t", tokenHash), ("$u", userId), ("$w", windowsUser), ("$h", hostname), ("$ip", remoteIp), ("$v", clientVersion),
-            ("$now", DateTimeOffset.UtcNow), ("$login", loginId));
+            ("$now", DateTimeOffset.UtcNow), ("$login", loginId), ("$workstation", workstation), ("$pcUser", pcUser));
 
     /// <summary>Looks up a live session by token and marks it as seen from <paramref name="remoteIp"/>.</summary>
     public SessionRecord? Touch(string tokenHash, string remoteIp, TimeSpan timeout)
@@ -50,11 +51,10 @@ public sealed class SessionStore(Database database)
             Map, ("$now", DateTimeOffset.UtcNow), ("$id", id));
 
     /// <summary>
-    /// When the tray sign-in mode changes: ends the sessions made the other way (with a remembered
-    /// domain sign-in, or without), so those clients sign in again the new way. Returns how many.
+    /// When the tray sign-in mode changes: ends every session, so each tray app signs in again the new
+    /// way (and finds out if it can't). Returns how many there were.
     /// </summary>
-    public int EndAll(bool withDomainSignIn) =>
-        database.Execute(withDomainSignIn ? "DELETE FROM sessions WHERE login_id IS NOT NULL" : "DELETE FROM sessions WHERE login_id IS NULL");
+    public int EndAll() => database.Execute("DELETE FROM sessions");
 
     /// <summary>Removes a session the client itself signed out of.</summary>
     public void End(long id) => database.Execute("DELETE FROM sessions WHERE id = $id", ("$id", id));

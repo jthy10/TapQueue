@@ -32,8 +32,14 @@ public sealed record DirectoryConfig(
     public DirectoryConfigDto ToDto() =>
         new(Enabled, Host, Port, BindDn, Password.Length > 0, CaCertificate, BadgeAttribute, SyncTime, MaxDisablePercent, ClientSignIn);
 
-    /// <summary>People sign in to the tray with their domain account rather than as the PC's user.</summary>
+    /// <summary>People sign in to the tray with a name and password rather than as the PC's user.</summary>
     public bool DomainSignIn => ClientSignIn == Shared.Api.ClientSignIn.Domain;
+
+    /// <summary>The PC's TapQueue service says who's signed in to it, and that's who they are in TapQueue.</summary>
+    public bool WorkstationSignIn => ClientSignIn == Shared.Api.ClientSignIn.Workstation;
+
+    /// <summary>There's a domain controller to check passwords against.</summary>
+    public bool Reachable => Host.Length > 0 && BindDn.Length > 0 && Password.Length > 0;
 
     public static bool IsValidTime(string? time) =>
         TimeOnly.TryParseExact(time, "HH:mm", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out _);

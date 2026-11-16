@@ -54,14 +54,15 @@ public sealed class DomainSignInTests
         using var anonymous = server.NewClient();
 
         var info = await anonymous.GetFromJsonAsync<ClientSignInInfoDto>("/api/v1/client/sign-in", TapQueueJson.Options);
-        var withoutAd = await server.Admin.PatchAsJsonAsync("/api/v1/admin/directory/config",
-            new UpdateDirectoryConfigRequest(ClientSignIn: ClientSignIn.Domain), TapQueueJson.Options);
         var bogus = await server.Admin.PatchAsJsonAsync("/api/v1/admin/directory/config",
             new UpdateDirectoryConfigRequest(ClientSignIn: "badge"), TapQueueJson.Options);
+        // Without AD it's local users and their TapQueue passwords (WorkstationSignInTests).
+        var withoutAd = await server.Admin.PatchAsJsonAsync("/api/v1/admin/directory/config",
+            new UpdateDirectoryConfigRequest(ClientSignIn: ClientSignIn.Domain), TapQueueJson.Options);
 
         Assert.Equal(ClientSignIn.Pc, info!.Mode);
-        Assert.Equal(HttpStatusCode.BadRequest, withoutAd.StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, bogus.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, withoutAd.StatusCode);
     }
 
     [Fact]

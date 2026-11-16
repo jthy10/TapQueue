@@ -50,7 +50,12 @@ public sealed class JobOwnerResolver(SessionStore sessions, UserStore users, Ser
         if (windowsUser is null)
             return active.Select(s => s.UserId).Distinct().ToList() is [var only] ? only : null;
         // Newest first, so someone who signed in again as another TapQueue user gets the new one.
-        return active.FirstOrDefault(s => string.Equals(NormalizeWindowsUser(s.PcUser), windowsUser, StringComparison.OrdinalIgnoreCase))?.UserId;
+        if (active.FirstOrDefault(s => string.Equals(NormalizeWindowsUser(s.PcUser), windowsUser, StringComparison.OrdinalIgnoreCase)) is { } session)
+            return session.UserId;
+        // When PCs are trusted to say who their users are, a PC user is the TapQueue user of the same
+        // name, tray app or no tray app: the job came through this PC's own printer, and its spooler
+        // named who printed. So a PC with only the service on it (a lab, a kiosk) still prints.
+        return directory.Config().WorkstationSignIn && settings.EnrollmentCodeHash is not null ? users.FindByUsername(windowsUser)?.Id : null;
     }
 
     private long? FromAddress(string sourceIp, string? windowsUser)

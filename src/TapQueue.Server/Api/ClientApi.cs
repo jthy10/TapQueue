@@ -27,6 +27,8 @@ public static class ClientApi
         app.MapPost("/api/v1/client/setup", CheckIn);
         // The service vouching for a tray app on its PC, with the key its check-in was given.
         app.MapPost("/api/v1/client/workstation-session", VerifySession);
+        // The service signing in the PC user who runs a tray app, when that's how people sign in.
+        app.MapPost("/api/v1/client/workstation-sign-in", WorkstationSignIn);
         app.MapGet("/api/v1/client/builds/{sha256}", DownloadBuild);
         // Anonymous like the setup check-in: a program that crashes may not have signed in (or be able to).
         app.MapPost("/api/v1/client/crash", ReportCrash);
@@ -70,6 +72,13 @@ public static class ClientApi
         var rememberAfterSignIn = false;
         var how = "";
         var domain = directory.Config();
+        if (domain.WorkstationSignIn)
+        {
+            // Nobody signs in on their own word here, whatever auth.mode says: only a PC's service can say who its users are.
+            return Results.Json(new ErrorResponse(
+                    "This TapQueue server signs people in through the TapQueue service on their PC. Update TapQueue on this PC (0.19 or newer), or ask your IT team."),
+                statusCode: StatusCodes.Status401Unauthorized);
+        }
         if (domain.DomainSignIn)
         {
             if (!string.IsNullOrEmpty(request.RememberToken))
@@ -87,39 +96,59 @@ public static class ClientApi
                 if (throttle.IsLocked(username, http.ClientIp()))
                     return Results.Json(new ErrorResponse(throttle.LockedMessage),
                         statusCode: StatusCodes.Status429TooManyRequests);
-                DirectoryEntry? entry;
-                try
+                // A local user signs in with their TapQueue password; everyone else is asked of AD.
+                var local = users.FindByUsername(username) is { FromDirectory: false } found ? found : null;
+                DirectoryEntry? entry = null;
+                if (local is not null || !domain.Reachable)
                 {
-                    entry = await Task.Run(() => ad.Authenticate(domain, username, request.Password), http.RequestAborted);
+                    var password = request.Password;
+                    var right = await Task.Run(() =>
+                    {
+                        if (local is not null && users.PasswordHash(local.Id) is { } hash)
+                            return Admins.PasswordHasher.Verify(password, hash);
+                        // Nothing to check against: take as long as checking would, so the answer doesn't say who has a password.
+                        Admins.PasswordHasher.VerifyNothing(password);
+                        return false;
+                    }, http.RequestAborted);
+                    user = right ? local : null;
                 }
-                catch (DirectoryException ex)
+                else
                 {
-                    logger.LogWarning("Couldn't check {User}'s domain password from {Host}: {Error}", username, pc, ex.Message);
-                    return Results.Json(new ErrorResponse("TapQueue can't reach your domain controller to check your password. Try again in a minute."),
-                        statusCode: StatusCodes.Status503ServiceUnavailable);
+                    try
+                    {
+                        entry = await Task.Run(() => ad.Authenticate(domain, username, request.Password), http.RequestAborted);
+                    }
+                    catch (DirectoryException ex)
+                    {
+                        logger.LogWarning("Couldn't check {User}'s domain password from {Host}: {Error}", username, pc, ex.Message);
+                        return Results.Json(new ErrorResponse("TapQueue can't reach your domain controller to check your password. Try again in a minute."),
+                            statusCode: StatusCodes.Status503ServiceUnavailable);
+                    }
+                    user = entry is null ? null : users.FindByExternalId(UserSource.ActiveDirectory, entry.Guid);
                 }
-                if (entry is null)
+                if (user is null && entry is null)
                 {
                     throttle.Failed(username, http.ClientIp());
-                    logger.LogWarning("Rejected domain sign-in for \"{User}\" from {Ip}", username, http.ClientIp());
-                    events.Record(EventCategory.SignIn, username, null, $"Domain sign-in as {username} on {pc} rejected: wrong name or password, or the account is disabled in AD.");
+                    logger.LogWarning("Rejected password sign-in for \"{User}\" from {Ip}", username, http.ClientIp());
+                    events.Record(EventCategory.SignIn, username, null, local is not null
+                        ? $"Sign-in as {username} on {pc} rejected: wrong password, or they have no TapQueue password."
+                        : $"Domain sign-in as {username} on {pc} rejected: wrong name or password, or the account is disabled in AD.");
                     return Results.Json(new ErrorResponse("Wrong username or password."), statusCode: StatusCodes.Status401Unauthorized);
                 }
                 throttle.Succeeded(username, http.ClientIp());
-                user = users.FindByExternalId(UserSource.ActiveDirectory, entry.Guid);
                 if (user is null)
                 {
-                    events.Record(EventCategory.SignIn, entry.SamAccountName ?? username, null,
+                    events.Record(EventCategory.SignIn, entry!.SamAccountName ?? username, null,
                         $"{entry.SamAccountName ?? username} signed in to the domain on {pc}, but isn't a TapQueue user (not in the Active Directory sync's scope).");
                     return Results.Json(new ErrorResponse($"{entry.SamAccountName ?? username} isn't set up to print with TapQueue. Ask your IT team."),
                         statusCode: StatusCodes.Status403Forbidden);
                 }
                 rememberAfterSignIn = true;
-                how = " with their domain password";
+                how = local is not null ? " with their TapQueue password" : " with their domain password";
             }
             else
             {
-                return Results.Json(new ErrorResponse("Sign in with your domain account."), statusCode: StatusCodes.Status401Unauthorized);
+                return Results.Json(new ErrorResponse("Sign in with your username and password."), statusCode: StatusCodes.Status401Unauthorized);
             }
         }
         else
@@ -162,15 +191,69 @@ public static class ClientApi
         logger.LogInformation("{User} signed in from {Host} ({Ip}) as {System} user {PcUser}{How}, client {Version}",
             user.Username, request.Hostname, http.ClientIp(), system, request.WindowsUser, how, request.ClientVersion ?? "unknown");
 
-        return Results.Ok(new ClientSessionResponse(
-            token,
+        return Results.Ok(SessionResponse(token, user, request.Platform, rememberToken, queues, access, printers, builds));
+    }
+
+    private static ClientSessionResponse SessionResponse(string token, UserRecord user, string? platform, string? rememberToken,
+        QueueStore queues, AccessPolicy access, PrinterRegistry printers, ClientBuildStore builds) =>
+        new(token,
             user.ToDto(),
             // Only what their groups allow, so the client doesn't install queues they can't print to.
             queues.List().Where(q => access.CanPrintTo(user.Id, q.Id)).Select(q => ToDto(q)).ToList(),
             printers.All.Where(p => access.CanReleaseAt(user.Id, p.Id)).Select(printers.ToDto).ToList(),
             HeartbeatSeconds,
-            builds.Latest(ClientPlatform.Parse(request.Platform) ?? ClientPlatform.Windows)?.ToDto(),
-            rememberToken));
+            builds.Latest(ClientPlatform.Parse(platform) ?? ClientPlatform.Windows)?.ToDto(),
+            rememberToken);
+
+    /// <summary>
+    /// <see cref="ClientSignIn.Workstation"/>: a PC's TapQueue service signs in the PC user who runs a
+    /// tray app there, as the TapQueue user of the same name. The service proves which PC it is with
+    /// the PC's key and found the PC user from the operating system, so there's no token or password
+    /// for anyone to type, share or steal. Whoever can enroll a PC can say who its users are, which is
+    /// why this needs an enrollment code.
+    /// </summary>
+    private static IResult WorkstationSignIn(WorkstationSignInRequest request, HttpContext http, WorkstationStore workstations, SessionStore sessions,
+        UserStore users, DirectoryStore directory, ServerSettings settings, EventLog events, AccessPolicy access, QueueStore queues,
+        PrinterRegistry printers, ClientBuildStore builds, AnonymousEventLimits limits, ILoggerFactory loggers)
+    {
+        var logger = loggers.CreateLogger("TapQueue.Server.Api.ClientApi");
+        var computer = request.Computer?.Trim();
+        var pcUser = Clean(request.PcUser, 255);
+        if (string.IsNullOrEmpty(computer) || string.IsNullOrEmpty(request.WorkstationKey) || pcUser is null)
+            return Results.BadRequest(new ErrorResponse("computer, workstationKey and pcUser are required."));
+        if (workstations.Get(computer) is not { KeyHash: { } keyHash } || !Tokens.FixedTimeEquals(keyHash, Tokens.Hash(request.WorkstationKey)))
+            return Results.Json(new ErrorResponse($"That isn't {computer}'s TapQueue key."), statusCode: StatusCodes.Status403Forbidden);
+        if (!directory.Config().WorkstationSignIn)
+            return Results.Json(new ErrorResponse("This TapQueue server doesn't sign people in as their PC's user."), statusCode: StatusCodes.Status409Conflict);
+        if (settings.EnrollmentCodeHash is null)
+            return Results.Json(new ErrorResponse(
+                    "This TapQueue server has no enrollment code, so it can't take a PC's word for who is signed in to it. Ask your IT team."),
+                statusCode: StatusCodes.Status403Forbidden);
+
+        var name = JobOwnerResolver.NormalizeWindowsUser(pcUser);
+        var user = name is null ? null : users.FindByUsername(name);
+        if (user is null)
+        {
+            logger.LogWarning("{Computer}'s TapQueue service asked to sign in PC user {PcUser}, who isn't a TapQueue user", computer, pcUser);
+            if (limits.RejectedSignIns.ShouldRecord($"{computer}\n{pcUser}"))
+                events.Record(EventCategory.SignIn, name ?? pcUser, null, $"{pcUser} is signed in to {computer} but isn't a TapQueue user, so they can't print with TapQueue.");
+            return Results.Json(new ErrorResponse($"{name ?? pcUser} isn't set up to print with TapQueue. Ask your IT team."), statusCode: StatusCodes.Status403Forbidden);
+        }
+        if (user.Disabled)
+        {
+            if (limits.RejectedSignIns.ShouldRecord($"{computer}\n{pcUser}"))
+                events.Record(EventCategory.SignIn, user.Username, EventLog.User(user.Username), $"{user.Username} is signed in to {computer}, but their TapQueue account is disabled.");
+            return Results.Json(new ErrorResponse("Your TapQueue account is disabled. Ask an admin."), statusCode: StatusCodes.Status403Forbidden);
+        }
+
+        var system = ClientPlatform.DisplayName(ClientPlatform.Parse(request.Platform) ?? ClientPlatform.Windows);
+        var token = Tokens.New();
+        sessions.Create(Tokens.Hash(token), user.Id, pcUser, computer, http.ClientIp(), Clean(request.ClientVersion, 64), workstation: computer, pcUser: pcUser);
+        events.Record(EventCategory.SignIn, user.Username, EventLog.User(user.Username),
+            $"{user.Username} signed in on {computer} ({http.ClientIp()}) as {system} user {pcUser}, vouched for by the PC's TapQueue service.");
+        logger.LogInformation("{User} signed in from {Host} ({Ip}) as {System} user {PcUser}, signed in by the PC's TapQueue service",
+            user.Username, computer, http.ClientIp(), system, pcUser);
+        return Results.Ok(SessionResponse(token, user, request.Platform, null, queues, access, printers, builds));
     }
 
     /// <summary>"Sign out" in the tray: ends the session, and forgets the remembered domain sign-in so it needs the password again.</summary>

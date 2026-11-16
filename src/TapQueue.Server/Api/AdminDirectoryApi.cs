@@ -26,7 +26,7 @@ public static class AdminDirectoryApi
         new(store.Config().ToDto(), store.Scope().Select(s => s.ToDto()).ToList(), store.Runs(), schedule.NextRunAt(), sync.Running);
 
     private static IResult UpdateConfig(UpdateDirectoryConfigRequest request, DirectoryStore store, DirectorySync sync, DirectorySyncService schedule, EventLog events,
-        SessionStore sessions)
+        SessionStore sessions, ServerSettings settings)
     {
         if (request.Port is < 1 or > 65535)
             return Results.BadRequest(new ErrorResponse("port must be 1 to 65535 (LDAPS is 636)."));
@@ -66,8 +66,11 @@ public static class AdminDirectoryApi
             return AdminAccess.Forbidden("Only a full admin (admin in every area) can change the domain controller, its CA certificate or the bind account.");
         if (elsewhere && old.Password.Length > 0 && string.IsNullOrEmpty(request.Password))
             return Results.BadRequest(new ErrorResponse("Enter the bind account's password again to change the domain controller or its CA certificate."));
-        if (config.DomainSignIn && (config.Host.Length == 0 || config.BindDn.Length == 0 || config.Password.Length == 0))
-            return Results.BadRequest(new ErrorResponse("Set the domain controller and bind account before asking people to sign in with their domain account."));
+        // Taking a PC's word for who its users are is only safe when not just any machine can enroll as a PC.
+        if (config.WorkstationSignIn && !old.WorkstationSignIn && settings.EnrollmentCodeHash is null)
+            return Results.BadRequest(new ErrorResponse(
+                "Make an enrollment code first (Server page, or `tapqueue-admin server enrollment-code new`). Signing people in as their PC's user trusts every enrolled PC " +
+                "to say who is signed in to it, so only PCs you let in should be able to enroll."));
 
         store.SaveConfig(config);
         schedule.Reschedule();
@@ -83,8 +86,10 @@ public static class AdminDirectoryApi
         if (config.ClientSignIn != old.ClientSignIn)
         {
             // Trays signed in the old way sign in again, and so find out.
-            var ended = sessions.EndAll(withDomainSignIn: !config.DomainSignIn);
-            changes.Add((config.DomainSignIn ? "tray sign-in with a domain account" : "tray signs in as the PC's user") +
+            var ended = sessions.EndAll();
+            changes.Add((config.DomainSignIn ? "tray sign-in with a name and password"
+                    : config.WorkstationSignIn ? "tray signs in as the PC's user, on the word of the PC's TapQueue service"
+                    : "tray signs in as the PC's user") +
                 (ended > 0 ? $" ({ended} PC{(ended == 1 ? "" : "s")} signed in the old way will sign in again)" : ""));
         }
         events.Admin(null, $"Active Directory settings: {string.Join("; ", changes)}.");
