@@ -55,9 +55,13 @@ const string Usage = """
       tapqueue-admin queues                          List queues (the printers users see in Windows)
       tapqueue-admin queues add <queue-id> --name "TapQueue Secure Print" [--description ...] [--location ...]
                                 [--color] [--duplex] [--media iso_a4_210x297mm]
-                                                     Add a queue; clients print to ipps://<server>:8632/ipp/<queue-id>
+                                [--sides any|default-two-sided|force-two-sided] [--max-pages 50] [--direct <printer-id>]
+                                                     Add a queue; clients print to ipps://<server>:8632/ipp/<queue-id>.
+                                                     Without --color everything prints in black and white. --direct
+                                                     prints its jobs straight away at that printer instead of holding them
       tapqueue-admin queues edit <queue-id> [--name ...] [--description ...] [--location ...]
                                 [--color on|off] [--duplex on|off] [--media ...]
+                                [--sides ...] [--max-pages 0] [--direct <printer-id>|none]
       tapqueue-admin queues remove <queue-id>
 
       tapqueue-admin badges [username]               List badges
@@ -190,7 +194,7 @@ for (var i = 0; i < args.Length; i++)
     }
     if (args[i].StartsWith("--"))
     {
-        var takesValue = args[i] is "--server" or "--token" or "--fingerprint" or "--name" or "--status" or "--uri" or "--location" or "--description" or "--media" or "--area" or "--station" or "--by" or "--from" or "--to" or "--note" or "--price-mono" or "--price-color";
+        var takesValue = args[i] is "--server" or "--token" or "--fingerprint" or "--name" or "--status" or "--uri" or "--location" or "--description" or "--media" or "--area" or "--station" or "--by" or "--from" or "--to" or "--note" or "--price-mono" or "--price-color" or "--sides" or "--max-pages" or "--direct";
         var switchWithValue = args[i] is "--tls-skip-verify" or "--color" or "--duplex" && i + 1 < args.Length && ParseSwitch(args[i + 1]) is not null;
         options[args[i]] = (takesValue || switchWithValue) && i + 1 < args.Length ? args[++i] : null;
     }
@@ -784,9 +788,11 @@ async Task<int> ListQueues()
         Console.WriteLine("No queues yet. Add one with: tapqueue-admin queues add secure --name \"TapQueue Secure Print\"");
         return 0;
     }
-    Table(["ID", "NAME", "PATH", "COLOR", "DUPLEX", "MEDIA"], queues.Select(q => new[]
+    Table(["ID", "NAME", "PATH", "COLOR", "DUPLEX", "MEDIA", "MAX PAGES", "JOBS"], queues.Select(q => new[]
     {
-        q.Id, q.Name, q.IppPath, q.Color ? "yes" : "no", q.Duplex ? "yes" : "no", q.DefaultMedia,
+        q.Id, q.Name, q.IppPath, q.Color ? "yes" : "no",
+        !q.Duplex ? "no" : q.SidesPolicy == SidesPolicy.ForceTwoSided ? "always" : q.SidesPolicy == SidesPolicy.DefaultTwoSided ? "by default" : "yes",
+        q.DefaultMedia, q.MaxPages > 0 ? q.MaxPages.ToString() : "-", q.DirectPrinterId is null ? "held" : $"straight to {q.DirectPrinterId}",
     }));
     return 0;
 }
@@ -798,22 +804,45 @@ async Task<int> AddQueue(string id)
         Console.Error.WriteLine("--name is required: it's the printer name users see in Windows.");
         return 2;
     }
+    if (!MaxPages(out var maxPages))
+        return 2;
     var queue = await Send<QueueAdminDto>(HttpMethod.Post, "queues", new CreateQueueRequest(id, name,
         options.GetValueOrDefault("--description"), options.GetValueOrDefault("--location"), Switch("--color"), Switch("--duplex"),
-        options.GetValueOrDefault("--media")));
+        options.GetValueOrDefault("--media"), options.GetValueOrDefault("--sides"), maxPages,
+        options.GetValueOrDefault("--direct") is { } direct && direct != "none" ? direct : null));
     if (queue is null) return 1;
-    Console.WriteLine($"Added queue \"{queue.Name}\". Clients print to ipp://<server>:<port>{queue.IppPath}");
+    Console.WriteLine($"Added queue \"{queue.Name}\". Clients print to ipp://<server>:<port>{queue.IppPath}" +
+        (queue.DirectPrinterId is null ? "" : $"; its jobs print straight away at {queue.DirectPrinterId}"));
     return 0;
 }
 
 async Task<int> EditQueue(string id)
 {
+    if (!MaxPages(out var maxPages))
+        return 2;
     var queue = await Send<QueueAdminDto>(HttpMethod.Patch, $"queues/{Uri.EscapeDataString(id)}", new UpdateQueueRequest(
         options.GetValueOrDefault("--name"), options.GetValueOrDefault("--description"), options.GetValueOrDefault("--location"),
-        Switch("--color"), Switch("--duplex"), options.GetValueOrDefault("--media")));
+        Switch("--color"), Switch("--duplex"), options.GetValueOrDefault("--media"), options.GetValueOrDefault("--sides"), maxPages,
+        // "none" makes it a hold queue again.
+        options.GetValueOrDefault("--direct") is { } direct ? (direct == "none" ? "" : direct) : null));
     if (queue is null) return 1;
     Console.WriteLine($"Updated queue {queue.Id} (\"{queue.Name}\"). Windows picks up changes the next time it asks the queue for its settings.");
     return 0;
+}
+
+// --max-pages 50; null when it wasn't given.
+bool MaxPages(out int? pages)
+{
+    pages = null;
+    if (!options.TryGetValue("--max-pages", out var text))
+        return true;
+    if (int.TryParse(text, out var n) && n >= 0)
+    {
+        pages = n;
+        return true;
+    }
+    Console.Error.WriteLine("--max-pages takes the most pages (times copies) one job may have, or 0 for no limit.");
+    return false;
 }
 
 /// <summary>"--duplex" alone means on; "--duplex off" turns it off; not given means unchanged.</summary>
