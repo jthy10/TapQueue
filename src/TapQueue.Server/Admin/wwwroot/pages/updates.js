@@ -70,6 +70,13 @@ export async function render(root, ctx) {
     return { status, button: check, load: () => run(false) };
   }
 
+  /** How a PC or station makes sure a build is TapQueue's before installing it. */
+  function checkedBy(b) {
+    return b.signed
+      ? h("span", { title: "The release's list of programs is signed with TapQueue's release key. PCs and stations check that themselves, without reaching GitHub." }, pill("Signature", "ok"))
+      : h("span", { title: "This release isn't signed with a key this server knows, so each PC and station checks the build against the release on GitHub and needs to reach github.com." }, pill("GitHub", "plain"));
+  }
+
   async function load() {
     const [builds, workstations, stationBuilds, stations] = await Promise.all([
       api.get("client-builds"), api.maybe("workstations", []), api.get("station-builds"), api.maybe("stations", []),
@@ -85,6 +92,7 @@ export async function render(root, ctx) {
         { label: "Running it", value: (b) => plural(stations.filter((s) => s.version === b.version).length, "station") },
         { label: "Size", class: "num", value: (b) => bytes(b.sizeBytes) },
         { label: "SHA-256", value: (b) => h("code", { title: b.sha256 }, b.sha256.slice(0, 12) + "…") },
+        { label: "Checked by", value: checkedBy },
         { label: "Published", value: (b) => h("span", { title: dateTime(b.publishedAt) }, time(b.publishedAt)) },
       ],
     }));
@@ -98,6 +106,7 @@ export async function render(root, ctx) {
         { label: "Running it", value: (b) => plural(workstations.filter((w) => w.platform === b.platform && w.version === b.version).length, "workstation") },
         { label: "Size", class: "num", value: (b) => bytes(b.sizeBytes) },
         { label: "SHA-256", value: (b) => h("code", { title: b.sha256 }, b.sha256.slice(0, 12) + "…") },
+        { label: "Checked by", value: checkedBy },
         { label: "Published", value: (b) => h("span", { title: dateTime(b.publishedAt) }, time(b.publishedAt)) },
       ],
     }));
