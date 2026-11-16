@@ -8,4 +8,9 @@
     <PackageReference Include="Tomlyn" Version="2.10.1" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The public keys releases are signed with (ReleaseSignature). -->
+    <EmbeddedResource Include="release-keys.txt" LogicalName="TapQueue.Shared.release-keys.txt" />
+  </ItemGroup>
+
 </Project>

@@ -40,6 +40,10 @@ jobs:
         run: dotnet test -c Release --no-build
 
       - name: Package
+        env:
+          # The list of programs is signed with this (scripts/sign-release.sh); required once release-keys.txt names a key.
+          TAPQUEUE_RELEASE_KEY: ${{ secrets.TAPQUEUE_RELEASE_KEY }}
+          TAPQUEUE_REQUIRE_SIGNING: 1
         run: scripts/package.sh server
 
       - name: Publish release
@@ -102,11 +106,16 @@ jobs:
           path: dist
 
       - name: Checksums for both
+        env:
+          # The list of programs is signed with this (scripts/sign-release.sh); required once release-keys.txt names a key.
+          TAPQUEUE_RELEASE_KEY: ${{ secrets.TAPQUEUE_RELEASE_KEY }}
+          TAPQUEUE_REQUIRE_SIGNING: 1
         run: |
           # The programs as they are in the archives being published: the Windows one built here, the Linux one from the job before.
-          rm -f dist/SHA256SUMS dist/SHA256SUMS.programs
+          rm -f dist/SHA256SUMS dist/SHA256SUMS.programs dist/SHA256SUMS.programs.sig
           scripts/program-sums.sh dist
           grep -q ' TapQueueClient.exe$' dist/SHA256SUMS.programs && grep -q ' tapqueue-client$' dist/SHA256SUMS.programs
+          scripts/sign-release.sh dist
           cd dist && sha256sum -- * > SHA256SUMS && cat SHA256SUMS
 
       - name: Publish release

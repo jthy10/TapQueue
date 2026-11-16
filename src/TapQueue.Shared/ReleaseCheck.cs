@@ -73,12 +73,20 @@ public static partial class ReleaseCheck
                 "Not installed; trying again later. This computer needs to be able to reach it to update.", TryAgain: true);
         }
 
+        return Lists(list, program, sha256)
+            ? new Result(true)
+            : new Result(false, $"The server's build {version} isn't the {program} of TapQueue release {release}, so it wasn't installed.");
+    }
+
+    /// <summary>Whether a release's list of programs ("sha256  name" lines) has <paramref name="program"/> with this SHA-256.</summary>
+    public static bool Lists(string list, string program, string sha256)
+    {
         foreach (var line in list.Split('\n'))
         {
             var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             if (parts.Length == 2 && parts[1].TrimStart('*') == program && parts[0].Equals(sha256, StringComparison.OrdinalIgnoreCase))
-                return new Result(true);
+                return true;
         }
-        return new Result(false, $"The server's build {version} isn't the {program} of TapQueue release {release}, so it wasn't installed.");
+        return false;
     }
 }

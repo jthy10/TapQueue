@@ -1,0 +1,9 @@
+# The public keys TapQueue's releases are signed with, one a line (base64 SubjectPublicKeyInfo,
+# ECDSA P-256). Built into every program: PCs and stations install a build their server offers
+# without asking GitHub when its release's list of programs is signed with one of these.
+#
+# scripts/new-release-key.sh makes a key and adds its public half here; the private half goes in the
+# repository's TAPQUEUE_RELEASE_KEY secret and nowhere near a TapQueue server. See docs/releasing.md.
+#
+# With no key here, nothing is signed and PCs and stations check each build against the release on
+# GitHub instead, as they did before 0.19.
