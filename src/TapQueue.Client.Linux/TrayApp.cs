@@ -53,6 +53,7 @@ public sealed class TrayApp : Application
     private bool _checkingForUpdates;
     private bool _refreshing;
     private bool _linkingBadge;
+    private MyAccountDto? _account;
     private string? _lastError;
     private PrintersAndQueueWindow? _window;
     private SignInWindow? _signInWindow;
@@ -146,6 +147,20 @@ public sealed class TrayApp : Application
         _heartbeatTimer.Start();
         _pollTimer.Start();
         await PollAsync();
+        await RefreshAccountAsync();
+    }
+
+    /// <summary>What this person has left to print with, where printing is paid for from a balance; otherwise forgotten.</summary>
+    private async Task RefreshAccountAsync()
+    {
+        try
+        {
+            _account = await _api.GetAccountAsync() is { Mode: AccountingMode.Enforce } account ? account : null;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TapQueueApiException or TaskCanceledException)
+        {
+            // The next heartbeat asks again.
+        }
     }
 
     /// <summary>
@@ -242,6 +257,7 @@ public sealed class TrayApp : Application
         try
         {
             await _api.HeartbeatAsync();
+            await RefreshAccountAsync();
         }
         catch (Exception ex) when (ex is HttpRequestException or TapQueueApiException or TaskCanceledException)
         {
@@ -276,11 +292,12 @@ public sealed class TrayApp : Application
             if (response.Results.Count == 0)
                 Notify("Nothing to release", "You have no held print jobs.");
             else if (failed.Count == 0)
-                Notify("Released", $"{ok} job{(ok == 1 ? "" : "s")} sent to {printer}."
+                Notify("Released", $"{ok} job{(ok == 1 ? "" : "s")} sent to {printer}{Spent(response)}."
                     + string.Concat(response.Results.Select(r => r.Note).OfType<string>().Distinct().Select(note => "\n" + note)));
             else
                 Notify("Some jobs didn't print", string.Join("\n", failed.Select(f => $"{f.JobName}: {f.Error}")), urgent: true);
             await PollAsync();
+            await RefreshAccountAsync();
             return response;
         }
         catch (Exception ex) when (ex is HttpRequestException or TapQueueApiException or TaskCanceledException)
@@ -469,6 +486,8 @@ public sealed class TrayApp : Application
             : $"Not connected{(_lastError is null ? "" : $": {Shorten(_lastError, 60)}")}";
         menu.Add(new NativeMenuItem(status) { IsEnabled = false });
         menu.Add(new NativeMenuItem($"{_heldJobs.Count} held job{(_heldJobs.Count == 1 ? "" : "s")}") { IsEnabled = false });
+        if (_connected && _account is not null)
+            menu.Add(new NativeMenuItem($"Balance: {Money.Format(_account.Balance, _account.Currency)}") { IsEnabled = false });
         menu.Add(new NativeMenuItemSeparator());
 
         var releaseAll = new NativeMenuItem("Release all to") { IsEnabled = _connected && _heldJobs.Count > 0, Menu = [] };
@@ -535,6 +554,10 @@ public sealed class TrayApp : Application
         _window.Closed += (_, _) => _window = null;
         _window.Show();
     }
+
+    /// <summary>", for $0.35" when the released jobs cost something.</summary>
+    private string Spent(ReleaseResponse response) =>
+        response.Results.Sum(r => r.Success ? r.Cost ?? 0 : 0) is > 0 and var spent ? $", for {Money.Format(spent, _account?.Currency)}" : "";
 
     public void Notify(string title, string text, bool urgent = false) => _ = Notifications.ShowAsync(title, text, urgent);
 

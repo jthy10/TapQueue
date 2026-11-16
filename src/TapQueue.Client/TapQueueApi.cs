@@ -245,6 +245,19 @@ public sealed class TapQueueApi(ClientConfig config) : IDisposable
     public Task<CancelJobResponse?> CancelJobAsync(long jobId, CancellationToken ct = default) =>
         SendAsync<CancelJobResponse>(HttpMethod.Delete, $"api/v1/me/jobs/{jobId}", null, ct);
 
+    /// <summary>This person's balance and what a page costs; null from servers older than 0.19, which keep no costs.</summary>
+    public async Task<MyAccountDto?> GetAccountAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            return await SendAsync<MyAccountDto>(HttpMethod.Get, "api/v1/me/account", null, ct);
+        }
+        catch (TapQueueApiException ex) when (ex.Status is HttpStatusCode.NotFound or HttpStatusCode.MethodNotAllowed)
+        {
+            return null;
+        }
+    }
+
     /// <summary>
     /// "Link my badge": for the next minute, a card nobody owns that's tapped at <paramref name="printerId"/>'s
     /// reader becomes this person's (servers from 0.19). Throws with the reason if it can't start.
