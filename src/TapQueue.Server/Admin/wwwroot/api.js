@@ -49,6 +49,9 @@ export const auth = {
   signIn: (username, password) => request("POST", "sign-in", { username, password }, "/api/v1/admin-auth/"),
   signOut: () => request("POST", "sign-out", {}, "/api/v1/admin-auth/"),
   changePassword: (currentPassword, newPassword) => request("POST", "password", { currentPassword, newPassword }, "/api/v1/admin-auth/"),
+  /** { needed }: true while the server has no admin who can sign in, so the first one is made with the setup code. */
+  setupNeeded: () => request("GET", "setup", undefined, "/api/v1/admin-auth/"),
+  setUp: (code, username, displayName, password) => request("POST", "setup", { code, username, displayName, password }, "/api/v1/admin-auth/"),
 };
 
 export const enc = encodeURIComponent;

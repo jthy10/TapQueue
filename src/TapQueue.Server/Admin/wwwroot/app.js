@@ -207,6 +207,52 @@ function showSignIn(message) {
   form.elements.username.focus();
 }
 
+/** A new server: nobody can sign in yet, so whoever has the setup code creates the first admin. */
+function showSetup() {
+  const error = h("div", { class: "form-error", hidden: true });
+  const submit = button("Create admin and sign in", { type: "submit", kind: "primary" });
+  const form = h("form", { onsubmit: async (e) => {
+    e.preventDefault();
+    error.hidden = true;
+    const v = form.elements;
+    if (v.password.value !== v.again.value) {
+      error.textContent = "The two passwords aren't the same.";
+      error.hidden = false;
+      return;
+    }
+    submit.disabled = true;
+    try {
+      session = await auth.setUp(v.code.value.trim(), v.username.value.trim(), v.displayName.value.trim(), v.password.value);
+      showConsole();
+      toast("You're the first admin. Add a queue and a printer next.");
+    } catch (err) {
+      error.textContent = err.message;
+      error.hidden = false;
+      // Someone else finished setting up meanwhile: there's an admin now, so it's a sign-in.
+      if (err.status === 409) showSignIn(err.message);
+    } finally {
+      submit.disabled = false;
+    }
+  } },
+  h("div", { class: "sign-in-brand" }, h("img", { src: "/icons/128.png", alt: "" }), h("div", null, h("b", null, "TapQueue"), h("span", null, "Set up this server"))),
+  h("p", { class: "sub" }, "Nobody can sign in here yet. Create the first admin; they can add everyone else."),
+  error,
+  field("Setup code", input("code", { required: true, autocomplete: "off", autocapitalize: "characters", placeholder: "XXXX-XXXX-XXXX" }),
+    "In the server's log (journalctl -u tapqueue-server), or run: sudo tapqueue-admin server setup-code"),
+  field("Username", input("username", { required: true, autocomplete: "username", autocapitalize: "none" })),
+  field("Full name", input("displayName", { autocomplete: "name" })),
+  field("Password", input("password", { type: "password", required: true, minlength: 10, autocomplete: "new-password" }), "At least 10 characters."),
+  field("Password again", input("again", { type: "password", required: true, minlength: 10, autocomplete: "new-password" })),
+  submit);
+
+  document.getElementById("shell").hidden = true;
+  const box = document.getElementById("sign-in");
+  box.replaceChildren(h("div", { class: "sign-in-card" }, form));
+  box.hidden = false;
+  document.title = "Set up · TapQueue Admin";
+  form.elements.code.focus();
+}
+
 function showConsole() {
   document.getElementById("sign-in").hidden = true;
   document.getElementById("shell").hidden = false;
@@ -221,7 +267,9 @@ async function start() {
     session = await auth.me();
   } catch (err) {
     session = null;
-    showSignIn(err.status === 401 ? null : err.message);
+    const setup = err.status === 401 ? await auth.setupNeeded().catch(() => null) : null;
+    if (setup?.needed) showSetup();
+    else showSignIn(err.status === 401 ? null : err.message);
     return;
   }
   showConsole();

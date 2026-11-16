@@ -79,6 +79,19 @@ if ! systemctl is-active --quiet tapqueue-server; then
     exit 1
 fi
 
+# A new server has no admin yet: the console asks for this code to create the first one.
+setup_code=$("$prefix/tapqueue-admin" server setup-code 2>/dev/null | sed -n 's/^Setup code: //p') || setup_code=""
+if [ -n "$setup_code" ]; then
+    cat <<SETUP
+
+Create the first admin: open https://$(hostname -f 2>/dev/null || hostname):8632/admin in a browser
+(it warns about the self-signed certificate) and enter the setup code:
+
+    $setup_code
+
+SETUP
+fi
+
 cat <<NEXT
 
 Next steps (tapqueue-admin run with sudo reads the admin token from $config):

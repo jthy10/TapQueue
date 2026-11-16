@@ -133,6 +133,8 @@ const string Usage = """
       tapqueue-admin server restart                  Restart tapqueue-server (only when systemd runs it)
       tapqueue-admin server enrollment-code new|off  Make new PCs give a code to register (shown once; goes in
                                                      their client.toml as enrollment_code), or stop asking
+      tapqueue-admin server setup-code               On a new server: the code the console asks for to create
+                                                     the first admin
 
       tapqueue-admin backups                         Backups on the server, and the daily schedule
       tapqueue-admin backups create                  Make a backup now
@@ -278,6 +280,7 @@ try
         ("server", "restart") when positional.Count == 2 => await RestartServer(),
         ("server", "downgrade") when positional.Count is 2 or 3 => await DowngradeServer(positional.ElementAtOrDefault(2)),
         ("server", "enrollment-code") when positional.Count == 3 && positional[2] is "new" or "off" => await SetEnrollmentCode(positional[2] == "new"),
+        ("server", "setup-code") when positional.Count == 2 => await ShowSetupCode(),
         ("report", null) => await Report(options.GetValueOrDefault("--by"), options.GetValueOrDefault("--from"), options.GetValueOrDefault("--to"), options.ContainsKey("--csv")),
         ("clients", "update") when positional.Count == 2 => await PublishRelease("client", "clients", options.ContainsKey("--check")),
         ("stations", "update") when positional.Count == 2 => await PublishRelease("station", "stations", options.ContainsKey("--check")),
@@ -426,6 +429,16 @@ async Task<int> ListJobs(string? status)
         (j.Pages?.ToString() ?? "?") + (j.Copies > 1 ? $" x{j.Copies}" : ""), FormatSize(j.SizeBytes),
         j.SubmittedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"), j.ReleasedPrinterId ?? "",
     }));
+    return 0;
+}
+
+async Task<int> ShowSetupCode()
+{
+    var setup = await Get<SetupCodeResponse>("server/setup-code");
+    if (setup is null) return 1;
+    Console.WriteLine(setup.Code is null
+        ? "This server already has an admin who can sign in to the console (or runs in dev mode), so there's no setup code."
+        : $"Setup code: {setup.Code}\nOpen the admin console (https://<this-server>:8632/admin) and create the first admin with it.");
     return 0;
 }
 
