@@ -77,6 +77,7 @@ public sealed class UserStore(Database database)
             database.Execute("DELETE FROM sessions WHERE user_id = $id", ("$id", userId));
             database.Execute("DELETE FROM client_logins WHERE user_id = $id", ("$id", userId));
             database.Execute("DELETE FROM admin_sessions WHERE user_id = $id", ("$id", userId));
+            database.Execute("DELETE FROM portal_sessions WHERE user_id = $id", ("$id", userId));
         }
         return database.QueryOne($"""
             UPDATE users SET disabled_at = CASE WHEN $disabled THEN COALESCE(disabled_at, $now) END,
@@ -91,11 +92,15 @@ public sealed class UserStore(Database database)
     public string? PasswordHash(long userId) =>
         database.Scalar("SELECT password_hash FROM users WHERE id = $id", ("$id", userId)) as string;
 
-    /// <summary>Sets or (with null) removes the admin console password, signing them out of the console everywhere.</summary>
+    /// <summary>
+    /// Sets or (with null) removes their TapQueue password (the admin console, the web page, and the tray
+    /// where it asks for one), signing them out of the console and the web page everywhere.
+    /// </summary>
     public void SetPasswordHash(long userId, string? hash)
     {
         database.Execute("UPDATE users SET password_hash = $h WHERE id = $id", ("$h", hash), ("$id", userId));
         database.Execute("DELETE FROM admin_sessions WHERE user_id = $id", ("$id", userId));
+        database.Execute("DELETE FROM portal_sessions WHERE user_id = $id", ("$id", userId));
     }
 
     /// <summary>Hands the user to a directory (or back to TapQueue, with <see cref="UserSource.Local"/> and null).</summary>

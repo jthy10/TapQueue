@@ -509,6 +509,21 @@ public sealed class Database
             ALTER TABLE queues ADD COLUMN max_pages INTEGER NOT NULL DEFAULT 0;
             ALTER TABLE queues ADD COLUMN direct_printer_id TEXT;
         """,
+
+        // 24: the web page people see their own jobs on (/my, PortalApi). Its sign-ins are kept apart
+        // from tray sessions, which say which PC someone is at, and from the admin console's.
+        """
+            CREATE TABLE portal_sessions (
+                id            INTEGER PRIMARY KEY,
+                token_hash    TEXT NOT NULL UNIQUE,
+                user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                ip            TEXT NOT NULL,
+                user_agent    TEXT,
+                created_at    TEXT NOT NULL,
+                last_seen_at  TEXT NOT NULL
+            );
+            CREATE INDEX ix_portal_sessions_user ON portal_sessions(user_id);
+        """,
     ];
 
     /// <summary>
@@ -552,6 +567,12 @@ public sealed class Database
             ALTER TABLE queues DROP COLUMN direct_printer_id;
             ALTER TABLE queues DROP COLUMN max_pages;
             ALTER TABLE queues DROP COLUMN sides_policy;
+        """,
+
+        // 24 -> 23
+        """
+            DROP INDEX ix_portal_sessions_user;
+            DROP TABLE portal_sessions;
         """,
     ];
 

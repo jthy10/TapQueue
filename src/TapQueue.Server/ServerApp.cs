@@ -15,6 +15,7 @@ using TapQueue.Server.Ipp;
 using TapQueue.Server.Jobs;
 using TapQueue.Server.Logging;
 using TapQueue.Server.Notifications;
+using TapQueue.Server.Portal;
 using TapQueue.Server.Printers;
 using TapQueue.Server.Reports;
 using TapQueue.Server.Tls;
@@ -86,6 +87,7 @@ public static class ServerApp
         builder.Services.AddSingleton<SessionStore>();
         builder.Services.AddSingleton<ClientLoginStore>();
         builder.Services.AddSingleton<AdminStore>();
+        builder.Services.AddSingleton<PortalSessionStore>();
         builder.Services.AddSingleton<AdminRoster>();
         builder.Services.AddSingleton<FirstRunSetup>();
         builder.Services.AddSingleton<SignInThrottle>();
@@ -168,6 +170,8 @@ public static class ServerApp
         app.MapStationApi();
         app.MapStationScreenApi();
         app.MapAdminUi();
+        app.MapPortalApi();
+        app.MapPortalUi();
         return app;
     }
 

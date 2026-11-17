@@ -133,7 +133,7 @@ public static class AdminAuthApi
     }
 
     /// <summary>The user the name and password belong to, or null. Throws <see cref="DirectoryException"/> if AD can't be asked.</summary>
-    private static UserRecord? Check(string name, string password, UserStore users, DirectoryStore directory, IDirectorySourceFactory ad)
+    internal static UserRecord? Check(string name, string password, UserStore users, DirectoryStore directory, IDirectorySourceFactory ad)
     {
         var user = users.FindByUsername(name);
         if (user is { FromDirectory: false })

@@ -21,6 +21,8 @@
     <EmbeddedResource Include="Assets\*.html" />
     <!-- The admin console, served at /admin. LogicalName keeps the path so AdminUi can look files up by it. -->
     <EmbeddedResource Include="Admin\wwwroot\**" LogicalName="admin/$([System.String]::Copy('%(RecursiveDir)').Replace('\','/'))%(Filename)%(Extension)" />
+    <!-- The web page people see their own jobs on, served at /my (PortalUi). -->
+    <EmbeddedResource Include="Portal\wwwroot\**" LogicalName="portal/$([System.String]::Copy('%(RecursiveDir)').Replace('\','/'))%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>

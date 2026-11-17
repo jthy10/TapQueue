@@ -1260,6 +1260,12 @@ public sealed record AdminsDto(IReadOnlyList<AdminGrantDto> Grants, IReadOnlyLis
 
 public sealed record AdminSignInRequest(string Username, string Password);
 
+/// <summary>Who is signed in to the web page at /my, and what it should offer them (<c>GET /api/v1/portal/me</c>, servers from 0.19).</summary>
+/// <param name="CanChangePassword">A local user with a TapQueue password; domain accounts change theirs in the domain.</param>
+/// <param name="CanLinkBadge">People may link a card nobody owns to themselves here.</param>
+/// <param name="Accounting">One of <see cref="AccountingMode"/>.</param>
+public sealed record PortalMeDto(string Username, string DisplayName, bool CanChangePassword, bool CanLinkBadge, string Accounting);
+
 /// <summary>Whether the console should offer to create the first admin instead of a sign-in (<c>GET /api/v1/admin-auth/setup</c>).</summary>
 public sealed record FirstRunSetupDto(bool Needed);
 

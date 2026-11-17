@@ -81,10 +81,14 @@ public static class AdminsApi
         return Results.NoContent();
     }
 
-    private static IResult SetPassword(string username, SetPasswordRequest request, UserStore users, AdminRoster roster, EventLog events)
+    private static IResult SetPassword(string username, SetPasswordRequest request, UserStore users, AdminRoster roster, AdminStore admins, EventLog events)
     {
         if (users.FindByUsername(username) is not { } user)
             return Results.NotFound(new ErrorResponse($"No user \"{username}\"."));
+        // A People admin sets people's passwords (for the web page and the tray), but not an admin's:
+        // whoever sets that can sign in to the console as them.
+        if (AdminAccess.CurrentPermissions is { IsFullAdmin: false } && admins.PermissionsFor(user.Id).Any)
+            return AdminAccess.Forbidden($"{user.Username} has an admin role, so only a full admin (admin in every area) can set their password.");
         if (user.FromDirectory)
             return Results.BadRequest(new ErrorResponse($"{user.Username} signs in with their Active Directory password; set it in AD."));
         if (request.Password is not null && PasswordHasher.Problem(request.Password) is { } problem)
@@ -94,8 +98,8 @@ public static class AdminsApi
 
         users.SetPasswordHash(user.Id, request.Password is null ? null : PasswordHasher.Hash(request.Password));
         events.Admin(EventLog.User(user.Username), request.Password is null
-            ? $"Removed {user.Username}'s admin console password."
-            : $"Set {user.Username}'s admin console password.");
+            ? $"Removed {user.Username}'s TapQueue password."
+            : $"Set {user.Username}'s TapQueue password.");
         return Results.NoContent();
     }
 

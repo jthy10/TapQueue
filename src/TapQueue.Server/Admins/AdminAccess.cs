@@ -75,8 +75,8 @@ public static class AdminAccess
         // page's history), and printer and queue names (releasing jobs, groups).
         if (read && (parts is ["server"] or ["events", ..] or ["printers"] or ["queues"]))
             return AdminRequirement.AnyAdmin;
-        // Passwords and admins: nobody may give themselves (or take over someone with) more rights.
-        if (area is null || parts is ["users", _, "password"])
+        // Admins: nobody may give themselves more rights. (Paths nobody has listed here either.)
+        if (area is null)
             return AdminRequirement.FullAdminOnly;
         // A backup is everything at once: every hashed password and token, and the server's private key.
         if (parts is ["server", "backups", ..])

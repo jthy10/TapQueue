@@ -36,13 +36,27 @@ public static class ClientApi
         var me = app.MapGroup("/api/v1").AddEndpointFilter(RequireSession);
         // The build is only used by Windows tray apps older than 0.3, which updated themselves.
         me.MapPost("/client/heartbeat", (ClientBuildStore builds) => new ClientHeartbeatResponse(builds.Latest(ClientPlatform.Windows)?.ToDto()));
+        // What the session was given at sign-in, as it is now: the queues this person may print to.
+        me.MapGet("/queues", (HttpContext http, QueueStore queues, AccessPolicy access) =>
+            queues.List().Where(q => access.CanPrintTo(CurrentUser(http).Id, q.Id)).Select(q => ToDto(q)));
+        me.MapPost("/client/sign-out", SignOut);
+        me.MapForSignedInUser();
+    }
+
+    /// <summary>
+    /// What someone does with their own jobs, cards and balance, whichever way they signed in: the tray
+    /// app's session (/api/v1) or the web page's (/api/v1/portal, <see cref="PortalApi"/>). The group's
+    /// filter has put the <see cref="UserRecord"/> and a <see cref="SessionRecord"/> in the request.
+    /// </summary>
+    internal static void MapForSignedInUser(this RouteGroupBuilder me)
+    {
         me.MapGet("/printers", (HttpContext http, PrinterRegistry printers, AccessPolicy access) =>
             printers.All.Where(p => access.CanReleaseAt(CurrentUser(http).Id, p.Id)).Select(printers.ToDto));
         me.MapGet("/me/jobs", (HttpContext http, JobStore jobs, bool? all) =>
             jobs.ListForUser(CurrentUser(http).Id, heldOnly: all != true).Select(j => j.ToDto()));
-        // What the session was given at sign-in, as it is now: the queues this person may print to.
-        me.MapGet("/queues", (HttpContext http, QueueStore queues, AccessPolicy access) =>
-            queues.List().Where(q => access.CanPrintTo(CurrentUser(http).Id, q.Id)).Select(q => ToDto(q)));
+        // Their page limits and how much of each is used.
+        me.MapGet("/me/quota", (HttpContext http, QuotaPolicy quotas) => quotas.UsageFor(CurrentUser(http).Id, DateTimeOffset.UtcNow)
+            .Select(u => new QuotaUsageDto(u.Limit.Pages, u.Limit.Period, u.Limit.Source, u.Used, u.Remaining, u.PeriodStart, u.ResetsAt)));
         // What happened at a printer while they weren't at their PC, for the tray to show.
         me.MapGet("/me/notices", (HttpContext http, UserNotices notices, long? after) => notices.For(CurrentUser(http).Id, after ?? 0));
         // Their own cards, and linking a new one by tapping it at a printer they choose (BadgeEnrollments).
@@ -66,7 +80,6 @@ public static class ClientApi
                 settings.Mode == AccountingMode.Off ? [] : printers.All.Where(p => access.CanReleaseAt(user.Id, p.Id))
                     .Select(p => new PrinterPriceDto(p.Id, p.Name, accounts.PricesAt(p, settings).Mono, accounts.PricesAt(p, settings).Color)).ToList());
         });
-        me.MapPost("/client/sign-out", SignOut);
         me.MapDelete("/me/jobs/{id:long}", CancelJob);
         me.MapPost("/me/release", Release);
     }
@@ -481,7 +494,7 @@ public static class ClientApi
         return Results.Ok(await release.ReleaseAsync(user, printer, request.JobIds, user.Username, $"from {session.Hostname ?? http.ClientIp()}", http.RequestAborted));
     }
 
-    private static UserRecord CurrentUser(HttpContext http) => (UserRecord)http.Items[nameof(UserRecord)]!;
+    internal static UserRecord CurrentUser(HttpContext http) => (UserRecord)http.Items[nameof(UserRecord)]!;
 
     private static async ValueTask<object?> RequireSession(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {

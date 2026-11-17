@@ -27,6 +27,7 @@ public sealed class ServerSettings(Database database, ServerConfig config)
     public const string SignInLockoutKey = "signInLockoutMinutes";
 
     public const string BadgeSelfEnrollKey = "badgeSelfEnroll";
+    public const string UserPortalKey = "userPortal";
 
     public const string On = "on";
     public const string Off = "off";
@@ -44,6 +45,9 @@ public sealed class ServerSettings(Database database, ServerConfig config)
         new(BadgeSelfEnrollKey, "badge-self-enroll", "People link their own badge", On, [On, Off],
             "From the tray app or the web page, someone picks the printer they're standing at and taps a card nobody owns yet; it becomes theirs. " +
             "Off: only admins link cards."),
+        new(UserPortalKey, "user-portal", "Web page for people's own jobs", On, [On, Off],
+            "At /my on this server, people sign in from any browser or phone with their TapQueue or domain password to see, release and delete " +
+            "their own jobs, and see their balance and page limit. Off: only the tray app and badge taps."),
     ];
 
     public static readonly string[] Keys =
@@ -63,6 +67,9 @@ public sealed class ServerSettings(Database database, ServerConfig config)
     /// <summary>Every one of <see cref="Choices"/> as it is now, for the admin API.</summary>
     public List<ServerOptionDto> Options() =>
         Choices.Select(c => new ServerOptionDto(c.Key, c.Name, c.Label, Option(c.Key), c.Default, c.Allowed, c.Help, IsSaved(c.Key))).ToList();
+
+    /// <summary>Whether people can use the web page at /my (<see cref="Api.PortalApi"/>).</summary>
+    public bool UserPortal => Option(UserPortalKey) == On;
 
     /// <summary>Whether people may link a card nobody owns to themselves (<see cref="Jobs.BadgeEnrollments"/>).</summary>
     public bool BadgeSelfEnroll => Option(BadgeSelfEnrollKey) == On;
