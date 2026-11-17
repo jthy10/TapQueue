@@ -5,7 +5,8 @@
 - **Queues** are what users print to. Each one looks like an ordinary
   [IPP Everywhere](https://www.pwg.org/ipp/everywhere.html) network printer at
   `ipp://<server>:8631/ipp/<queue-id>`, so Windows 11 prints to it with its built-in class driver.
-  You choose the name users see in the print dialog.
+  You choose the name users see in the print dialog. A queue holds its jobs for release, unless
+  you make it print straight to one printer ([below](#queues-that-print-straight-away)).
 - **Printers** are the physical printers jobs are released to, over IPP.
 - **Users** have a client token for the tray app and any number of **badges**.
 - **Release stations** are badge readers. Each one releases to one printer.
@@ -70,6 +71,35 @@ the server asks along with their health:
   and white or on one side; the tray says so, and the job is recorded as it came out, so reports
   don't count colour pages that weren't.
 
+### A queue's rules
+
+What a queue insists on, whatever the PC asked for (console → **Queues** → **Edit**, or
+`tapqueue-admin queues edit`):
+
+- **Black and white only.** A queue that doesn't offer colour (`--color off`, the default) prints
+  everything in black and white: the print dialog offers nothing else, and a job that asks for
+  colour anyway is sent to the printer as monochrome and counted and priced that way.
+- **Two-sided.** `--sides default-two-sided` makes two-sided what people get unless they choose
+  one side. `--sides force-two-sided` offers nothing else, and a job that asks for one side is
+  printed on two. Both need the queue to offer two-sided (`--duplex on`).
+- **A longest job.** `--max-pages 50` refuses a job with more pages than that, copies included.
+  The PC shows why, and so does the person's tray. A job whose pages can't be counted is let through.
+
+Rules belong to a queue, not to people: to give students and staff different rules, make a queue
+for each and let [groups](admin-ui.md) decide who may print to which.
+
+### Queues that print straight away
+
+A queue can print straight to one printer instead of holding its jobs:
+`tapqueue-admin queues edit office-direct --direct office` (`--direct none` to hold again), or
+**Jobs** in the queue's Edit dialog. It's for the printer in a locked office that nobody needs to
+tap at, while its printing is still matched to a person, counted against their page limit,
+[charged](accounting.md) and in the reports.
+
+The job is released the moment it has arrived, as if its owner had done it. If it can't print
+there (the printer is down, they're over their limit, they can't pay), it stays held like any
+other job, their tray says why, and they can release it at another printer.
+
 Until a printer has answered, a queue offers what TapQueue always did: Letter, Legal, Executive
 and A4 at 600 dpi. Windows reads a printer's abilities when it adds it, so after adding or
 changing printers choose **Refresh TapQueue** in the tray to see the difference on a PC.
@@ -108,7 +138,50 @@ recorded in the activity log under **Printers**, logged by the server, and liste
 IPP jobs carry a username (`requesting-user-name`), but it's just a string the sending computer
 fills in, and anyone can put anything there. TapQueue doesn't trust it on its own.
 
+There are three ways the tray app can sign in, chosen under **Tray sign-in** on the console's
+Directory page (`tapqueue-admin directory sign-in`):
+
+| Tray sign-in | Who someone is | Needs |
+|---|---|---|
+| **Vouched for by the PC** (`workstation`) | The TapQueue user with the same name as the PC user, on the word of the PC's TapQueue service. Nothing to type. | An enrollment code, and clients 0.19 |
+| **Name and password** (`domain`) | Whoever they sign in as in the tray: a domain account, or a local user's TapQueue password. Remembered on that PC. | AD for domain accounts |
+| **By token** (`pc`, the default on servers set up before 0.19) | The username and token in the PC's `client.toml`. | A token per person per PC, or `auth.mode = "dev"` |
+
+For anything bigger than a handful of PCs, use the first.
+
+### Signed in by the PC
+
+The TapQueue service on each PC runs as the system, holds the PC's key, and can ask the operating
+system who is at the other end of a connection. So it can say who is signed in to the PC without
+anyone typing anything:
+
+1. A tray app starts and asks the service on its own PC to sign it in.
+2. The service asks the operating system which PC user that is, and tells the server, with the
+   PC's key: sign in PC user `CORP\jake` on this PC.
+3. The server signs in the TapQueue user of that name (`CORP\jake`, `jake` and `jake@corp.local`
+   all count as `jake`) and hands the session back through the service.
+
+And because the PC is trusted to say who its users are, **a job is its PC user's whether or not
+their tray app is running**: a job through the PC's own printer, printed by `jake`, is jake's. A
+lab or kiosk PC with only the service installed still prints to the right person's queue.
+
+What that trust means:
+
+- **It needs an enrollment code** (below, under Security notes). Without one, any machine that
+  can reach the server could register as a PC and say it's anyone. The console refuses to turn
+  this on without a code, and refuses to turn the code off while it's on.
+- **Whoever is an administrator on an enrolled PC can sign in as anyone**, by reading the PC's key
+  or making a local account with someone's name. They could see, release and delete that
+  person's held jobs. That's the same trust a domain puts in its PCs; don't enroll PCs whose
+  administrators you wouldn't trust with that. Check **Workstations** for PCs you don't know.
+- Someone whose PC user isn't a TapQueue user is told so by the tray ("isn't set up to print with
+  TapQueue"), and their jobs are refused. Sync them from [AD](active-directory.md) or
+  [Entra ID](single-sign-on.md#entra-id-sync), or add them.
+
 ### By PC and PC user (clients 0.8 and later)
+
+With the other two ways of signing in, the tray app signs in by itself and the PC's service
+vouches for it afterwards:
 
 1. **The PC gets a key.** The first time the TapQueue service on a PC checks in, the server gives
    that PC a key. The service keeps it in `workstation-key.json` (in `%ProgramData%\TapQueue` on
@@ -171,12 +244,12 @@ apps are vouched for at their next sign-in or heartbeat. Jobs already held keep 
 ### Limits
 
 - **The tray app isn't running** (not started, crashed, not installed): that PC user's jobs have no
-  owner.
+  owner. Not so when people are [signed in by the PC](#signed-in-by-the-pc).
 - **Anyone on a PC can print into another signed-in PC user's queue there**, by sending a job
   straight to the server with that PC's print key (readable from the printer) and the other
   person's username. They can't release or read anyone else's jobs, and can't do it from another PC.
-- Until [TLS](roadmap.md) is in, keys and print keys cross the network in the clear like
-  everything else.
+- Over plain HTTP, keys and print keys cross the network in the clear like everything else: point
+  clients at `https://` and turn `tls.require` on ([tls.md](tls.md)).
 
 A job that can't be matched to anyone is refused rather than stored (the PC shows a print error
 asking the person to sign in to TapQueue), and the activity log notes it. The logic
@@ -207,6 +280,19 @@ decides ownership.
   unencrypted backup (the key is in backups, or cards couldn't be matched after a restore), can
   still work the numbers out: encrypt backups ([backup.md](backup.md)). Cards stored by servers
   before 0.16 are converted when 0.16 first starts.
+- A new server has no admin. The console creates the first one for whoever has the **setup code**,
+  which the server makes when it starts, writes to its log, and shows with
+  `sudo tapqueue-admin server setup-code`. It stops working once someone can sign in as a full
+  admin ([admin-roles.md](admin-roles.md#setting-up-a-new-server)).
+- PCs and stations install new builds from the server by themselves, as SYSTEM or root. A release's
+  list of programs is **signed** where it's built, with a key no server has, and each PC and
+  station checks that signature itself; a build without one is checked against the release on
+  GitHub instead. Either way a server that was taken over can pass on TapQueue's releases, and
+  nothing else ([releasing.md](releasing.md#signed-releases)).
+- People sign in to the [web page](web-page.md) and the console with a cookie that's HTTP-only and
+  `SameSite=Strict`, and a change made with it needs a header another site can't send.
+  [Single sign-on](single-sign-on.md) checks the provider's signature on every sign-in and takes
+  someone for a TapQueue user by name only inside the domain you set.
 - Wrong passwords are counted for each name from each address: after 5 (changeable), sign-in as
   that name is refused from that address for 15 minutes, and an address that gets 20 wrong over
   any names is refused altogether. It isn't per name alone, or anyone on the network could keep

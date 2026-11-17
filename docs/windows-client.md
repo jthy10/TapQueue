@@ -2,11 +2,11 @@
 
 The TapQueue client for Windows 11 has two parts, both in `TapQueueClient.exe`:
 
-- **The tray app**, started for each user when they sign in. It signs them in to the server
-  (which is how their print jobs are matched to them), tells them when jobs are held, and lets
-  them release or delete jobs.
+- **The tray app**, started for each user when they sign in. It tells them when jobs are held,
+  lets them release or delete jobs and link their badge, and shows their balance.
 - **The TapQueue service**, one per PC, running in the background as the system. It adds the
-  TapQueue printers for every user and installs updates pushed from the server.
+  TapQueue printers for every user, tells the server who is signed in to the PC (which is how
+  print jobs are matched to people), and installs updates pushed from the server.
 
 Windows prints with its built-in IPP driver, so there's no printer driver to install. For Linux
 desktops, see the [Linux client](linux-client.md).
@@ -34,6 +34,11 @@ The tray menu's **View printers and queue…** opens a window with two tabs:
   printer: with a 0.14 server, TapQueue asks the printer to stop it and gives back the pages that
   hadn't printed to your page limit, if you have one. A job that has finished printing stays as
   it is. (Double-clicking the tray icon opens this tab.)
+
+**Link my badge at** → a printer: for the next minute, a card nobody owns that's tapped on that
+printer's reader becomes yours ([release stations](release-station.md#people-linking-their-own-badge)).
+Where printing is [paid for](accounting.md), the menu shows your balance, and a release says what
+it cost.
 
 If a TapQueue printer goes missing or stops working, or the tray app is out of sorts, choose
 **Refresh TapQueue** in the tray menu. The TapQueue service checks with the server straight away,
@@ -79,8 +84,20 @@ reinstalls over what's there and starts the service and tray again.
 To remove TapQueue, uninstall it from Settings → Apps. That also removes the printers and the
 service. `client.toml` is kept, so reinstalling remembers the server.
 
-The tray app has to be running for jobs to be matched to the user. See
-[how jobs are matched to people](how-it-works.md#how-a-job-is-matched-to-a-person).
+## Who you are
+
+How the tray signs in is the server's choice ([how jobs are matched to
+people](how-it-works.md#how-a-job-is-matched-to-a-person)):
+
+- **Vouched for by the PC** (recommended): nothing to do. The TapQueue service signs in whoever
+  is signed in to Windows, as the TapQueue user of the same name, and their jobs are theirs even
+  if the tray app isn't running. The PC has to be installed with the server's enrollment code.
+  Someone who isn't a TapQueue user sees "isn't set up to print with TapQueue" in the tray menu.
+- **Name and password**: the tray shows **Not signed in**; **Sign in as…** asks for a domain
+  account's name and password, or a local user's TapQueue password. It's remembered on that PC
+  for that Windows user until they choose **Sign out**.
+- **By token**: the `username` and `token` in `client.toml`, for a single person's PC or a test.
+  With the two ways above, leave them empty.
 
 ## Updates
 
@@ -109,17 +126,23 @@ service installs the published build if it differs and the tray app restarts int
 says the PC is up to date, that the server publishes no client, or why the update failed. It also
 retries a build that failed to install before. If the service isn't running, it says so.
 
-**Every PC checks an update against GitHub itself** (clients from 0.17). The server only passes
-builds on. Before installing one, the TapQueue service fetches the list of programs in that
-TapQueue release straight from GitHub (`SHA256SUMS.programs`, attached to every release) and
-installs the build only if its SHA-256 is on it. Someone who took over the server could offer PCs
-any TapQueue release, but not a program of their own.
+**Every PC checks an update itself.** The server only passes builds on, so someone who took over
+the server could offer PCs any TapQueue release, but not a program of their own.
 
-- PCs need to reach `github.com` (HTTPS) to update. One that can't installs nothing, says why
-  under **Workstations** in the console, and tries again every 10 minutes.
-- A build that isn't in its release is refused for good, and **Workstations** shows that too.
-- If you build TapQueue yourself, publish your releases with the same files and set
-  `releases_url` in `client.toml` to where they are ([releasing](releasing.md#what-pcs-and-stations-check)).
+- **Signed releases** (clients from 0.19): each release's list of its programs is signed where
+  the release is built, and the server hands that list and its signature out with the build. The
+  TapQueue service checks the signature against the public key it was built with and installs
+  the build only if it's on the list. Nothing but the TapQueue server has to be reachable.
+  **Updates** in the console shows *Signature* beside such a build.
+- **Otherwise** (a release that isn't signed, or a client older than 0.19): the service fetches
+  the list of programs straight from the release on GitHub (`SHA256SUMS.programs`) and checks the
+  build against that, so the PC needs to reach `github.com`. One that can't installs nothing,
+  says why under **Workstations** in the console, and tries again every 10 minutes.
+- A build with a signature the PC doesn't trust, or one that isn't in its release, is refused for
+  good, and **Workstations** shows that too.
+- If you build TapQueue yourself, sign your releases and set `update_key` in `client.toml` to your
+  public key, or publish them with the same files and set `releases_url` to where they are
+  ([releasing](releasing.md#signed-releases)).
 
 ## Crash reports
 
@@ -135,6 +158,6 @@ newest 500.
 
 ## Known limits
 
-- `client.toml` is for the whole PC, so on a shared PC with the server in `token` mode every user
-  would sign in with the same token. Per-user sign-in for token mode is still to do; for now,
-  shared PCs need `auth.mode = "dev"`, or a `username`/`token` per PC.
+- A token in `client.toml` is for the whole PC, so it only suits a PC one person uses. For shared
+  PCs, labs and terminal servers, have the server sign people in as their PC's user, or with a
+  name and password ([above](#who-you-are)).

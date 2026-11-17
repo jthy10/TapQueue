@@ -5,8 +5,10 @@ single users to sync; TapQueue adds those people, keeps their names and enabled 
 with AD every night, and turns the AD groups you picked into TapQueue groups so you can decide
 what they may print to and how many pages they get.
 
-Set it up on the console's **Active Directory** page, or check on it with
-`tapqueue-admin directory`.
+Set it up on the console's **Directory** page, or check on it with `tapqueue-admin directory`.
+
+Users in Microsoft Entra ID rather than on-premises AD? The same sync reads Entra ID through
+Microsoft Graph: see [single sign-on and Entra ID](single-sign-on.md#entra-id-sync).
 
 ## What AD decides and what TapQueue decides
 
@@ -123,18 +125,24 @@ Leave the attribute empty to manage cards in TapQueue only.
 
 ## Tray sign-in
 
-By default the tray app on each PC signs in as the person signed in to the PC, without asking.
-To have people sign in with their domain account instead, set **Tray sign-in** on the Active
-Directory page to *A domain account* (or run `tapqueue-admin directory sign-in domain`). It works
-whether or not the daily sync is on, but the connection must be set up.
+With users from AD, the tray on each PC is best **vouched for by the PC**: the PC's TapQueue
+service says who is signed in to it, and `CORP\jake` is the TapQueue user `jake` the sync brought
+in, with nothing to type ([how-it-works.md](how-it-works.md#signed-in-by-the-pc)). Set **Tray
+sign-in** on the Directory page, or run `tapqueue-admin directory sign-in workstation`; it needs
+an enrollment code.
 
-With a domain account:
+To have people sign in with their domain account instead (PCs that aren't in the domain, or that
+several people share one Windows account on), set it to *A name and password*
+(`tapqueue-admin directory sign-in domain`). It works whether or not the daily sync is on.
+
+With a name and password:
 
 - The tray shows **Not signed in** and asks people to sign in. **Sign in as…** in its menu (greyed
   out in the default mode) asks for their AD username (`alice`, `LAB\alice` or
   `alice@lab.example.org`) and password.
 - The server checks the password by binding to AD as that user over LDAPS. Only users TapQueue
-  already has from the sync can sign in; others are told to ask IT.
+  already has from the sync can sign in; others are told to ask IT. A local user signs in the
+  same way with their TapQueue password (0.19 on).
 - The password is never stored. The server hands the tray a sign-in token instead, which it keeps
   in the PC user's profile (`%LocalAppData%\TapQueue\sign-in.json` on Windows,
   `~/.config/tapqueue/sign-in.json` on Linux) and signs in with from then on, across restarts,

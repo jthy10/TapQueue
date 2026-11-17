@@ -8,38 +8,42 @@ from several places gets the highest one per area.
 
 ## Setting up a new server
 
-1. Install the server with `auth.mode = "dev"` in `/etc/tapqueue/server.toml`. In dev mode the
-   console at `http://<server>:8631/admin` is open to anyone on the network. Don't leave it
-   like that.
-2. Add the people who will run TapQueue: users on the **Users** page, or through the
-   [Active Directory sync](active-directory.md).
-3. On **Admins**, give at least one person **Admin** in **every area**, which makes them a full
-   admin. A group works too: with AD, give `Print-Admins` (or whatever yours is called) the role,
-   and whoever is in it in AD is an admin.
-4. Make sure they can sign in:
-   - A **local user** needs a console password. Set it on their user page, or with
+1. Install the server. The install script ends with a **setup code**, like `K7QM-2XWD-9RTB`.
+2. Open `https://<server>:8632/admin`. A server that nobody can sign in to yet shows **Set up
+   this server** instead of a sign-in: enter the setup code, choose a username and a password,
+   and you're signed in as its first full admin.
+3. Add the people who will run TapQueue: users on the **Users** page, or through the
+   [Active Directory](active-directory.md) or [Entra ID](single-sign-on.md#entra-id-sync) sync.
+4. On **Admins**, give them roles. A group works too: with a directory, give `Print-Admins` (or
+   whatever yours is called) the role, and whoever is in it there is an admin.
+5. Make sure they can sign in:
+   - A **local user** needs a TapQueue password. Set it on their user page, or with
      `tapqueue-admin users password <username>`.
    - An **AD user** signs in with their domain password. There's nothing to set up beyond the AD
      connection.
+   - With [single sign-on](single-sign-on.md), anyone the provider vouches for, AD or Entra ID.
 
    The Admins page warns you while nobody can sign in as a full admin.
-5. On **Server**, under **Startup settings**, switch **Client sign-in** to tokens and restart the
-   server (or set `auth.mode = "token"` in server.toml and restart). The console refuses the
-   switch while nobody could sign in as a full admin. After the restart it asks everyone to sign
-   in, and each person sees and does only what their roles allow.
 
-If you lock yourself out (the full admin left, or AD is down), set `auth.mode = "dev"` again as
-root, fix the roles, and switch back. If the mode was set in the console, server.toml's is
-overridden: run `sudo -u tapqueue /opt/tapqueue/tapqueue-server --forget-console-settings` first,
-which goes back to the file for every [startup setting](install-server.md#configuration). `tapqueue-admin` also keeps full access with `admin.token`
-from server.toml.
+The setup code is made when the server starts, kept only in memory, and works only while nobody
+could sign in as a full admin. It's in the server's log (`journalctl -u tapqueue-server`), and
+`sudo tapqueue-admin server setup-code` shows it again; both need root on the server, which could
+do anything anyway. Five wrong codes from one address lock that address out for a while.
+
+`auth.mode = "dev"` still exists for trying TapQueue out: the console is then open to anyone on
+the network with no sign-in at all. A real server never needs it.
+
+If you lock yourself out (the full admin left, or AD is down): `tapqueue-admin` keeps full access
+with `admin.token` from server.toml, so as root on the server you can give someone a role
+(`tapqueue-admin admins grant alice admin`) and a password (`tapqueue-admin users password alice`).
+And once nobody can sign in as a full admin, the setup code works again.
 
 ## Areas
 
 | Area | Pages | Operators may also |
 |------|-------|--------------------|
 | Jobs | Jobs, Reports | release and cancel jobs |
-| People | Users, Groups, Cards, page limits | link, edit and remove cards, and see cards nobody owns yet |
+| People | Users, Groups, Cards, Balances, page limits | link, edit and remove cards, see cards nobody owns yet, and add to or take from someone's balance |
 | Active Directory | Active Directory | run a sync |
 | Fleet | Printers, Queues, Stations, Workstations | restart stations, sign people out of PCs, update or forget a PC |
 | Updates | Updates | |
@@ -57,8 +61,9 @@ areas cover.
 
 **Full admins** are admin in every area. Only full admins can:
 
-- open the Admins page and give or remove roles;
-- set or remove local users' console passwords;
+- open the Admins page, give or remove roles, and set up [single sign-on](single-sign-on.md);
+- set or remove the password of someone who has an admin role (a People admin sets everyone
+  else's, for the [web page](web-page.md) and the tray);
 - change someone who has admin rights (rename, disable, delete), or change the members of a
   group that gives admin rights (or delete it);
 - change which domain controller Active Directory is read from, its CA certificate, or the bind
@@ -83,9 +88,10 @@ them an admin, or removing their password.
 
 The console signs in with a username and password:
 
-- **Local users**: their TapQueue username and console password (at least 10 characters,
-  stored as a PBKDF2-SHA256 hash). A local admin changes their own password from the sidebar.
-  Printing doesn't use it; the tray still uses a client token or the PC's user.
+- **Local users**: their TapQueue username and password (at least 10 characters, stored as a
+  PBKDF2-SHA256 hash). A local admin changes their own password from the sidebar. The same
+  password signs them in to the [web page](web-page.md), and to the tray where it asks for a
+  name and password.
 - **AD users**: their TapQueue username, `DOMAIN\name` or `name@domain`, and their domain
   password, checked by binding to AD as them over LDAPS. It must be the same AD account the sync
   linked to that user.
@@ -107,8 +113,12 @@ Every change is recorded in the activity log under the name of the admin who mad
 made with `admin.token` or in dev mode's open console are recorded as `admin`. Sign-ins and
 failed attempts are recorded under **Sign-ins**.
 
-Until [TLS](roadmap.md) is in, passwords cross the network in the clear. Use the console from a
-trusted network, or through an SSH tunnel.
+Use the console over `https://` ([TLS](tls.md)): over plain HTTP, passwords cross the network in
+the clear. A browser on another machine that opens the http:// address is sent to https:// when
+the server has it.
+
+**Single sign-on**: where it's set up, the sign-in also offers **Sign in with …**, through your
+organisation's own sign-in. See [single-sign-on.md](single-sign-on.md).
 
 ## Command line
 

@@ -5,7 +5,8 @@ and their jobs wait on the server until they walk up to any printer and release 
 Nothing sits in the output tray for someone else to pick up.
 
 > **Status: early development.** Print → hold → release works end to end against a real
-> printer, from the tray app or by tapping a badge at a release station. Expect breaking changes.
+> printer, from the tray app, a web page or by tapping a badge at a release station. Expect
+> breaking changes.
 
 ```
  Windows 11 / Linux PC             TapQueue server (Linux)                 At the printer
@@ -25,7 +26,8 @@ Nothing sits in the output tray for someone else to pick up.
 | **tapqueue-server** | Linux | IPP hold queue, REST API, releases jobs to printers |
 | **tapqueue-admin** | Linux | Command-line admin tool |
 | **tapqueue-station** | Linux | Release station: a USB badge reader next to a printer; a tap releases your jobs |
-| **TapQueue client** | Windows 11, Linux desktops | Tray app (signs you in, shows held jobs) and a service that adds the printer and installs updates pushed from the server |
+| **TapQueue client** | Windows 11, Linux desktops | Tray app (shows held jobs, releases them) and a service that adds the printer, says who is signed in to the PC and installs updates pushed from the server |
+| **Web pages** | Any browser | The admin console at `/admin`, and `/my`, where people see and release their own jobs from a phone |
 
 Download them from [Releases](https://github.com/jthy10/TapQueue/releases): `TapQueue_client_X.Y.Z.exe`
 for Windows PCs (`client-v` releases); the server, station and Linux client install with one command:
@@ -40,23 +42,26 @@ curl -fsSL https://raw.githubusercontent.com/jthy10/TapQueue/main/install.sh | s
    built-in IPP driver and Linux with CUPS's driverless IPP Everywhere support, so there's nothing
    to install on the PC but the TapQueue client.
 2. **Jobs are held, not printed.** The server keeps the document and the print options chosen.
-3. **The job is matched to a person** through the tray app, which is signed in on the PC the
-   job came from. Each PC's printers carry a key, and the PC's TapQueue service vouches for which
-   PC user runs each tray app, so this works on terminal servers and behind NAT too. The username
-   inside a print job is easy to fake, so it isn't trusted on its own.
+3. **The job is matched to a person** by the PC it came from. Each PC's printers carry a key, and
+   the PC's TapQueue service says which PC user printed, so this works on terminal servers and
+   behind NAT too, with nothing for anyone to type. The username inside a print job is easy to
+   fake, so it isn't trusted on its own.
 4. **The user releases it at a printer** by tapping their badge at the release station next to it,
-   or from the tray app.
+   from the tray app, or from the web page on their phone.
 5. **Unreleased jobs expire** after 24 hours (configurable) and are deleted.
+6. **It's counted.** Pages by person, group and printer, page limits, and if you want it a price
+   per page that comes off a balance.
 
 More in [how TapQueue works](docs/how-it-works.md), including how jobs are matched to people.
 
 ## Getting started
 
-1. [Install the server](docs/install-server.md), then add a queue, your printers and users.
+1. [Install the server](docs/install-server.md), create the first admin with the setup code it
+   prints, then add a queue, your printers and users.
 2. Install the client on each PC: [Windows](docs/windows-client.md) or [Linux](docs/linux-client.md).
 3. [Set up a release station](docs/release-station.md) next to each printer and enroll badges.
 
-Reference: [admin console](docs/admin-ui.md) · [TLS](docs/tls.md) · [backups](docs/backup.md) · [reports](docs/reports.md) · [admin sign-in and roles](docs/admin-roles.md) · [admin CLI](docs/admin-cli.md) · [Active Directory sync](docs/active-directory.md) · changelogs: [server and station](CHANGELOG.md),
+Reference: [admin console](docs/admin-ui.md) · [TLS](docs/tls.md) · [backups](docs/backup.md) · [reports](docs/reports.md) · [cost accounting and balances](docs/accounting.md) · [the web page for people's own jobs](docs/web-page.md) · [admin sign-in and roles](docs/admin-roles.md) · [admin CLI](docs/admin-cli.md) · [Active Directory sync](docs/active-directory.md) · [single sign-on and Entra ID](docs/single-sign-on.md) · changelogs: [server and station](CHANGELOG.md),
 [clients](CHANGELOG-client.md) ·
 [development](docs/development.md) · [releasing](docs/releasing.md)
 
@@ -75,17 +80,24 @@ Reference: [admin console](docs/admin-ui.md) · [TLS](docs/tls.md) · [backups](
 - [x] Web admin console
 - [x] Page counting and quotas
 - [x] Printer health monitoring (state, problems, toner levels)
-- [x] Admin sign-in and roles (SSO later)
-- [x] Active Directory sync (Entra ID later)
+- [x] Admin sign-in and roles, with single sign-on (OpenID Connect)
+- [x] Active Directory and Entra ID sync
 - [x] TLS for client and IPP connections
 - [x] Per-job identity instead of IP-based ownership
-- [ ] Feedback at the printer (screen or status light) for "nothing to print" and errors
-- [x] Reports: pages by person, group, printer and period, with CSV export
-- [ ] Follow-me printing and cost accounting
-- [ ] Self-service badge enrollment from the tray app
+- [x] Feedback at the printer: a screen for "nothing to print" and errors (a status light later)
+- [x] Reports: pages and cost by person, group, printer and period, with CSV export
+- [x] Follow-me printing: one queue, released at whichever printer you tap at
+- [x] Cost accounting: a price per page, and balances people pay from
+- [x] Self-service badge enrollment from the tray app and the web page
+- [x] A web page to see and release your own jobs from a phone
+- [x] Queue rules (always two-sided, black and white only, a longest job) and queues that print straight through
+- [x] Sign-in with nothing to type: the PC's service says who is signed in to it
+- [x] First-run setup in the console, without opening it to the network
+- [x] Signed releases, so PCs and stations update without reaching GitHub
 - [x] Database backups and restore
 - [x] Email notifications for printer problems, offline stations and crashes (webhooks later)
-- [ ] Signed Windows builds; .deb packages; ARM builds for small release devices
+- [ ] A Docker image; .deb packages; ARM builds for small release devices; signed Windows builds
+- [ ] Scheduled allowances, shared accounts, and rules by group on one queue
 
 The full list, with what each item means, is in [docs/roadmap.md](docs/roadmap.md).
 

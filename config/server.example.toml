@@ -17,9 +17,13 @@ discovery_port = 8631
 trusted_proxies = []
 
 [auth]
-# "dev":   the client config only needs a username; unknown users are created automatically.
-#          Anyone on the network can claim to be anyone. For testing only.
-# "token": each user needs a token from `tapqueue-admin users add <username>` in their client.toml.
+# "dev":   the client config only needs a username; unknown users are created automatically, and
+#          the admin console is open. Anyone on the network can claim to be anyone. For trying
+#          TapQueue out only; a real server never needs it.
+# "token": the admin console needs a sign-in (a new server's first admin is made with the setup
+#          code install-server.sh prints), and so does printing: best by having each PC's TapQueue
+#          service say who is signed in to it (`tapqueue-admin directory sign-in workstation`),
+#          or with a name and password, or a token per user in client.toml.
 mode = "token"
 # Client sessions with no heartbeat for this long are dropped.
 session_timeout_minutes = 10

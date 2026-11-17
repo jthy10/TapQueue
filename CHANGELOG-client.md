@@ -10,6 +10,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Added
+- **Signed in by the PC.** Where the server asks for it (servers from 0.19), the tray app no
+  longer signs in itself: it asks the TapQueue service on its PC, which knows from the operating
+  system who is running it, and signs that PC user in with the PC's key. Nothing to type, no
+  token in `client.toml`, and it works on shared PCs and terminal servers. The tray says so if
+  the PC user isn't a TapQueue user, and asks again every 5 minutes rather than every 15 seconds.
+- **Link my badge at** in the tray menu: choose the printer you're standing at and tap a card
+  nobody owns within a minute, and it's yours.
+- **Your balance** in the tray menu, and what a release cost, where printing is paid for.
+- **Signed updates.** A build from a signed release is checked against the signature the server
+  hands out with it, using the public key the client was built with, so a PC updates without
+  reaching `github.com`. A build without a signature is checked against the release on GitHub as
+  before; one with a signature the PC doesn't trust is refused. `update_key` in `client.toml` is
+  for sites that sign their own builds.
+
+### Changed
+- "Sign in as…" also takes a local user's TapQueue password, where the server asks for a name
+  and password.
+
 ## [0.18.0] - 2026-10-12
 
 No changes to the clients themselves: released with server 0.18.0, so one number still says what

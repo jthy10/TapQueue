@@ -15,7 +15,9 @@ with a role in the Jobs area can see reports.
 
 ## What's counted
 
-The same thing page limits count:
+The same thing page limits count, and what the pages **cost** where costs are kept
+([accounting.md](accounting.md)): a Cost column appears in the console, `tapqueue-admin report`
+and the CSV, less whatever was given back for pages that didn't print.
 
 - Only jobs that were **released** to a printer. Held, canceled and expired jobs printed nothing.
 - A job is its **pages times its copies**, counted from the document when it arrived (PDF, PWG and

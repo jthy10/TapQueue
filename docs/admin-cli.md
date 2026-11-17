@@ -105,7 +105,17 @@ tapqueue-admin notifications test              Send a test email to everyone on 
 tapqueue-admin notifications on|off            Turn the emails on or off (the mail server is set in the console)
 ```
 
-`tapqueue-admin --help` shows every option.
+`tapqueue-admin --help` shows every option. Some of what isn't in the list above:
+
+```
+tapqueue-admin server setup-code               On a new server: the code the console asks for to create the first admin
+tapqueue-admin directory sign-in workstation   Sign people in as their PC's user (see how-it-works.md)
+tapqueue-admin accounting                      What printing costs; balances, users balance, groups balance (accounting.md)
+tapqueue-admin queues edit <id> --sides force-two-sided --max-pages 50 --direct <printer-id>
+                                               A queue's rules, and printing straight to a printer (how-it-works.md)
+tapqueue-admin sso                             Single sign-on for the console and the web page (single-sign-on.md)
+tapqueue-admin server set user-portal off      The web page at /my; badge-self-enroll likewise
+```
 
 ## Page limits
 
@@ -137,7 +147,7 @@ A job that can't be released stays held, and the station, client or console says
 
 ## Admins
 
-Roles in the admin console, and local users' console passwords. Full admins only (the admin token
+Roles in the admin console, and local users' TapQueue passwords. Full admins only (the admin token
 is one). See [admin-roles.md](admin-roles.md).
 
 ```

@@ -68,6 +68,25 @@ at another printer in the meantime is the "most recent" one. The admin console's
 dialog has the same choice (**Station**), and remembers it; `tapqueue-admin badges unknown --station lobby`
 lists what was tapped there.
 
+### People linking their own badge
+
+Nobody has to be an admin to link a card (servers and clients from 0.19):
+
+1. In the tray menu, **Link my badge at** → the printer they're standing at. Or on the
+   [web page](web-page.md), **Badges → Link a badge**.
+2. They tap their badge on that printer's reader within a minute.
+3. A card nobody owns becomes theirs. The tray (or the page) says so, the station's screen says
+   "this card is now yours", and the next tap prints.
+
+Only one person at a time can be waiting at a station, so a card can't go to the wrong one of two
+people; the second is asked to try again in a minute. A card that already belongs to someone is
+never taken: it just does what it always does. People can link up to five cards, and remove one
+they've lost on the web page. Each link is in the activity log under Taps.
+
+It needs a reader that's reporting in at that printer. To leave cards to admins (or to the
+directory's card attribute), turn it off: `tapqueue-admin server set badge-self-enroll off`, or
+**Server → Settings**.
+
 A tap then sends all of that user's held jobs to the station's printer. If a job can't be sent,
 it stays held so the user can try again at another printer.
 
@@ -102,7 +121,7 @@ happened for a few seconds:
 
 | Screen | Means |
 |---|---|
-| green, ✓ | "Hi Jake, printing 2 jobs." Also when a big job is still on its way to the printer. |
+| green, ✓ | "Hi Jake, printing 2 jobs." Also when a big job is still on its way to the printer, when a card was just linked ("this card is now yours"), and with what it cost and what's left where printing is [paid for](accounting.md). |
 | amber, – | The card's owner has nothing waiting. |
 | red, ! | The release was refused, with the reason: over the page limit, the printer can't print, the printer doesn't take the job's paper size. Jobs stay held. |
 | red, ✕ | The person isn't allowed to print at this printer, or their account is disabled. |
@@ -137,8 +156,9 @@ message is logged at the station instead. **Restart** asks it to restart on its 
 On the console's Updates page, **Check for updates** under Release stations finds the station
 build that goes with the server's version and **Publish** hands it out (`tapqueue-admin stations
 update` does the same); do it after upgrading the server. Builds only come from TapQueue's releases on GitHub, and like
-PCs, a station (from 0.17) checks a build against the release on GitHub itself before installing
-it, so it needs to reach `github.com`. Every station downloads it, checks it runs (`--version`), installs it into
+PCs, a station checks a build itself before installing it: against the release's signature when
+the release is signed (stations from 0.19, with nothing but the server to reach), otherwise
+against the release on GitHub, for which it needs to reach `github.com`. Every station downloads it, checks it runs (`--version`), installs it into
 `/var/lib/tapqueue-station` and restarts, within about 15 seconds. The service starts from there
 when a build has been installed that way. Running `install-station.sh` again removes it, so a
 build installed by hand always takes over.

@@ -94,6 +94,9 @@ sudo tapqueue-admin workstations       # each PC's OS and version; "(behind)" un
 ```
 
 Builds only come from TapQueue's releases on GitHub; there's no way to upload one to the server.
+A signed release (0.19 on) is checked by each PC against the signature that comes with it;
+otherwise the PC checks the build against the release on GitHub and has to reach `github.com`
+([Windows client](windows-client.md#updates) has the details, which are the same here).
 
 Windows and Linux builds are published separately; each PC installs the newest build for its own
 platform. The service checks with the server once a minute, downloads a build that differs from
@@ -119,9 +122,10 @@ newest 500.
 
 ## Known limits
 
-- `client.toml` is for the whole PC and readable by every user (each user's tray app reads it),
-  so with the server in `token` mode every user would sign in with the same token. Per-user sign-in
-  for token mode is still to do; for now, shared PCs need `auth.mode = "dev"`.
+- A token in `client.toml` is for the whole PC and readable by every user, so it only suits a PC
+  one person uses. For shared PCs, have the server sign people in as their PC's user (the
+  TapQueue service asks the kernel who is at the other end of its socket) or with a name and
+  password; see [Windows client](windows-client.md#who-you-are), which works the same here.
 - The tray app uses about 150–200 MB of memory (the UI toolkit, Avalonia, is bundled into the
   program so nothing has to be installed from the distribution).
 - x86_64 only for now.

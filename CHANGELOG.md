@@ -11,6 +11,70 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+### Added
+- **Signed in by the PC, with nothing to type.** A third way for the tray to sign in
+  (`tapqueue-admin directory sign-in workstation`, or **Tray sign-in** in the console): the
+  TapQueue service on each PC tells the server who is signed in to it, and that PC user is the
+  TapQueue user of the same name. No tokens to hand out and no passwords to type, it works for
+  users synced from a directory, and a job is its PC user's even when their tray app isn't
+  running, so a PC with only the service on it still prints to the right person. It needs an
+  enrollment code, since every enrolled PC is trusted to say who its users are, and clients 0.19.
+  `POST /api/v1/client/workstation-sign-in`. See
+  [docs/how-it-works.md](docs/how-it-works.md#signed-in-by-the-pc).
+- **Local users sign in to the tray with their password.** "Name and password" tray sign-in
+  (`domain`) used to be for Active Directory accounts only; a local user's TapQueue password now
+  works too, with or without AD.
+- **A new server is set up in the console.** A server nobody can sign in to yet shows "Set up
+  this server" and creates the first full admin for whoever has the setup code, which
+  `install-server.sh` prints (`tapqueue-admin server setup-code`, and the server's log). Setting
+  up no longer means running in dev mode with the console open to the network.
+- **Cost accounting and balances.** A price per page in black and white and in colour, with a
+  discount for two-sided, for the server and for each printer; each job's cost worked out when
+  it's released, and in reports and their CSV; and, if you choose, balances people pay from, with
+  top-ups, a history of every change, people who may print without one, money back for pages that
+  didn't print, and an amount for a whole group at once. Off by default. The console's
+  **Balances** page, `tapqueue-admin accounting`, `balances`, `users balance` and
+  `groups balance`. Database schema 22. See [docs/accounting.md](docs/accounting.md).
+- **A web page for people's own jobs**, at `/my`: from any browser or phone, people sign in with
+  their password (or single sign-on) to see, release and delete their jobs, see their balance and
+  page limit, and link a badge. No tray app needed. `server set user-portal off` turns it off.
+  Database schema 24. See [docs/web-page.md](docs/web-page.md).
+- **People link their own badge.** In the tray or on the web page they choose the printer they're
+  standing at and tap; a card nobody owns becomes theirs. One person at a time per station, up to
+  five cards each, and a card that's already someone's is never taken.
+  `server set badge-self-enroll off` leaves cards to admins.
+- **Queue rules.** A queue can print two-sided by default or always (`--sides`), and refuse jobs
+  over a number of pages (`--max-pages`); the PC shows why, and so does the person's tray.
+  Database schema 23.
+- **Queues that print straight away.** `queues edit <id> --direct <printer-id>` makes a queue
+  print to one printer without holding its jobs, while they're still matched to a person,
+  counted, limited and charged. A job that can't print there stays held and its owner is told.
+- **Single sign-on** for the console and the web page, with any OpenID Connect provider (Entra
+  ID, Google, Okta, Keycloak…). **Admins → Single sign-on**, or `tapqueue-admin sso`. See
+  [docs/single-sign-on.md](docs/single-sign-on.md).
+- **Entra ID sync.** The directory sync can read Microsoft Entra ID through Microsoft Graph
+  instead of Active Directory: groups (with nested groups) and single users, disabled accounts,
+  and cards from a user property.
+- **Signed releases.** A release's list of programs can be signed where it's built
+  (`scripts/new-release-key.sh`, `scripts/sign-release.sh`). The server keeps the list and its
+  signature with the builds it hands out, and PCs and stations from 0.19 check them themselves,
+  so they update without reaching GitHub. The Updates page shows which builds are signed.
+  Database schema 21. See [docs/releasing.md](docs/releasing.md#signed-releases).
+- **Station screens and taps say what a job cost** and what's left, where printing is paid for.
+- `GET /api/v1/me/quota`, `/me/account`, `/me/badges` and `/me/badge-enrollment` for the tray and
+  the web page.
+
+### Changed
+- **A queue that doesn't offer colour prints in black and white, always.** It used to only not
+  offer colour in the print dialog; a job that asked for colour anyway was passed on as it was.
+  Such a job is now sent to the printer as monochrome, and counted and priced that way. Turn
+  **Offer color** on for queues whose printers should print colour.
+- **A People admin can set people's passwords**, since they're now for the web page and the tray
+  too. Setting the password of someone with an admin role still takes a full admin.
+- **The console's "Active Directory" page is "Directory"**, for either kind.
+- A station's tap can answer `enrolled` (a card was just linked) besides the outcomes before.
+- The test suite runs on Windows as well as Linux.
+
 ## [0.18.0] - 2026-10-12
 
 ### Added

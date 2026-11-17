@@ -28,7 +28,17 @@ The script:
 - creates a `tapqueue` system user;
 - installs the programs to `/opt/tapqueue` and links `tapqueue-admin` into `/usr/local/bin`;
 - writes `/etc/tapqueue/server.toml` with a freshly generated admin token (first install only);
-- installs and starts the `tapqueue-server` systemd service.
+- installs and starts the `tapqueue-server` systemd service;
+- on a new server, prints the **setup code** for creating the first admin.
+
+## Create the first admin
+
+Open `https://<server>:8632/admin` in a browser (it warns about the self-signed certificate; see
+[TLS](tls.md) for your own). A new server shows **Set up this server**: enter the setup code the
+install script printed, choose a username and password, and you're in as its first full admin.
+
+`sudo tapqueue-admin server setup-code` shows the code again. It only exists while nobody can
+sign in to the console. More in [admin sign-in and roles](admin-roles.md#setting-up-a-new-server).
 
 The server listens on port 8632 for IPP (printing), its REST API and the admin console over TLS,
 with a self-signed certificate it makes on first start, and on port 8631 for the same without
@@ -39,8 +49,9 @@ finds servers on its own subnet, just more slowly.
 
 ## Set up queues, printers and users
 
-Run `tapqueue-admin` with `sudo` on the server and it reads the admin token from
-`/etc/tapqueue/server.toml`. From another machine, see [admin CLI](admin-cli.md#connecting).
+Everything here can be done in the console instead. Run `tapqueue-admin` with `sudo` on the
+server and it reads the admin token from `/etc/tapqueue/server.toml`. From another machine, see
+[admin CLI](admin-cli.md#connecting).
 
 ```sh
 # The printer users see in Windows. They print to ipps://<server>:8632/ipp/secure
@@ -49,11 +60,19 @@ sudo tapqueue-admin queues add secure --name "TapQueue Secure Print"
 # Each physical printer jobs can be released to
 sudo tapqueue-admin printers add office ipp://192.0.2.10/ipp/print --name "Office printer"
 
-# Each user; the command prints the token for their client.toml
+# Each user (or sync them from Active Directory or Entra ID)
 sudo tapqueue-admin users add jsmith --name "Jane Smith"
+
+# Let each PC's TapQueue service say who is signed in to it: no tokens, nothing to type
+sudo tapqueue-admin server enrollment-code new      # prints the code PCs are installed with
+sudo tapqueue-admin directory sign-in workstation
 
 sudo tapqueue-admin status
 ```
+
+The last two are the sign-in to use on anything but a test server; see
+[how jobs are matched to people](how-it-works.md#signed-in-by-the-pc). Install the client on
+each PC with the enrollment code, and a PC user who is also a TapQueue user just prints.
 
 Most network printers accept IPP at `ipp://<printer-ip>/ipp/print`. `tapqueue-admin printers`
 shows whether the server can reach each one. To check a printer by hand:
@@ -72,7 +91,7 @@ Then set up the [Windows client](windows-client.md) and a [release station](rele
 | `tls.listen` | `0.0.0.0:8632` | The same over TLS (HTTPS and IPPS). `""` = off. More `tls.` settings in [tls.md](tls.md#settings) |
 | `server.data_dir` | `/var/lib/tapqueue` | Database and held jobs |
 | `server.discovery_port` | `8631` | UDP port the Windows installer's server search is answered on. `0` = off |
-| `auth.mode` | `token` | `token`: users need the token from `users add`, and the admin console needs a sign-in. `dev`: a username is enough, and the console is open to anyone (setup and testing only; see [admin-roles.md](admin-roles.md)) |
+| `auth.mode` | `token` | `token`: the admin console needs a sign-in, and so does printing ([three ways](how-it-works.md#how-a-job-is-matched-to-a-person)). `dev`: a username is enough, and the console is open to anyone. For trying TapQueue out only |
 | `auth.session_timeout_minutes` | `10` | Client sessions without a heartbeat for this long end |
 | `admin.token` | | Used by `tapqueue-admin`; gives full admin access |
 | `jobs.hold_hours` | `24` | Held jobs not released within this time are deleted |
@@ -129,6 +148,10 @@ default that suits a small office:
 | `printer-send` | `300` | Seconds sending one job to a printer may take |
 | `sign-in-attempts` | `5` | Wrong passwords for a name from one address before sign-in is refused there ([admin-roles.md](admin-roles.md)) |
 | `sign-in-lockout` | `15` | Minutes it stays refused |
+| `badge-self-enroll` | `on` | People link their own badge by tapping it at a printer they choose ([release-station.md](release-station.md#people-linking-their-own-badge)) |
+| `user-portal` | `on` | The [web page](web-page.md) at `/my` for people's own jobs |
+
+What printing costs is set separately: [accounting.md](accounting.md).
 
 ### Behind a reverse proxy
 

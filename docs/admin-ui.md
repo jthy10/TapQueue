@@ -6,9 +6,10 @@ tap-to-enroll, logs, and remote control of stations and clients. When HTTPS is o
 sends browsers on other machines to the https:// one (on the server itself, http://localhost keeps
 working).
 
-> **Sign-in.** With `auth.mode = "token"` the console asks for a sign-in, and each admin sees and
-> does what their roles allow. In dev mode it's open to anyone on the network, so you can set up
-> the first admins. See [admin-roles.md](admin-roles.md).
+> **Sign-in.** The console asks for a sign-in, and each admin sees and does what their roles
+> allow. A new server's first admin is created with a setup code. In dev mode (`auth.mode =
+> "dev"`, for trying TapQueue out) it's open to anyone on the network. See
+> [admin-roles.md](admin-roles.md).
 
 ## Principles
 
@@ -35,15 +36,20 @@ A sidebar groups pages by what you're doing; each page is a list with a detail d
 | **People** | Users | Create, edit, enable/disable, reset token. A user's detail shows their cards, groups, jobs, sessions and quota. |
 | | Groups | Groups of users, which queues and printers they may use, and their quotas. |
 | | Cards | Every badge. Enroll by tapping at a station, reassign, label, remove. Unknown taps. |
-| | Active Directory | AD sync: connection, scope (OUs, groups, users), daily schedule, preview, sync now, history. See [active-directory.md](active-directory.md). |
+| | Balances | What printing costs, and what each person has left to spend on it: prices, top-ups, each balance's history. See [accounting.md](accounting.md). |
+| | Directory | Active Directory or Entra ID sync: connection, scope (OUs, groups, users), daily schedule, preview, sync now, history, and how the tray signs in. See [active-directory.md](active-directory.md) and [single-sign-on.md](single-sign-on.md). |
 | **Fleet** | Printers | Add, edit, remove, test. Live status, supported formats. |
-| | Queues | The printers users see in Windows: name, defaults, who may print to them. |
+| | Queues | The printers users see in Windows: name, defaults, rules (two-sided, black and white, a longest job), and whether jobs are held or print straight away. |
 | | Stations | Release stations: status, printer, reader, settings, restart, update, token. |
 | | Workstations | Windows and Linux PCs running the client: who's signed in, client version, update now, sign out. |
-| **System** | Updates | Client and station builds: check GitHub for the newest release and publish it, upload a build, see who runs what, roll back. |
+| **System** | Updates | Client and station builds: check GitHub for the newest release and publish it, see who runs what and which builds are signed. |
 | | Server | Version, uptime, settings, live log, restart, check for updates and upgrade (now or scheduled), backups (full admins). |
 | | Notifications | Email alerts for printer problems, offline stations and crash reports: your mail server, who gets them, send a test. See [notifications.md](notifications.md). |
-| | Admins | Who may use the console: roles for people and groups, per area. Full admins only. |
+| | Admins | Who may use the console: roles for people and groups, per area, and single sign-on. Full admins only. |
+
+A server nobody can sign in to yet shows **Set up this server** instead, which creates the first
+admin with the setup code ([admin-roles.md](admin-roles.md#setting-up-a-new-server)). People who
+aren't admins have a page of their own at `/my` ([web-page.md](web-page.md)).
 
 URLs are `/admin/<page>` and `/admin/<page>/<id>` for an open detail drawer, so every view can be
 linked to and survives a reload.
@@ -103,5 +109,5 @@ Each phase ships on its own and leaves the console usable.
    See [admin-cli.md](admin-cli.md#page-limits).
 7. **Admin sign-in and roles.** *(Done.)* Admins are TapQueue users. Roles (viewer, operator,
    admin) go to people or groups, per area of the console or for all of them. Local users sign in
-   with a console password, AD users with their domain password. The console is available with
+   with their TapQueue password, AD users with their domain password. The console is available with
    `auth.mode = "token"` and shows each admin only their pages. See [admin-roles.md](admin-roles.md).
