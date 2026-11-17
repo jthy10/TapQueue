@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>My printing · TapQueue</title>
+  <link rel="icon" href="/icons/48.png">
+  <link rel="apple-touch-icon" href="/icons/128.png">
+  <link rel="stylesheet" href="portal.css">
+</head>
+<body>
+  <noscript><p class="notice">This page needs JavaScript.</p></noscript>
+
+  <main id="sign-in" hidden></main>
+
+  <div id="app" hidden>
+    <header class="top">
+      <img src="/icons/48.png" alt="" width="28" height="28">
+      <div class="who">
+        <b id="who-name"></b>
+        <span id="who-username"></span>
+      </div>
+      <button type="button" class="btn ghost small" id="sign-out">Sign out</button>
+    </header>
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button type="button" role="tab" data-tab="jobs" aria-selected="true">Jobs</button>
+      <button type="button" role="tab" data-tab="account" aria-selected="false">Account</button>
+      <button type="button" role="tab" data-tab="badges" aria-selected="false">Badges</button>
+    </nav>
+    <main id="page"></main>
+  </div>
+
+  <div id="toasts" aria-live="polite"></div>
+  <script type="module" src="portal.js"></script>
+</body>
+</html>
