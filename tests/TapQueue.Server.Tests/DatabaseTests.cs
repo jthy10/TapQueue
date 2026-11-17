@@ -19,6 +19,44 @@ public sealed class DatabaseTests : IDisposable
     }
 
     [Fact]
+    public void EveryMigrationSinceTheFloorIsReallyUndoneAndCanBeAppliedAgain()
+    {
+        var db = new Database(Path.Combine(_dir, "test.db"));
+        db.Migrate();
+        // Something in everything the newer schemas added, and in what they keep in settings.
+        var alice = new UserStore(db).Create("alice", "Alice", null);
+        new Accounts(db).Save(new AccountingSettings(TapQueue.Shared.Api.AccountingMode.Enforce, InitialBalance: 500));
+        new Accounts(db).Adjust(alice.Id, 2500, "admin", "top-up");
+        new PortalSessionStore(db).Start("hash", alice.Id, "192.0.2.1", "browser");
+        new PrinterStore(db).Create(new PrinterRecord("office", "Office", "", "ipp://192.0.2.9/ipp/print", false, PriceMono: 40));
+        new QueueStore(db).Create(new QueueRecord("direct", "Direct", "", "", false, true, QueueRecord.Letter,
+            TapQueue.Shared.Api.SidesPolicy.ForceTwoSided, 50, "office"));
+        db.Execute("""INSERT INTO settings (key, value) VALUES ('directory', '{"clientSignIn":"workstation","host":"dc01"}'), ('sso', '{}'), ('userPortal', 'off')""");
+
+        Assert.Equal(Database.LatestSchemaVersion, db.DowngradeTo(Database.FloorSchema));
+
+        Assert.Equal(Database.FloorSchema, db.SchemaVersion());
+        string[] Columns(string table) => db.Query($"SELECT name FROM pragma_table_info('{table}')", r => r.GetString(0)).ToArray();
+        Assert.DoesNotContain("balance", Columns("users"));
+        Assert.DoesNotContain("price_mono", Columns("printers"));
+        Assert.DoesNotContain("cost", Columns("jobs"));
+        Assert.DoesNotContain("direct_printer_id", Columns("queues"));
+        Assert.DoesNotContain("release_signature", Columns("client_builds"));
+        Assert.Empty(db.Query("SELECT name FROM sqlite_master WHERE name IN ('balance_transactions', 'portal_sessions')", r => r.GetString(0)));
+        // An older server would take "workstation" for the default it doesn't know it isn't.
+        Assert.Contains("\"clientSignIn\":\"pc\"", (string)db.Scalar("SELECT value FROM settings WHERE key = 'directory'")!);
+        Assert.Contains("dc01", (string)db.Scalar("SELECT value FROM settings WHERE key = 'directory'")!);
+        Assert.Empty(db.Query("SELECT key FROM settings WHERE key IN ('sso', 'userPortal', 'accounting', 'initialBalance')", r => r.GetString(0)));
+
+        // What was there before all that is untouched, and upgrading again works.
+        db.Migrate();
+        Assert.Equal(Database.LatestSchemaVersion, db.SchemaVersion());
+        Assert.Equal(0, new UserStore(db).FindByUsername("alice")!.Balance);
+        Assert.Equal("Office", new PrinterStore(db).Get("office")!.Name);
+        Assert.Null(new QueueStore(db).Get("direct")!.DirectPrinterId);
+    }
+
+    [Fact]
     public void RefusesADatabaseFromANewerServer()
     {
         var db = new Database(Path.Combine(_dir, "test.db"));

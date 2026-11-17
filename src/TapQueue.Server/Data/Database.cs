@@ -540,8 +540,12 @@ public sealed class Database
     /// </summary>
     private static readonly string[] Downgrades =
     [
-        // 21 -> 20
+        // 21 -> 20. Also what 0.19 keeps in settings that an older server would misread: tray sign-in
+        // by the PC's service goes back to the default it would otherwise be taken for.
         """
+            DELETE FROM settings WHERE key IN ('sso', 'badgeSelfEnroll', 'userPortal');
+            UPDATE settings SET value = json_set(value, '$.clientSignIn', 'pc')
+                WHERE key = 'directory' AND json_valid(value) AND json_extract(value, '$.clientSignIn') = 'workstation';
             ALTER TABLE client_builds DROP COLUMN release_programs;
             ALTER TABLE client_builds DROP COLUMN release_signature;
             ALTER TABLE station_builds DROP COLUMN release_programs;

@@ -208,7 +208,15 @@ public sealed class ReleaseService(JobStore jobs, Spool spool, PrinterRegistry p
             // The printer has only queued it. With a number for the job, PrintTracker keeps the document
             // and follows the job until the printer says how it ended; without one this is all we learn.
             jobs.MarkReleased(job.Id, printer.Id, printerJobId);
-            accounts.Charge(job, cost, printer.Name);
+            try
+            {
+                accounts.Charge(job, cost, printer.Name);
+            }
+            catch (Exception ex) when (ex is Microsoft.Data.Sqlite.SqliteException or InvalidOperationException)
+            {
+                // The printer has the job: failing to write down what it cost mustn't make it look unsent.
+                logger.LogError(ex, "Couldn't record what job {JobId} cost {User}", job.Id, user.Username);
+            }
             if (printerJobId is null)
                 spool.Delete(job.Id);
             else if (done && jobs.FinishPrinting(job.Id, PrintState.Printed, null))
