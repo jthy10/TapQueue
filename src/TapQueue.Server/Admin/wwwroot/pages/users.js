@@ -212,18 +212,26 @@ export async function render(root, ctx) {
           ? props(sessions.map((s) => [s.hostname ?? s.remoteIp, h("span", null, `${s.windowsUser ?? "?"} · client ${s.clientVersion ?? "unknown"}`, h("span", { class: "sub" }, `${s.remoteIp}, seen ${time(s.lastSeenAt).textContent}`))]))
           : h("p", { class: "muted", style: "margin:0" }, "Not signed in anywhere. Jobs they print can't be matched to them."),
 
+        // A People admin sets people's passwords; the server only lets a full admin set an admin's.
+        !fromAd && ctx.can("people", "admin") && [
+          sectionTitle("Password"),
+          props([
+            ["TapQueue password", [user.hasPassword ? "Set" : h("span", { class: "muted" }, "None"),
+              h("span", { class: "sub" }, "For the web page at /my, the tray app where it asks for a name and password, and this console if they have a role here.")]],
+          ]),
+          h("div", { class: "actions", style: "margin-top:10px" },
+            button(user.hasPassword ? "Change password" : "Set password", { small: true, iconName: "key", onclick: () => setPassword(user) }),
+            user.hasPassword && button("Remove password", { small: true, kind: "ghost danger", onclick: () => removePassword(user) })),
+        ],
+
         admins && [
           sectionTitle("Admin console"),
           props([
             ["Role", asAdmin ? (asAdmin.fullAdmin ? pill("Full admin", "ok") : roleList(asAdmin.roles)) : h("span", { class: "muted" }, "None")],
             asAdmin && ["Sign-in", asAdmin.signInProblem ? h("span", { class: "text-bad" }, asAdmin.signInProblem)
-              : fromAd ? "With their domain password" : "With their console password"],
-            !fromAd && ["Password", user.hasPassword ? "Set" : h("span", { class: "muted" }, "None")],
+              : fromAd ? "With their domain password" : "With their TapQueue password"],
           ]),
-          h("div", { class: "actions", style: "margin-top:10px" },
-            h("a", { class: "btn small", href: "admins" }, "Roles"),
-            !fromAd && button(user.hasPassword ? "Change password" : "Set password", { small: true, iconName: "key", onclick: () => setPassword(user) }),
-            !fromAd && user.hasPassword && button("Remove password", { small: true, kind: "ghost danger", onclick: () => removePassword(user) })),
+          h("div", { class: "actions", style: "margin-top:10px" }, h("a", { class: "btn small", href: "admins" }, "Roles")),
         ],
 
         sectionTitle("Recent jobs"),
@@ -252,7 +260,7 @@ export async function render(root, ctx) {
   function setPassword(user) {
     formDialog({
       title: `${user.hasPassword ? "Change" : "Set"} ${user.displayName}'s password`,
-      description: "For signing in to this admin console, if they have a role here. Printing doesn't use it. They're signed out of the console everywhere.",
+      description: "For the web page at /my, the tray app where it asks for a name and password, and this console if they have a role here. They're signed out of the console and the web page everywhere.",
       submitLabel: "Save password",
       body: [
         field("New password", input("password", { type: "password", required: true, minlength: 10, autocomplete: "new-password" }), "At least 10 characters. Tell them over a safe channel."),

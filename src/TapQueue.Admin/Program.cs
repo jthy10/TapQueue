@@ -13,7 +13,7 @@ const string Usage = """
                                                      Create a user and print their client token
       tapqueue-admin users reset-token <username>    Issue a new client token (the old one stops working)
       tapqueue-admin users password <username> [--clear]
-                                                     Set (asks for it) or remove a local user's admin console password
+                                                     Set (asks for it) or remove a local user's TapQueue password (web page, tray, console)
       tapqueue-admin users quota <username>          Their page limits and how much they've used
       tapqueue-admin users quota <username> <pages> day|week|month
                                                      Give a user their own page limit (overrides their groups')
