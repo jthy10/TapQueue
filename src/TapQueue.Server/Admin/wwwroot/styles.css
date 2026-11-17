@@ -90,6 +90,7 @@ h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
 .sign-in-card { width: 100%; max-width: 380px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 28px; box-shadow: 0 1px 2px rgb(0 0 0 / 4%); }
 .sign-in-card form { display: flex; flex-direction: column; }
 .sign-in-card .btn { justify-content: center; margin-top: 4px; }
+.sign-in-card .sso:not(:empty) { display: flex; flex-direction: column; margin-top: 10px; padding-top: 14px; border-top: 1px solid var(--border); }
 .sign-in-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 22px; }
 .sign-in-brand img { width: 36px; height: 36px; border-radius: 8px; }
 .sign-in-brand b { font-size: 17px; letter-spacing: -0.01em; }

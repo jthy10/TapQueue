@@ -1,11 +1,11 @@
 import { api, enc } from "../api.js";
-import { h, pageHead, panel, button, pill, table, empty, field, select, checkbox, checkField, checkList, formDialog, confirm, attempt,
-  loading, time, sectionTitle } from "../ui.js";
+import { h, pageHead, panel, button, pill, table, empty, field, input, select, checkbox, checkField, checkList, formDialog, confirm, attempt,
+  loading, time, sectionTitle, props, secret, toast } from "../ui.js";
 
 export const areas = [
   ["jobs", "Jobs", "Held jobs and history: release, cancel."],
   ["people", "People", "Users, groups, cards and page limits."],
-  ["directory", "Active Directory", "Connection, scope and sync."],
+  ["directory", "Directory", "Active Directory or Entra ID: connection, scope and sync."],
   ["fleet", "Fleet", "Printers, queues, stations and workstations."],
   ["updates", "Updates", "Client and station builds."],
   ["server", "Server", "Settings, live log, restart, crash reports."],
@@ -20,7 +20,39 @@ const roles = [
 const roleName = (id) => roles.find(([r]) => r === id)?.[1] ?? id;
 
 export async function render(root, ctx) {
-  let data, users = [], groups = [];
+  async function testSso() {
+    const result = await attempt(() => api.post("sso/test"));
+    if (result) toast(result.message, result.success ? undefined : "bad");
+  }
+
+  function editSso() {
+    formDialog({
+      title: "Single sign-on",
+      description: "Register TapQueue with your provider as a web application, with the redirect URI below, and enter what it gives you.",
+      wide: true,
+      body: [
+        secret(sso.redirectUri, "Redirect URI to register with the provider:"),
+        checkField("Offer single sign-on", checkbox("enabled", sso.enabled), "Adds \"Sign in with…\" to this console's sign-in and the web page's. Passwords keep working."),
+        field("Provider address", input("authority", { value: sso.authority, placeholder: "https://login.microsoftonline.com/<tenant-id>/v2.0" }),
+          "The issuer: the address that has /.well-known/openid-configuration under it. Entra ID: https://login.microsoftonline.com/<tenant-id>/v2.0. Google: https://accounts.google.com."),
+        field("Client ID", input("clientId", { value: sso.clientId })),
+        field("Client secret", input("clientSecret", { type: "password", placeholder: sso.hasSecret ? "Saved; leave empty to keep it" : "" }),
+          sso.hasSecret ? "Enter it again if you change the provider address." : undefined),
+        field("Your domain", input("domain", { value: sso.domain, placeholder: "example.org" }),
+          "Someone the provider calls jake@example.org is then the TapQueue user jake. Leave it empty and names have to match usernames exactly; never put a public domain like gmail.com here."),
+        field("Username claim", input("usernameClaim", { required: true, value: sso.usernameClaim }), "Which claim in the ID token names the person. preferred_username for Entra ID; email for Google."),
+        field("Button says: Sign in with", input("label", { required: true, maxlength: 40, value: sso.label })),
+      ],
+      onSubmit: async (v) => {
+        sso = await api.patch("sso", v);
+        await load();
+        if (sso.enabled) testSso();
+      },
+    });
+  }
+
+  let data, users = [], groups = [], sso = null;
+  const ssoBody = h("div", null, loading());
   const warning = h("div");
   const people = h("div", null, loading());
   const grants = h("div", null, loading());
@@ -30,18 +62,29 @@ export async function render(root, ctx) {
     warning,
     panel({ title: "People", description: "Everyone with a role, directly or through a group.", flush: true, body: people }),
     panel({ title: "Roles given", description: "Remove one to take that role away. Only full admins (admin in every area) see this page.", flush: true, body: grants }),
+    panel({ title: "Single sign-on", description: "People sign in to this console and to the web page at /my through your organisation's sign-in (Entra ID, Google, Okta, any OpenID Connect provider). What they may do is still decided by the roles here.",
+      actions: [button("Test", { small: true, onclick: testSso }), button("Edit", { small: true, onclick: editSso })], body: ssoBody }),
     panel({ title: "What the roles mean", body: h("div", { class: "stack" },
       h("dl", { class: "props" }, roles.flatMap(([, name, text]) => [h("dt", null, name), h("dd", null, text)])),
       sectionTitle("Areas"),
       h("dl", { class: "props" }, areas.flatMap(([, name, text]) => [h("dt", null, name), h("dd", null, text)])),
       h("p", { class: "muted", style: "margin:0" },
-        "Local users sign in with a console password, set on their user page. Active Directory users sign in with their domain password. ",
+        "Local users sign in with their TapQueue password, set on their user page. Active Directory users sign in with their domain password, and anyone can use single sign-on once it's set up. ",
         "Only full admins can change admins, passwords, or groups that give admin rights.")) }),
   );
 
   async function load() {
-    [data, users, groups] = await Promise.all([api.get("admins"), api.get("users"), api.get("groups")]);
+    [data, users, groups, sso] = await Promise.all([api.get("admins"), api.get("users"), api.get("groups"), api.get("sso")]);
     if (!ctx.current) return;
+    ssoBody.replaceChildren(props([
+      ["Single sign-on", sso.enabled ? pill("On", "ok") : pill("Off", "plain")],
+      sso.authority && ["Provider", h("code", null, sso.authority)],
+      sso.clientId && ["Client ID", [h("code", null, sso.clientId), !sso.hasSecret && h("span", { class: "sub" }, pill("No client secret saved", "warn"))]],
+      ["People are", sso.domain
+        ? [`name@${sso.domain} is the TapQueue user "name"`, h("span", { class: "sub" }, `From the ${sso.usernameClaim} claim. Anyone outside ${sso.domain} has to be a TapQueue username exactly.`)]
+        : ["The TapQueue user whose username is exactly what the provider calls them", h("span", { class: "sub" }, `From the ${sso.usernameClaim} claim. Set your domain to match jake@example.org to the user jake.`)]],
+      ["Redirect URI", [h("code", null, sso.redirectUri), h("span", { class: "sub" }, "Register this with the provider. It's this server's address as you opened it here.")]],
+    ]));
 
     const dev = ctx.session.authMode === "dev";
     warning.replaceChildren(data.fullAdmins > 0 ? "" : h("div", { class: `callout ${dev ? "info" : "bad"}` }, dev

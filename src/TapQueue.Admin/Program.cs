@@ -109,8 +109,14 @@ const string Usage = """
       tapqueue-admin directory scope add <dn>        Sync the users under an OU, in a group (with nested
                                                      groups) or one user. Set up the connection in the console
       tapqueue-admin directory scope remove <id>     Stop syncing a scope item (id from `directory`)
-      tapqueue-admin directory sign-in <pc|domain>   How the tray signs in: as the PC's user (default), or
-                                                     with a domain account entered in the tray
+      tapqueue-admin directory sign-in <pc|workstation|domain>
+                                                     How the tray signs in: workstation = as the PC's user, on the
+                                                     word of the PC's TapQueue service (needs an enrollment code);
+                                                     domain = with a name and password entered in the tray; pc = as
+                                                     the PC's user with the token in client.toml (the default)
+      tapqueue-admin sso                             Single sign-on (OpenID Connect) for the console and the web page
+      tapqueue-admin sso set authority|client-id|client-secret|domain|username-claim|label <value>
+      tapqueue-admin sso on|off                      The address to register with the provider is shown by `sso`
 
       tapqueue-admin admins                          Who can use the admin console, with their roles and grants
       tapqueue-admin admins grant <username | @group-id> viewer|operator|admin [--area jobs,people,...]
@@ -296,6 +302,18 @@ try
         ("directory", "sync") when positional.Count == 2 => await SyncDirectory(options.ContainsKey("--dry-run"), options.ContainsKey("--force")),
         ("directory", "scope") when positional.Count == 4 && positional[2] == "add" => await AddDirectoryScope(positional[3]),
         ("directory", "sign-in") when positional.Count == 3 => await SetClientSignIn(positional[2]),
+        ("sso", null) => await ShowSso(),
+        ("sso", "on" or "off") when positional.Count == 2 => await SetSso(new UpdateSsoRequest(Enabled: positional[1] == "on")),
+        ("sso", "set") when positional.Count == 4 => await SetSso(positional[2] switch
+        {
+            "authority" => new UpdateSsoRequest(Authority: positional[3]),
+            "client-id" => new UpdateSsoRequest(ClientId: positional[3]),
+            "client-secret" => new UpdateSsoRequest(ClientSecret: positional[3]),
+            "domain" => new UpdateSsoRequest(Domain: positional[3] == "none" ? "" : positional[3]),
+            "username-claim" => new UpdateSsoRequest(UsernameClaim: positional[3]),
+            "label" => new UpdateSsoRequest(Label: positional[3]),
+            _ => null,
+        }),
         ("directory", "scope") when positional.Count == 4 && positional[2] == "remove" =>
             await Delete($"directory/scope/{long.Parse(positional[3])}", $"Removed scope item {positional[3]}; the next sync disables users only it brought in."),
         ("notifications", null) => await ShowNotifications(),
@@ -469,6 +487,34 @@ async Task<int> ShowSetupCode()
     return 0;
 }
 
+async Task<int> ShowSso()
+{
+    var sso = await Get<SsoSettingsDto>("sso");
+    if (sso is null) return 1;
+    Console.WriteLine(sso.Enabled ? $"Single sign-on is on: the console and the web page offer \"Sign in with {sso.Label}\"." : "Single sign-on is off (`tapqueue-admin sso on`).");
+    Console.WriteLine($"authority        {(sso.Authority.Length > 0 ? sso.Authority : "(not set) e.g. https://login.microsoftonline.com/<tenant-id>/v2.0")}");
+    Console.WriteLine($"client-id        {(sso.ClientId.Length > 0 ? sso.ClientId : "(not set)")}");
+    Console.WriteLine($"client-secret    {(sso.HasSecret ? "saved" : "(not set)")}");
+    Console.WriteLine(sso.Domain.Length > 0
+        ? $"domain           {sso.Domain}: name@{sso.Domain} is the TapQueue user \"name\""
+        : "domain           (not set) the provider's name for someone has to be their TapQueue username exactly");
+    Console.WriteLine($"username-claim   {sso.UsernameClaim}");
+    Console.WriteLine($"label            {sso.Label}");
+    Console.WriteLine($"Register this redirect URI with the provider, with the server's address as people's browsers reach it: {sso.RedirectUri}");
+    return 0;
+}
+
+async Task<int> SetSso(UpdateSsoRequest? request)
+{
+    if (request is null)
+    {
+        Console.Error.WriteLine("Use: sso set authority|client-id|client-secret|domain|username-claim|label <value>, or sso on|off.");
+        return 2;
+    }
+    if (await Send<SsoSettingsDto>(HttpMethod.Patch, "sso", request) is null) return 1;
+    return await ShowSso();
+}
+
 async Task<int> SetClientSignIn(string mode)
 {
     if (!ClientSignIn.All.Contains(mode))
@@ -491,8 +537,11 @@ async Task<int> ShowDirectory()
     var d = await Get<DirectoryStatusDto>("directory");
     if (d is null) return 1;
     var c = d.Config;
-    Console.WriteLine(c.Host.Length == 0
-        ? "Not set up: set the connection on the console's Active Directory page."
+    Console.WriteLine(c.Kind == DirectoryKind.Entra
+        ? (c.TenantId.Length == 0 ? "Not set up: set the connection on the console's Directory page."
+            : $"Microsoft Entra ID, tenant {c.TenantId}, application {c.ClientId}{(c.HasPassword ? "" : " (no client secret saved)")}.")
+        : c.Host.Length == 0
+        ? "Not set up: set the connection on the console's Directory page."
         : $"Domain controller {c.Host}:{c.Port} (LDAPS), bind as {c.BindDn}{(c.HasPassword ? "" : " (no password saved)")}" +
           $"{(c.CaCertificate.Length > 0 ? ", trusting its own CA" : "")}.");
     Console.WriteLine(c.BadgeAttribute.Length > 0 ? $"Cards come from {c.BadgeAttribute}." : "Cards are managed in TapQueue.");

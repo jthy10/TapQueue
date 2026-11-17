@@ -112,6 +112,7 @@ function showSignIn(message) {
   const submit = h("button", { type: "submit", class: "btn primary" }, "Sign in");
   const username = h("input", { name: "username", type: "text", required: true, autocomplete: "username", autocapitalize: "none", spellcheck: false });
   const password = h("input", { name: "password", type: "password", required: true, autocomplete: "current-password" });
+  const ssoBox = h("div", { class: "sso" });
   const form = h("form", { onsubmit: async (e) => {
     e.preventDefault();
     error.hidden = true;
@@ -133,7 +134,12 @@ function showSignIn(message) {
   error,
   h("label", { class: "field" }, "Username", username),
   h("label", { class: "field" }, "Password", password, h("small", null, "The one you sign in to your computer with, or your TapQueue password.")),
-  submit);
+  submit,
+  ssoBox);
+  // Where the organisation has single sign-on, that's the way in for most people.
+  fetch("/api/v1/sso").then((r) => r.json()).then((sso) => {
+    if (sso?.enabled) ssoBox.replaceChildren(h("a", { class: "btn", href: "/api/v1/sso/start?for=portal" }, `Sign in with ${sso.label}`));
+  }).catch(() => {});
   signInBox.replaceChildren(h("div", { class: "card" }, form));
   signInBox.hidden = false;
   username.focus();
@@ -408,8 +414,11 @@ async function start() {
   } catch (err) {
     me = null;
     app.hidden = true;
-    // 404: an admin turned the page off. Anything but "not signed in" is worth showing.
-    showSignIn(err.status === 401 ? null : err.message);
+    // 404: an admin turned the page off. Anything but "not signed in" is worth showing; so is why single sign-on sent them back.
+    const url = new URL(location.href);
+    const sso = url.searchParams.get("sso");
+    if (sso) history.replaceState(null, "", url.pathname);
+    showSignIn(err.status === 401 ? sso : err.message);
     return;
   }
   signInBox.hidden = true;

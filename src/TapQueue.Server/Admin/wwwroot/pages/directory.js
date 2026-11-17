@@ -32,11 +32,13 @@ export async function render(root, ctx) {
   const signIn = h("div");
   const scope = h("div");
   const runs = h("div");
+  // Entra ID has no OUs.
+  const addOu = button("Add OU", { small: true, iconName: "plus", onclick: () => addScope("ou") });
   const previewButton = button("Preview", { iconName: "search", onclick: () => run(true) });
   const syncButton = button("Sync now", { kind: "primary", iconName: "refresh", onclick: () => run(false) });
 
   root.append(
-    pageHead("Active Directory", "Users and groups synced from AD. AD decides their names, whether they're enabled and who is in AD groups; what groups may use and page limits are set here.",
+    pageHead("Directory", "Users and groups synced from Active Directory or Microsoft Entra ID. The directory decides their names, whether they're enabled and who is in its groups; what groups may use and page limits are set here.",
       previewButton, syncButton),
     h("div", { class: "grid two" },
       panel({ title: "Connection", actions: [button("Test", { small: true, onclick: test }), button("Edit", { small: true, onclick: editConnection })], body: connection }),
@@ -47,7 +49,7 @@ export async function render(root, ctx) {
       title: "Scope",
       description: "Who is synced. Users in none of these aren't in TapQueue, or are disabled if they were.",
       actions: [
-        button("Add OU", { small: true, iconName: "plus", onclick: () => addScope("ou") }),
+        addOu,
         button("Add group", { small: true, iconName: "plus", onclick: () => addScope("group") }),
         button("Add user", { small: true, iconName: "plus", onclick: () => addScope("user") }),
       ],
@@ -56,14 +58,24 @@ export async function render(root, ctx) {
     }),
     panel({ title: "History", description: "Syncs and previews from the last 90 days.", flush: true, body: runs }));
 
-  const configured = () => s.config.host && s.config.bindDn && s.config.hasPassword;
+  const entra = () => s.config.kind === "entra";
+  const configured = () => s.config.hasPassword && (entra() ? s.config.tenantId && s.config.clientId : s.config.host && s.config.bindDn);
 
   function draw() {
     const c = s.config;
     previewButton.disabled = syncButton.disabled = s.running || !configured() || s.scope.length === 0;
     syncButton.title = previewButton.title = !configured() ? "Set up the connection first." : s.scope.length === 0 ? "Add something to the scope first." : "";
 
-    connection.replaceChildren(c.host
+    addOu.hidden = entra();
+    connection.replaceChildren(entra()
+      ? (c.tenantId ? props([
+        ["Directory", [pill("Microsoft Entra ID", "accent"), h("span", { class: "sub" }, "Read through Microsoft Graph.")]],
+        ["Tenant", h("code", null, c.tenantId)],
+        ["Application", [h("code", null, c.clientId || "—"), !c.hasPassword && h("span", { class: "sub" }, pill("No client secret saved", "warn"))]],
+        ["Cards", c.badgeAttribute ? [h("code", null, c.badgeAttribute), h("span", { class: "sub" }, "The directory decides the card of anyone with a value in it.")] : "Managed in TapQueue"],
+        ["Sign-in", h("span", { class: "sub" }, "Entra ID doesn't check passwords for TapQueue: people use single sign-on (Admins page) for the console and the web page, and the tray signs them in as their PC's user.")],
+      ]) : empty("Not set up", "Connect to your Entra ID tenant with an app registration.", button("Set up", { kind: "primary", onclick: editConnection })))
+      : c.host
       ? props([
         ["Domain controller", [h("code", null, `${c.host}:${c.port}`), h("span", { class: "sub" }, "LDAPS")]],
         ["Bind account", [h("code", null, c.bindDn || "—"), !c.hasPassword && h("span", { class: "sub" }, pill("No password saved", "warn"))]],
@@ -118,21 +130,32 @@ export async function render(root, ctx) {
 
   function editConnection() {
     const c = s.config;
+    const kind = select("kind", [["ad", "Active Directory (LDAPS)"], ["entra", "Microsoft Entra ID (Microsoft Graph)"]], c.kind ?? "ad");
+    const forAd = h("div", { class: "stack" },
+      h("div", { class: "field-row" },
+        field("Domain controller", input("host", { value: c.host, placeholder: "dc01.example.org" }), "Its certificate must be issued for this name."),
+        field("Port", input("port", { type: "number", min: 1, max: 65535, required: true, value: c.port }))),
+      field("Bind account", input("bindDn", { value: c.bindDn, placeholder: "svc-tapqueue@example.org or CN=svc-tapqueue,OU=…" }),
+        "TapQueue connects over LDAPS (port 636) and only reads. Use an account that can read users and groups, nothing more."),
+      field("CA certificate", h("textarea", { name: "caCertificate", rows: 5, class: "mono", placeholder: "-----BEGIN CERTIFICATE-----\n…\n-----END CERTIFICATE-----" }, c.caCertificate),
+        "The CA that issued the domain controllers' certificates, as PEM. Leave empty if the server already trusts it."));
+    const forEntra = h("div", { class: "stack" },
+      field("Tenant", input("tenantId", { value: c.tenantId ?? "", placeholder: "contoso.onmicrosoft.com, or the tenant ID" })),
+      field("Application (client) ID", input("clientId", { value: c.clientId ?? "", placeholder: "00000000-0000-0000-0000-000000000000" }),
+        "An app registration with the application permissions User.Read.All and Group.Read.All, and admin consent. TapQueue only reads."));
+    const show = () => { forAd.hidden = kind.value !== "ad"; forEntra.hidden = kind.value !== "entra"; };
+    kind.addEventListener("change", show);
+    show();
     formDialog({
       title: "Connection",
-      description: "TapQueue connects over LDAPS (port 636) and only reads. Use an account that can read users and groups, nothing more.",
       wide: true,
       body: [
-        h("div", { class: "field-row" },
-          field("Domain controller", input("host", { required: true, value: c.host, placeholder: "dc01.example.org" }), "Its certificate must be issued for this name."),
-          field("Port", input("port", { type: "number", min: 1, max: 65535, required: true, value: c.port }))),
-        field("Bind account", input("bindDn", { required: true, value: c.bindDn, placeholder: "svc-tapqueue@example.org or CN=svc-tapqueue,OU=…" })),
-        field("Password", input("password", { type: "password", required: !c.hasPassword, placeholder: c.hasPassword ? "Saved; leave empty to keep it" : "" }),
-          c.hasPassword ? "Enter it again if you change the domain controller or CA certificate." : undefined),
-        field("CA certificate", h("textarea", { name: "caCertificate", rows: 5, class: "mono", placeholder: "-----BEGIN CERTIFICATE-----\n…\n-----END CERTIFICATE-----" }, c.caCertificate),
-          "The CA that issued the domain controllers' certificates, as PEM. Leave empty if the server already trusts it."),
-        field("Card number attribute", input("badgeAttribute", { value: c.badgeAttribute, placeholder: "e.g. employeeNumber" }),
-          "Optional. If set, AD decides the card of everyone with a value in it; their other cards are removed."),
+        field("Directory", kind, s.scope.length ? "Take everything out of the scope before switching: it names objects in the directory it was picked from." : undefined),
+        forAd, forEntra,
+        field("Password or client secret", input("password", { type: "password", placeholder: c.hasPassword ? "Saved; leave empty to keep it" : "" }),
+          c.hasPassword ? "Enter it again if you change which directory is read." : "The bind account's password, or the app registration's client secret."),
+        field("Card number attribute", input("badgeAttribute", { value: c.badgeAttribute, placeholder: "e.g. employeeNumber, or employeeId for Entra ID" }),
+          "Optional. If set, the directory decides the card of everyone with a value in it; their other cards are removed."),
       ],
       onSubmit: async (v) => {
         s = await api.patch("directory/config", { ...v, port: Number(v.port) });

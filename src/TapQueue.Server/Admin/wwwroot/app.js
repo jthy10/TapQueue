@@ -19,7 +19,7 @@ const nav = [
     { id: "groups", label: "Groups", icon: "groups", area: "people" },
     { id: "cards", label: "Cards", icon: "cards", area: "people" },
     { id: "balances", label: "Balances", icon: "balances", area: "people" },
-    { id: "directory", label: "Active Directory", icon: "directory", area: "directory" },
+    { id: "directory", label: "Directory", icon: "directory", area: "directory" },
   ] },
   { group: "Fleet", items: [
     { id: "printers", label: "Printers", icon: "printers", area: "fleet" },
@@ -177,6 +177,7 @@ async function signOut() {
 function showSignIn(message) {
   const error = h("div", { class: "form-error", hidden: !message }, message ?? "");
   const submit = button("Sign in", { type: "submit", kind: "primary" });
+  const ssoBox = h("div", { class: "sso" });
   const form = h("form", { onsubmit: async (e) => {
     e.preventDefault();
     error.hidden = true;
@@ -198,7 +199,12 @@ function showSignIn(message) {
   field("Username", input("username", { required: true, autocomplete: "username", autocapitalize: "none" }), "Your TapQueue username. Domain accounts can also use DOMAIN\\name."),
   field("Password", input("password", { type: "password", required: true, autocomplete: "current-password" }), "Domain accounts use their domain password."),
   submit,
+  ssoBox,
   session?.authMode === "dev" && button("Back to the open console", { kind: "ghost", onclick: () => showConsole() }));
+  // Where the organisation has single sign-on, that's the way in for most people.
+  auth.sso().then((sso) => {
+    if (sso?.enabled) ssoBox.replaceChildren(h("a", { class: "btn", href: "/api/v1/sso/start?for=console" }, `Sign in with ${sso.label}`));
+  }).catch(() => {});
 
   document.getElementById("shell").hidden = true;
   const box = document.getElementById("sign-in");
@@ -262,6 +268,16 @@ function showConsole() {
   render();
 }
 
+/** Why single sign-on sent the browser back without signing in (?sso=…), said once and then taken out of the address. */
+function ssoProblem() {
+  const url = new URL(location.href);
+  const problem = url.searchParams.get("sso");
+  if (!problem) return null;
+  url.searchParams.delete("sso");
+  history.replaceState(null, "", url.pathname + url.search);
+  return problem;
+}
+
 /** Finds out who is signed in (if anyone) and shows the console or the sign-in screen. */
 async function start() {
   try {
@@ -270,7 +286,7 @@ async function start() {
     session = null;
     const setup = err.status === 401 ? await auth.setupNeeded().catch(() => null) : null;
     if (setup?.needed) showSetup();
-    else showSignIn(err.status === 401 ? null : err.message);
+    else showSignIn(err.status === 401 ? ssoProblem() : err.message);
     return;
   }
   showConsole();

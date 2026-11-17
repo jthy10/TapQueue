@@ -75,6 +75,8 @@ input[type="text"], input[type="password"], input:not([type]), select {
   border-radius: 8px; padding: 10px 12px; min-height: 44px;
 }
 input:focus-visible, select:focus-visible, button:focus-visible { outline: none; box-shadow: var(--focus); border-color: var(--accent); }
+.sso:not(:empty) { display: flex; flex-direction: column; padding-top: 14px; border-top: 1px solid var(--border); }
+.sso .btn { text-align: center; text-decoration: none; }
 .error { background: var(--bad-weak); color: var(--bad); border-radius: 8px; padding: 10px 12px; font-size: 14px; }
 
 /* Buttons */
