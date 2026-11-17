@@ -40,6 +40,10 @@ public static class AdminDirectoryApi
             return Results.BadRequest(new ErrorResponse($"clientSignIn must be one of: {string.Join(", ", ClientSignIn.All)}."));
         if (request.CaCertificate is { Length: > 0 } pem && !pem.Contains("-----BEGIN CERTIFICATE-----"))
             return Results.BadRequest(new ErrorResponse("caCertificate must be a PEM certificate (-----BEGIN CERTIFICATE-----)."));
+        if (request.Kind is { } directoryKind && !DirectoryKind.All.Contains(directoryKind))
+            return Results.BadRequest(new ErrorResponse($"kind must be one of: {string.Join(", ", DirectoryKind.All)}."));
+        if (new[] { request.TenantId, request.ClientId }.Any(v => v is not null && (v.Trim().Length > 255 || v.Any(c => char.IsWhiteSpace(c) || c == '/'))))
+            return Results.BadRequest(new ErrorResponse("tenantId and clientId are ids (or the tenant's domain), without spaces."));
 
         var old = store.Config();
         var config = old with
@@ -54,18 +58,28 @@ public static class AdminDirectoryApi
             SyncTime = request.SyncTime ?? old.SyncTime,
             MaxDisablePercent = request.MaxDisablePercent ?? old.MaxDisablePercent,
             ClientSignIn = request.ClientSignIn ?? old.ClientSignIn,
+            Kind = request.Kind ?? old.Kind,
+            TenantId = request.TenantId?.Trim() ?? old.TenantId,
+            ClientId = request.ClientId?.Trim() ?? old.ClientId,
         };
         if (config == old)
             return Results.Ok(Status(store, sync, schedule));
         // The saved bind password goes to whatever server these name, and that server then decides who
         // may sign in with a domain account. So pointing them somewhere else takes the password again.
-        var elsewhere = config.Host != old.Host || config.Port != old.Port || Pem(config.CaCertificate) != Pem(old.CaCertificate);
+        var elsewhere = config.Host != old.Host || config.Port != old.Port || Pem(config.CaCertificate) != Pem(old.CaCertificate)
+            || config.Kind != old.Kind || config.TenantId != old.TenantId || config.ClientId != old.ClientId;
         // Whoever picks the domain controller or the account it's read with decides who every AD user and
         // AD group member is, admins included. So that takes a full admin, like changing admins does.
         if ((elsewhere || config.BindDn != old.BindDn || config.Password != old.Password) && AdminAccess.CurrentPermissions is { IsFullAdmin: false })
-            return AdminAccess.Forbidden("Only a full admin (admin in every area) can change the domain controller, its CA certificate or the bind account.");
+            return AdminAccess.Forbidden("Only a full admin (admin in every area) can change which directory is read, its CA certificate or the account it's read with.");
         if (elsewhere && old.Password.Length > 0 && string.IsNullOrEmpty(request.Password))
-            return Results.BadRequest(new ErrorResponse("Enter the bind account's password again to change the domain controller or its CA certificate."));
+            return Results.BadRequest(new ErrorResponse("Enter the password (or client secret) again to change which directory is read."));
+        // Entra ID has no OUs, and what's in the scope belongs to the directory it was picked from.
+        if (config.Kind != old.Kind && store.Scope().Count > 0)
+            return Results.Conflict(new ErrorResponse("Take everything out of the scope before switching to another kind of directory: it names objects in the one it was picked from."));
+        if (config.IsEntra && config.DomainSignIn)
+            return Results.BadRequest(new ErrorResponse(
+                "Entra ID doesn't check passwords for TapQueue, so the tray can't ask for a name and password. Sign people in as their PC's user instead (clientSignIn workstation)."));
         // Taking a PC's word for who its users are is only safe when not just any machine can enroll as a PC.
         if (config.WorkstationSignIn && !old.WorkstationSignIn && settings.EnrollmentCodeHash is null)
             return Results.BadRequest(new ErrorResponse(
@@ -77,6 +91,8 @@ public static class AdminDirectoryApi
         var changes = new List<string>();
         if (config.Enabled != old.Enabled) changes.Add(config.Enabled ? $"daily sync on at {config.SyncTime}" : "daily sync off");
         else if (config.SyncTime != old.SyncTime) changes.Add($"daily sync at {config.SyncTime}");
+        if (config.Kind != old.Kind) changes.Add(config.IsEntra ? "reads Entra ID" : "reads Active Directory");
+        if (config.TenantId != old.TenantId || config.ClientId != old.ClientId) changes.Add($"Entra ID tenant {config.TenantId}, application {config.ClientId}");
         if (config.Host != old.Host || config.Port != old.Port) changes.Add($"domain controller {config.Host}:{config.Port}");
         if (config.BindDn != old.BindDn) changes.Add($"bind account {config.BindDn}");
         if (config.Password != old.Password) changes.Add("new bind password");

@@ -12,12 +12,13 @@ public sealed record RosterChange(long? UserGone = null, string? GroupGone = nul
 /// Everyone the grants give a role to, worked out from a list of grants, so a change can be checked
 /// before it's made: in token mode, the last full admin who can sign in can't be removed.
 /// </summary>
-public sealed class AdminRoster(UserStore users, GroupStore groups, DirectoryStore directory, AdminStore admins, ServerConfig config)
+public sealed class AdminRoster(UserStore users, GroupStore groups, DirectoryStore directory, AdminStore admins, ServerConfig config, Sso.SsoStore sso)
 {
     public List<AdminPersonDto> People(IReadOnlyList<AdminGrant> grants, RosterChange? change = null)
     {
         var memberships = groups.Memberships();
-        var adConfigured = directory.Config() is { Host.Length: > 0, Password.Length: > 0 };
+        // Whether someone from the directory has a way in: their domain password, or single sign-on.
+        var adConfigured = directory.Config().ChecksPasswords || sso.Get().Usable;
         var people = new List<AdminPersonDto>();
         foreach (var user in users.List())
         {
@@ -54,7 +55,7 @@ public sealed class AdminRoster(UserStore users, GroupStore groups, DirectorySto
 
     public static string? SignInProblem(UserRecord user, bool adConfigured) =>
         user.Disabled ? "Their account is disabled."
-        : user.FromDirectory ? (adConfigured ? null : "They sign in with their domain password, but Active Directory isn't set up.")
+        : user.FromDirectory ? (adConfigured ? null : "They sign in with their domain password or single sign-on, and neither is set up.")
         : user.HasPassword ? null
         : "They have no password yet. Set one on their user page.";
 }

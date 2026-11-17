@@ -27,10 +27,16 @@ public sealed record DirectoryConfig(
     string BadgeAttribute = "",
     string SyncTime = "01:00",
     int MaxDisablePercent = 20,
-    string ClientSignIn = Shared.Api.ClientSignIn.Pc)
+    string ClientSignIn = Shared.Api.ClientSignIn.Pc,
+    string Kind = DirectoryKind.ActiveDirectory,
+    string TenantId = "",
+    string ClientId = "")
 {
     public DirectoryConfigDto ToDto() =>
-        new(Enabled, Host, Port, BindDn, Password.Length > 0, CaCertificate, BadgeAttribute, SyncTime, MaxDisablePercent, ClientSignIn);
+        new(Enabled, Host, Port, BindDn, Password.Length > 0, CaCertificate, BadgeAttribute, SyncTime, MaxDisablePercent, ClientSignIn, Kind, TenantId, ClientId);
+
+    /// <summary>Users and groups come from Entra ID (through Microsoft Graph) rather than Active Directory.</summary>
+    public bool IsEntra => Kind == DirectoryKind.Entra;
 
     /// <summary>People sign in to the tray with a name and password rather than as the PC's user.</summary>
     public bool DomainSignIn => ClientSignIn == Shared.Api.ClientSignIn.Domain;
@@ -38,8 +44,11 @@ public sealed record DirectoryConfig(
     /// <summary>The PC's TapQueue service says who's signed in to it, and that's who they are in TapQueue.</summary>
     public bool WorkstationSignIn => ClientSignIn == Shared.Api.ClientSignIn.Workstation;
 
-    /// <summary>There's a domain controller to check passwords against.</summary>
-    public bool Reachable => Host.Length > 0 && BindDn.Length > 0 && Password.Length > 0;
+    /// <summary>The connection is filled in: a domain controller and bind account, or an Entra ID tenant and application.</summary>
+    public bool Reachable => Password.Length > 0 && (IsEntra ? TenantId.Length > 0 && ClientId.Length > 0 : Host.Length > 0 && BindDn.Length > 0);
+
+    /// <summary>Someone's password can be checked against the directory: only Active Directory does that for us.</summary>
+    public bool ChecksPasswords => !IsEntra && Reachable;
 
     public static bool IsValidTime(string? time) =>
         TimeOnly.TryParseExact(time, "HH:mm", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out _);

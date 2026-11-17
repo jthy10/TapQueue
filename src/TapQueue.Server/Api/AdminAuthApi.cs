@@ -147,7 +147,7 @@ public static class AdminAuthApi
 
         // AD users sign in with their domain password, by TapQueue username, sAMAccountName, DOMAIN\name or UPN.
         var config = directory.Config();
-        if (config is not { Host.Length: > 0, Password.Length: > 0 })
+        if (!config.ChecksPasswords)
         {
             PasswordHasher.VerifyNothing(password);
             return null;

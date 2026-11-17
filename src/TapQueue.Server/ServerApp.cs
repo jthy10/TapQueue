@@ -119,7 +119,11 @@ public static class ServerApp
         builder.Services.AddHostedService<JobCleanupService>();
         builder.Services.AddHostedService<DiscoveryResponder>();
         builder.Services.AddSingleton<DirectoryStore>();
-        builder.Services.AddSingleton<IDirectorySourceFactory, LdapDirectorySourceFactory>();
+        builder.Services.AddSingleton<OutboundHttp>();
+        builder.Services.AddSingleton<LdapDirectorySourceFactory>();
+        builder.Services.AddSingleton<IDirectorySourceFactory, DirectorySourceFactory>();
+        builder.Services.AddSingleton<Sso.SsoStore>();
+        builder.Services.AddSingleton<Sso.OidcSignIn>();
         builder.Services.AddSingleton<DirectorySync>();
         builder.Services.AddSingleton<DirectorySyncService>();
         builder.Services.AddHostedService(services => services.GetRequiredService<DirectorySyncService>());
@@ -171,6 +175,7 @@ public static class ServerApp
         app.MapStationScreenApi();
         app.MapAdminUi();
         app.MapPortalApi();
+        app.MapSsoApi();
         app.MapPortalUi();
         return app;
     }

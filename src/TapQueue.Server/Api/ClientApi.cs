@@ -133,7 +133,7 @@ public static class ClientApi
                 // A local user signs in with their TapQueue password; everyone else is asked of AD.
                 var local = users.FindByUsername(username) is { FromDirectory: false } found ? found : null;
                 DirectoryEntry? entry = null;
-                if (local is not null || !domain.Reachable)
+                if (local is not null || !domain.ChecksPasswords)
                 {
                     var password = request.Password;
                     var right = await Task.Run(() =>

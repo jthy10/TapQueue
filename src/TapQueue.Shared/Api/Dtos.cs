@@ -1073,7 +1073,21 @@ public static class CrashProgram
 /// <param name="BadgeAttribute">The user attribute with their card number (like employeeNumber); empty to manage cards in TapQueue.</param>
 /// <param name="SyncTime">When the daily sync runs, HH:mm in the server's time zone.</param>
 /// <param name="MaxDisablePercent">A sync that would disable more than this share of AD users stops instead, in case AD or the scope is wrong.</param>
+/// <summary>Which directory users and groups are synced from.</summary>
+public static class DirectoryKind
+{
+    /// <summary>Active Directory, over LDAPS. The default.</summary>
+    public const string ActiveDirectory = "ad";
+    /// <summary>Microsoft Entra ID (Azure AD), through Microsoft Graph (servers from 0.19).</summary>
+    public const string Entra = "entra";
+
+    public static readonly string[] All = [ActiveDirectory, Entra];
+}
+
 /// <param name="ClientSignIn">How people sign in to the tray app: <see cref="Api.ClientSignIn"/>.</param>
+/// <param name="Kind">One of <see cref="DirectoryKind"/>.</param>
+/// <param name="TenantId">For Entra ID: the tenant's id or domain.</param>
+/// <param name="ClientId">For Entra ID: the app registration's application (client) ID. Its secret is the password.</param>
 public sealed record DirectoryConfigDto(
     bool Enabled,
     string Host,
@@ -1084,7 +1098,10 @@ public sealed record DirectoryConfigDto(
     string BadgeAttribute,
     string SyncTime,
     int MaxDisablePercent,
-    string ClientSignIn = Api.ClientSignIn.Pc);
+    string ClientSignIn = Api.ClientSignIn.Pc,
+    string Kind = DirectoryKind.ActiveDirectory,
+    string TenantId = "",
+    string ClientId = "");
 
 /// <summary>Fields left null are unchanged. An empty password is ignored, so the console can leave it blank.</summary>
 public sealed record UpdateDirectoryConfigRequest(
@@ -1097,7 +1114,10 @@ public sealed record UpdateDirectoryConfigRequest(
     string? BadgeAttribute = null,
     string? SyncTime = null,
     int? MaxDisablePercent = null,
-    string? ClientSignIn = null);
+    string? ClientSignIn = null,
+    string? Kind = null,
+    string? TenantId = null,
+    string? ClientId = null);
 
 /// <summary>What the sync pulls users from.</summary>
 public static class DirectoryScopeKind
@@ -1265,6 +1285,22 @@ public sealed record AdminSignInRequest(string Username, string Password);
 /// <param name="CanLinkBadge">People may link a card nobody owns to themselves here.</param>
 /// <param name="Accounting">One of <see cref="AccountingMode"/>.</param>
 public sealed record PortalMeDto(string Username, string DisplayName, bool CanChangePassword, bool CanLinkBadge, string Accounting);
+
+/// <summary>Whether the sign-in pages should offer single sign-on, and what its button says (<c>GET /api/v1/sso</c>, servers from 0.19).</summary>
+public sealed record SsoInfoDto(bool Enabled, string Label);
+
+/// <summary>How single sign-on (OpenID Connect) is set up, for full admins.</summary>
+/// <param name="Authority">The provider's issuer address, e.g. https://login.microsoftonline.com/&lt;tenant-id&gt;/v2.0.</param>
+/// <param name="UsernameClaim">The ID token claim that names the person, like preferred_username.</param>
+/// <param name="Label">What the button says after "Sign in with".</param>
+/// <param name="RedirectUri">The address to register with the provider: where it sends people back to.</param>
+/// <param name="Domain">The organisation's own domain: name@domain is the TapQueue user "name". Empty: names must be usernames exactly.</param>
+public sealed record SsoSettingsDto(bool Enabled, string Authority, string ClientId, bool HasSecret, string UsernameClaim, string Label, string RedirectUri,
+    string Domain = "");
+
+/// <summary>Fields left null are unchanged. An empty secret is ignored, so the console can leave it blank.</summary>
+public sealed record UpdateSsoRequest(bool? Enabled = null, string? Authority = null, string? ClientId = null, string? ClientSecret = null,
+    string? UsernameClaim = null, string? Label = null, string? Domain = null);
 
 /// <summary>Whether the console should offer to create the first admin instead of a sign-in (<c>GET /api/v1/admin-auth/setup</c>).</summary>
 public sealed record FirstRunSetupDto(bool Needed);

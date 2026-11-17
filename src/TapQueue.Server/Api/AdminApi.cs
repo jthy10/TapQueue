@@ -105,6 +105,7 @@ public static class AdminApi
         admin.MapGroupsApi();
         admin.MapQuotasApi();
         admin.MapAccountingApi();
+        admin.MapSsoAdminApi();
         admin.MapUsersBulkApi();
         admin.MapDirectoryApi();
         admin.MapAdminsApi();
