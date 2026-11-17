@@ -11,6 +11,8 @@ breaking changes; they're listed under **Changed** with what to do.
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-11-16
+
 ### Added
 - **Signed in by the PC, with nothing to type.** A third way for the tray to sign in
   (`tapqueue-admin directory sign-in workstation`, or **Tray sign-in** in the console): the
@@ -581,7 +583,8 @@ First working version.
   readers. A tap releases the user's held jobs to the station's printer.
 - Badge enrollment by an admin (`badges add --last-tap`).
 
-[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.18.0...HEAD
+[Unreleased]: https://github.com/jthy10/TapQueue/compare/server-v0.19.0...HEAD
+[0.19.0]: https://github.com/jthy10/TapQueue/compare/server-v0.18.0...server-v0.19.0
 [0.18.0]: https://github.com/jthy10/TapQueue/compare/server-v0.17.0...server-v0.18.0
 [0.17.0]: https://github.com/jthy10/TapQueue/compare/server-v0.16.0...server-v0.17.0
 [0.16.0]: https://github.com/jthy10/TapQueue/compare/server-v0.15.0...server-v0.16.0
